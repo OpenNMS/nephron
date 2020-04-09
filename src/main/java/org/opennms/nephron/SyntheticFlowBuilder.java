@@ -26,90 +26,98 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.flows.model;
+package org.opennms.nephron;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 
-public class FlowBuilder {
+import org.opennms.netmgt.flows.persistence.model.Direction;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
+import org.opennms.netmgt.flows.persistence.model.NodeInfo;
+
+import com.google.protobuf.UInt32Value;
+import com.google.protobuf.UInt64Value;
+
+public class SyntheticFlowBuilder {
 
     private final List<FlowDocument> flows = new ArrayList<>();
 
-    private NodeDocument exporterNode;
+    private NodeInfo exporterNode;
     private Integer snmpInterfaceId;
     private String application = null;
     private Direction direction = Direction.INGRESS;
     private String srcHostname = null;
     private String dstHostname = null;
 
-    public FlowBuilder withExporter(String fs, String fid, int nodeId) {
-        exporterNode = new NodeDocument();
-        exporterNode.setForeignSource(fs);
-        exporterNode.setForeignId(fid);
-        exporterNode.setNodeId(nodeId);
+    public SyntheticFlowBuilder withExporter(String fs, String fid, int nodeId) {
+        exporterNode = NodeInfo.newBuilder()
+                .setNodeId(nodeId)
+                .setForeignSource(fs)
+                .setForeginId(fid)
+                .build();
         return this;
     }
 
-    public FlowBuilder withSnmpInterfaceId(Integer snmpInterfaceId) {
+    public SyntheticFlowBuilder withSnmpInterfaceId(Integer snmpInterfaceId) {
         this.snmpInterfaceId = snmpInterfaceId;
         return this;
     }
 
-    public FlowBuilder withApplication(String application) {
+    public SyntheticFlowBuilder withApplication(String application) {
         this.application = application;
         return this;
     }
 
-    public FlowBuilder withDirection(Direction direction) {
+    public SyntheticFlowBuilder withDirection(Direction direction) {
         this.direction = Objects.requireNonNull(direction);
         return this;
     }
 
-    public FlowBuilder withHostnames(final String srcHostname, final String dstHostname) {
+    public SyntheticFlowBuilder withHostnames(final String srcHostname, final String dstHostname) {
         this.srcHostname = srcHostname;
         this.dstHostname = dstHostname;
         return this;
     }
 
-    public FlowBuilder withFlow(Date date, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
+    public SyntheticFlowBuilder withFlow(Date date, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
         return withFlow(date, date, date, sourceIp, sourcePort, destIp, destPort, numBytes);
     }
 
-    public FlowBuilder withFlow(Date firstSwitched, Date lastSwitched, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
+    public SyntheticFlowBuilder withFlow(Date firstSwitched, Date lastSwitched, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
         return withFlow(firstSwitched, firstSwitched, lastSwitched, sourceIp, sourcePort, destIp, destPort, numBytes);
     }
 
-    public FlowBuilder withFlow(Date firstSwitched, Date deltaSwitched, Date lastSwitched, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
-        final FlowDocument flow = new FlowDocument();
-        flow.setTimestamp(lastSwitched.getTime());
-        flow.setFirstSwitched(firstSwitched.getTime());
-        flow.setDeltaSwitched(deltaSwitched.getTime());
-        flow.setLastSwitched(lastSwitched.getTime());
-        flow.setSrcAddr(sourceIp);
-        flow.setSrcPort(sourcePort);
+    public SyntheticFlowBuilder withFlow(Date firstSwitched, Date deltaSwitched, Date lastSwitched, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
+        final FlowDocument.Builder builder = FlowDocument.newBuilder();
+        builder.setTimestamp(lastSwitched.getTime());
+        builder.setFirstSwitched(UInt64Value.of(firstSwitched.getTime()));
+        builder.setDeltaSwitched(UInt64Value.of(deltaSwitched.getTime()));
+        builder.setLastSwitched(UInt64Value.of(lastSwitched.getTime()));
+        builder.setSrcAddress(sourceIp);
+        builder.setSrcPort(UInt32Value.of(sourcePort));
         if (this.srcHostname != null) {
-            flow.setSrcAddrHostname(this.srcHostname);
+            builder.setSrcHostname(this.srcHostname);
         }
-        flow.setDstAddr(destIp);
-        flow.setDstPort(destPort);
+        builder.setDstAddress(destIp);
+        builder.setDstPort(UInt32Value.of(destPort));
         if (this.dstHostname != null) {
-            flow.setDstAddrHostname(this.dstHostname);
+            builder.setDstHostname(this.dstHostname);
         };
-        flow.setBytes(numBytes);
-        flow.setProtocol(6); // TCP
+        builder.setNumBytes(UInt64Value.of(numBytes));
+        builder.setProtocol(UInt32Value.of(6)); // TCP
         if (exporterNode !=  null) {
-            flow.setNodeExporter(exporterNode);
+            builder.setExporterNode(exporterNode);
         }
         if (direction == Direction.INGRESS) {
-            flow.setInputSnmp(snmpInterfaceId);
+            builder.setInputSnmpIfindex(UInt32Value.of(snmpInterfaceId));
         } else if (direction == Direction.EGRESS) {
-            flow.setOutputSnmp(snmpInterfaceId);
+            builder.setOutputSnmpIfindex(UInt32Value.of(snmpInterfaceId));
         }
-        flow.setApplication(application);
-        flow.setDirection(direction);
-        flows.add(flow);
+        builder.setApplication(application);
+        builder.setDirection(direction);
+        flows.add(builder.build());
         return this;
     }
 

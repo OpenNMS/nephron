@@ -30,10 +30,8 @@ package org.opennms.nephron;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.Serializable;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -58,16 +56,17 @@ import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.io.CharStreams;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
-import org.opennms.flows.model.Direction;
-import org.opennms.flows.model.FlowDocument;
+import org.opennms.netmgt.flows.persistence.model.Direction;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 import com.google.gson.Gson;
+import com.google.protobuf.InvalidProtocolBufferException;
 
 public class FlowAnalyzer {
     private static final Gson gson = new Gson();
@@ -84,7 +83,7 @@ public class FlowAnalyzer {
         Objects.requireNonNull(pipeOptions);
         PipelineOptions options = PipelineOptionsFactory.create();
         Pipeline p = Pipeline.create(options);
-        p.getCoderRegistry().registerCoderForClass(FlowDocument.class, new FlowDocumentGsonCoder());
+        p.getCoderRegistry().registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
 
         Map<String, Object> kafkaConsumerConfig = new HashMap<>();
         kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, "myapp");
@@ -92,25 +91,29 @@ public class FlowAnalyzer {
         kafkaConsumerConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // For testing only :)
 
         // This example reads a public data set consisting of the complete works of Shakespeare.
-        PCollection<FlowDocument> windowedStreamOfFlows = p.apply(KafkaIO.<String, String>read()
+        PCollection<FlowDocument> windowedStreamOfFlows = p.apply(KafkaIO.<String, byte[]>read()
                 .withBootstrapServers(pipeOptions.getBootstrapServers())
                 .withTopic("flows")
                 .withKeyDeserializer(StringDeserializer.class)
-                .withValueDeserializer(StringDeserializer.class)
+                .withValueDeserializer(ByteArrayDeserializer.class)
                 .withConsumerConfigUpdates(kafkaConsumerConfig)
                 .withoutMetadata()
         )
                 .apply(Values.create())
-                .apply(ParDo.of(new DoFn<String, FlowDocument>() {
+                .apply(ParDo.of(new DoFn<byte[], FlowDocument>() {
                     @ProcessElement
                     public void processElement(ProcessContext c) {
-                        String json = c.element();
-                        FlowDocument flow = gson.fromJson(json, FlowDocument.class);
+                        FlowDocument flow = null;
+                        try {
+                            flow = FlowDocument.parseFrom(c.element());
+                        } catch (InvalidProtocolBufferException e) {
+                            throw new RuntimeException(e);
+                        }
                         // We want to dispatch the flow to all the windows it may be a part of
                         // The flow ranges from [delta_switched, last_switched]
                         final long windowSize = pipeOptions.getFixedWindowSize().getMillis();
-                        long timestamp = flow.getDeltaSwitched() - windowSize;
-                        while (timestamp <= flow.getLastSwitched()) {
+                        long timestamp = flow.getDeltaSwitched().getValue() - windowSize;
+                        while (timestamp <= flow.getLastSwitched().getValue()) {
                             c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
                             timestamp += windowSize;
                         }
@@ -187,7 +190,7 @@ public class FlowAnalyzer {
         @ProcessElement
         public void processElement(ProcessContext c) {
             final FlowDocument flow = c.element();
-            c.output(KV.of(flow.getSrcAddr(), flow));
+            c.output(KV.of(flow.getSrcAddress(), flow));
         }
     }
 
@@ -202,11 +205,11 @@ public class FlowAnalyzer {
 
         public FlowBytes(FlowDocument flow, double multiplier) {
             if (Direction.INGRESS.equals(flow.getDirection())) {
-                bytesIn =  (long)(flow.getBytes() * multiplier);
+                bytesIn =  (long)(flow.getNumBytes().getValue() * multiplier);
                 bytesOut = 0;
             } else {
                 bytesIn = 0;
-                bytesOut = (long)(flow.getBytes() * multiplier);
+                bytesOut = (long)(flow.getNumBytes().getValue() * multiplier);
             }
         }
 
@@ -247,19 +250,19 @@ public class FlowAnalyzer {
             final FlowDocument flow = keyedFlow.getValue();
 
             // The flow duration ranges [delta_switched, last_switched]
-            long flowDurationMs = flow.getLastSwitched() - flow.getDeltaSwitched();
+            long flowDurationMs = flow.getLastSwitched().getValue() - flow.getDeltaSwitched().getValue();
             if (flowDurationMs <= 0) {
                 // 0 or negative duration, pass
                 return;
             }
 
             // Determine the avg. rate of bytes per ms for the duration of the flow
-            double bytesPerMs = flow.getBytes() / (double)flowDurationMs;
+            double bytesPerMs = flow.getNumBytes().getValue() / (double)flowDurationMs;
 
             // Now determine how many milliseconds the flow overlaps with the window bounds
             long endOfWindowMs = window.maxTimestamp().getMillis();
             long startOfWindowMs = endOfWindowMs - windowSizeMs;
-            long flowWindowOverlapMs = Math.min(flow.getLastSwitched(), endOfWindowMs) - Math.max(flow.getDeltaSwitched(), startOfWindowMs);
+            long flowWindowOverlapMs = Math.min(flow.getLastSwitched().getValue(), endOfWindowMs) - Math.max(flow.getDeltaSwitched().getValue(), startOfWindowMs);
             if (flowWindowOverlapMs < 0) {
                 // flow should not be in this windows! pass
                 return;
@@ -277,18 +280,15 @@ public class FlowAnalyzer {
         }
     }
 
-    public static class FlowDocumentGsonCoder extends Coder<FlowDocument> {
+    public static class FlowDocumentProtobufCoder extends Coder<FlowDocument> {
         @Override
         public void encode(FlowDocument value, OutputStream outStream) throws IOException {
-            final String json =  gson.toJson(value);
-            outStream.write(json.getBytes(StandardCharsets.UTF_8));
+            outStream.write(value.toByteArray());
         }
 
         @Override
         public FlowDocument decode(InputStream inStream) throws IOException {
-            String json = CharStreams.toString(new InputStreamReader(
-                    inStream, StandardCharsets.UTF_8));
-            return gson.fromJson(json, FlowDocument.class);
+            return FlowDocument.parseFrom(inStream);
         }
 
         @Override

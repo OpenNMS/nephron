@@ -35,20 +35,16 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.opennms.flows.model.Direction;
-import org.opennms.flows.model.FlowBuilder;
-import org.opennms.flows.model.FlowDocument;
+import org.opennms.netmgt.flows.persistence.model.Direction;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.gson.Gson;
-
 public class FlowGenerator implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(FlowGenerator.class);
-    private final Gson gson = new Gson();
-    private final KafkaProducer<String,String> producer;
+    private final KafkaProducer<String,byte[]> producer;
 
-    public FlowGenerator(KafkaProducer<String,String> producer) {
+    public FlowGenerator(KafkaProducer<String,byte[]> producer) {
         this.producer = Objects.requireNonNull(producer);
     }
 
@@ -61,7 +57,7 @@ public class FlowGenerator implements Runnable {
             Date now = new Date();
             Date then = lastFlow;
 
-            final List<FlowDocument> flows = new FlowBuilder()
+            final List<FlowDocument> flows = new SyntheticFlowBuilder()
                     .withExporter("SomeFs", "SomeFid", 99)
                     .withSnmpInterfaceId(98)
                     // 192.168.1.100:43444 <-> 10.1.1.11:80 (110 bytes in total)
@@ -73,7 +69,7 @@ public class FlowGenerator implements Runnable {
                     .build();
 
             for (FlowDocument flow : flows) {
-                producer.send(new ProducerRecord<>("flows", gson.toJson(flow)));
+                producer.send(new ProducerRecord<>("flows", flow.toByteArray()));
             }
 
             lastFlow = then;

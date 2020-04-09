@@ -49,16 +49,15 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.BytesSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.Rule;
 import org.junit.Test;
 import org.testcontainers.containers.KafkaContainer;
 
-import com.google.gson.Gson;
-
 public class FlowAnalyzerIT {
-    private final Gson gson = new Gson();
 
     @Rule
     public KafkaContainer kafka = new KafkaContainer();
@@ -70,8 +69,8 @@ public class FlowAnalyzerIT {
         Map<String, Object> producerProps = new HashMap<>();
         producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        KafkaProducer<String,String> producer = new KafkaProducer<>(producerProps);
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+        KafkaProducer<String,byte[]> producer = new KafkaProducer<>(producerProps);
 
         // Write some flows
         FlowGenerator flowGenerator = new FlowGenerator(producer);
