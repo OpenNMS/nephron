@@ -5,8 +5,8 @@
     <artifactId>nephron</artifactId>
     <packaging>jar</packaging>
     <version>1.0.0-SNAPSHOT</version>
-    <name>neprhon</name>
-    <url>http://maven.apache.org</url>
+    <name>nephron</name>
+    <url>https://github.com/OpenNMS/nephron</url>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -15,10 +15,18 @@
         <java.version>1.8</java.version>
         <junit.version>4.12</junit.version>
         <kafka.version>2.4.0</kafka.version>
+        <protobuf.version>3.11.4</protobuf.version>
         <slf4j.version>1.7.25</slf4j.version>
     </properties>
 
     <build>
+        <extensions>
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>1.6.2</version>
+            </extension>
+        </extensions>
         <pluginManagement>
             <plugins>
                 <plugin>
@@ -71,6 +79,28 @@
                 </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+          <!-- Uncomment to generate Java classes from protobuf
+            <plugin>
+                <groupId>org.xolstice.maven.plugins</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>0.6.1</version>
+                <configuration>
+                    <protocArtifact>com.google.protobuf:protoc:3.9.0:exe:${os.detected.classifier}</protocArtifact>
+                    <pluginId>grpc-java</pluginId>
+                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.24.0:exe:${os.detected.classifier}</pluginArtifact>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compile</goal>
+                            <goal>compile-custom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+          -->
+        </plugins>
     </build>
 
     <dependencies>
@@ -99,6 +129,12 @@
             <artifactId>gson</artifactId>
             <version>2.8.6</version>
         </dependency>
+        <dependency>
+          <groupId> com.google.protobuf</groupId>
+          <artifactId>protobuf-java</artifactId>
+          <version>${protobuf.version}</version>
+        </dependency>
+
 
         <!-- Test dependencies -->
         <dependency>
