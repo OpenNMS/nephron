@@ -30,11 +30,14 @@ package org.opennms.nephron;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -56,13 +59,13 @@ import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.io.CharStreams;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
-import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 import com.google.gson.Gson;
@@ -84,6 +87,7 @@ public class FlowAnalyzer {
         PipelineOptions options = PipelineOptionsFactory.create();
         Pipeline p = Pipeline.create(options);
         p.getCoderRegistry().registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
+        p.getCoderRegistry().registerCoderForClass(TopKFlows.class, new TopKFlowsGsonCoder());
 
         Map<String, Object> kafkaConsumerConfig = new HashMap<>();
         kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, "myapp");
@@ -103,7 +107,7 @@ public class FlowAnalyzer {
                 .apply(ParDo.of(new DoFn<byte[], FlowDocument>() {
                     @ProcessElement
                     public void processElement(ProcessContext c) {
-                        FlowDocument flow = null;
+                        final FlowDocument flow;
                         try {
                             flow = FlowDocument.parseFrom(c.element());
                         } catch (InvalidProtocolBufferException e) {
@@ -132,43 +136,69 @@ public class FlowAnalyzer {
                                         .pastFirstElementInPane()
                                         .plusDelayOf(Duration.standardMinutes(10))))
                         .discardingFiredPanes() // FIXME: Not sure what this means :)
-                        .withAllowedLateness(Duration.standardHours(4)));
+                        .withAllowedLateness(Duration.standardHours(4))); // FIXME: Make this configurable
 
 
-        windowedStreamOfFlows.apply(ParDo.of(new ExtractApplicationName()))
+        PCollection<TopKFlows> topKAppsFlows = windowedStreamOfFlows.apply(ParDo.of(new ExtractApplicationName()))
                 .apply(ParDo.of(new ToWindowedBytes(pipeOptions.getFixedWindowSize())))
                 .apply(Combine.perKey(new SumBytes()))
                 .apply(Top.of(pipeOptions.getTopN(), new ByteValueComparator()).withoutDefaults())
-                .apply(ParDo.of(new DoFn<List<KV<String, FlowBytes>>, String>() {
+                .apply(ParDo.of(new DoFn<List<KV<String, FlowBytes>>, TopKFlows>() {
                     @ProcessElement
                     public void processElement(ProcessContext c, BoundedWindow boundedWindow) {
-                        c.output(gson.toJson(c.element()));
+                        final TopKFlows topK = new TopKFlows();
+                        topK.setContext("apps");
+                        topK.setWindowMaxMs(boundedWindow.maxTimestamp().getMillis());
+                        topK.setWindowMinMs(topK.getWindowMaxMs() - pipeOptions.getFixedWindowSize().getMillis());
+                        topK.setFlows(toMap(c.element()));
+                        c.output(topK);
                     }
-                }))
-                .apply(KafkaIO.<Void, String>write()
-                        .withBootstrapServers(pipeOptions.getBootstrapServers())
-                        .withTopic("flows_processed")
-                        .withValueSerializer(StringSerializer.class)
-                        .values()
-                );
+                }));
+        pushToKafka(pipeOptions, topKAppsFlows);
 
-        windowedStreamOfFlows.apply(ParDo.of(new ExtractSrcAddr()))
+        PCollection<TopKFlows> topKSrcFlows = windowedStreamOfFlows.apply(ParDo.of(new ExtractSrcAddr()))
                 .apply(ParDo.of(new ToWindowedBytes(pipeOptions.getFixedWindowSize())))
                 .apply(Combine.perKey(new SumBytes()))
                 .apply(Top.of(pipeOptions.getTopN(), new ByteValueComparator()).withoutDefaults())
-                .apply(ParDo.of(new DoFn<List<KV<String, FlowBytes>>, String>() {
+                .apply(ParDo.of(new DoFn<List<KV<String, FlowBytes>>, TopKFlows>() {
+                    @ProcessElement
+                    public void processElement(ProcessContext c, BoundedWindow boundedWindow) {
+                        final TopKFlows topK = new TopKFlows();
+                        topK.setContext("src-addr");
+                        topK.setWindowMaxMs(boundedWindow.maxTimestamp().getMillis());
+                        topK.setWindowMinMs(topK.getWindowMaxMs() - pipeOptions.getFixedWindowSize().getMillis());
+                        topK.setFlows(toMap(c.element()));
+                        c.output(topK);
+                    }
+                }));
+        pushToKafka(pipeOptions, topKSrcFlows);
+
+        return p;
+    }
+
+    private static void pushToKafka(PipeOptions pipeOptions, PCollection<TopKFlows> topKFlowStream) {
+        topKFlowStream
+                .apply(ParDo.of(new DoFn<TopKFlows, String>() {
                     @ProcessElement
                     public void processElement(ProcessContext c) {
                         c.output(gson.toJson(c.element()));
                     }
                 }))
                 .apply(KafkaIO.<Void, String>write()
-                        .withBootstrapServers(pipeOptions.getBootstrapServers())
-                        .withTopic("flows_processed")
-                        .withValueSerializer(StringSerializer.class)
-                        .values()
-                );
-        return p;
+                .withBootstrapServers(pipeOptions.getBootstrapServers())
+                .withTopic("flows_processed")
+                .withValueSerializer(StringSerializer.class)
+                .values()
+        );
+    }
+
+    private static Map<String, FlowBytes> toMap(List<KV<String, FlowBytes>> topKFlows) {
+        return topKFlows
+                .stream()
+                .collect(
+                        LinkedHashMap::new,
+                        (map, item) -> map.put(item.getKey(), item.getValue()),
+                        Map::putAll);
     }
 
     static class SumBytes extends Combine.BinaryCombineFn<FlowBytes> {
@@ -194,48 +224,6 @@ public class FlowAnalyzer {
         }
     }
 
-    private static class FlowBytes implements Serializable, Comparable<FlowBytes> {
-        final long bytesIn;
-        final long bytesOut;
-
-        public FlowBytes(long bytesIn, long bytesOut) {
-            this.bytesIn = bytesIn;
-            this.bytesOut = bytesOut;
-        }
-
-        public FlowBytes(FlowDocument flow, double multiplier) {
-            if (Direction.INGRESS.equals(flow.getDirection())) {
-                bytesIn =  (long)(flow.getNumBytes().getValue() * multiplier);
-                bytesOut = 0;
-            } else {
-                bytesIn = 0;
-                bytesOut = (long)(flow.getNumBytes().getValue() * multiplier);
-            }
-        }
-
-        public static FlowBytes sum(FlowBytes a, FlowBytes b) {
-            return new FlowBytes(a.bytesIn + b.bytesIn, a.bytesOut + b.bytesOut);
-        }
-
-        @Override
-        public int compareTo(FlowAnalyzer.FlowBytes other) {
-            return Long.compare(bytesIn + bytesOut, other.bytesIn + other.bytesOut);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof FlowBytes)) return false;
-            FlowBytes flowBytes = (FlowBytes) o;
-            return bytesIn == flowBytes.bytesIn &&
-                    bytesOut == flowBytes.bytesOut;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(bytesIn, bytesOut);
-        }
-    }
 
     static class ToWindowedBytes extends DoFn<KV<String, FlowDocument>, KV<String, FlowBytes>> {
         private final long windowSizeMs;
@@ -257,7 +245,7 @@ public class FlowAnalyzer {
             }
 
             // Determine the avg. rate of bytes per ms for the duration of the flow
-            double bytesPerMs = flow.getNumBytes().getValue() / (double)flowDurationMs;
+            double bytesPerMs = flow.getNumBytes().getValue() / (double) flowDurationMs;
 
             // Now determine how many milliseconds the flow overlaps with the window bounds
             long endOfWindowMs = window.maxTimestamp().getMillis();
@@ -268,7 +256,7 @@ public class FlowAnalyzer {
                 return;
             }
 
-            double multiplier = flowWindowOverlapMs / (double)flowDurationMs;
+            double multiplier = flowWindowOverlapMs / (double) flowDurationMs;
             c.output(KV.of(keyedFlow.getKey(), new FlowBytes(keyedFlow.getValue(), multiplier)));
         }
     }
@@ -289,6 +277,31 @@ public class FlowAnalyzer {
         @Override
         public FlowDocument decode(InputStream inStream) throws IOException {
             return FlowDocument.parseFrom(inStream);
+        }
+
+        @Override
+        public List<? extends Coder<?>> getCoderArguments() {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public void verifyDeterministic() {
+            // pass
+        }
+    }
+
+    public static class TopKFlowsGsonCoder extends Coder<TopKFlows> {
+        @Override
+        public void encode(TopKFlows value, OutputStream outStream) throws IOException {
+            final String json =  gson.toJson(value);
+            outStream.write(json.getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Override
+        public TopKFlows decode(InputStream inStream) throws IOException {
+            String json = CharStreams.toString(new InputStreamReader(
+                    inStream, StandardCharsets.UTF_8));
+            return gson.fromJson(json, TopKFlows.class);
         }
 
         @Override

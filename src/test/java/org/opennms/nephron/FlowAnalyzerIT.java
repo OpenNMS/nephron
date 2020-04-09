@@ -50,14 +50,17 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.serialization.BytesSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.Rule;
 import org.junit.Test;
 import org.testcontainers.containers.KafkaContainer;
 
+import com.google.gson.Gson;
+
 public class FlowAnalyzerIT {
+
+    private Gson gson = new Gson();
 
     @Rule
     public KafkaContainer kafka = new KafkaContainer();
@@ -76,7 +79,7 @@ public class FlowAnalyzerIT {
         FlowGenerator flowGenerator = new FlowGenerator(producer);
         executor.execute(flowGenerator);
 
-        List<ConsumerRecord<String, String>> allRecords = new LinkedList<>();
+        List<TopKFlows> allRecords = new LinkedList<>();
 
         Map<String, Object> consumerProps = new HashMap<>();
         consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
@@ -92,7 +95,7 @@ public class FlowAnalyzerIT {
                     ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
                     for (final ConsumerRecord<String, String> record : records) {
                         System.out.println("Got record: " + record);
-                        allRecords.add(record);
+                        allRecords.add(gson.fromJson(record.value(), TopKFlows.class));
                     }
                 }
             }
