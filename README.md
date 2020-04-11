@@ -19,6 +19,7 @@ java -jar target/nephron-1.0.0-SNAPSHOT-jar-with-dependencies.jar
 On OpenNMS or Sentinel, enable the Kafka exporter for flows:
 ```
 config:edit org.opennms.features.flows.persistence.kafka
+config:property-set topic opennms-flows
 config:property-set bootstrap.servers 127.0.0.1:9092
 config:update
 
