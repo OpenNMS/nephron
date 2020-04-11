@@ -43,6 +43,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -58,6 +59,9 @@ import org.testcontainers.containers.KafkaContainer;
 
 import com.google.gson.Gson;
 
+/**
+ * Complete end-to-end test - reading & writing to/from Kafka
+ */
 public class FlowAnalyzerIT {
 
     private Gson gson = new Gson();
@@ -101,11 +105,12 @@ public class FlowAnalyzerIT {
             }
         });
 
+        NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
+                "--fixedWindowSize=5s")
+                .as(NephronOptions.class);
+
         // Fire up the pipeline
-        final Pipeline pipeline = FlowAnalyzer.getPipeline(PipeOptions.builder()
-                .withBootstrapServers(kafka.getBootstrapServers())
-                .withFixedWindowSize(org.joda.time.Duration.standardSeconds(5))
-                .build());
+        final Pipeline pipeline = FlowAnalyzer.create(options);
         Thread t = new Thread(new Runnable() {
             @Override
             public void run() {

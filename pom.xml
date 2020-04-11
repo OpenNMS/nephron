@@ -5,7 +5,7 @@
     <artifactId>nephron</artifactId>
     <packaging>jar</packaging>
     <version>1.0.0-SNAPSHOT</version>
-    <name>nephron</name>
+    <name>Nephron</name>
     <url>https://github.com/OpenNMS/nephron</url>
 
     <properties>
@@ -15,6 +15,7 @@
         <java.version>1.8</java.version>
         <junit.version>4.12</junit.version>
         <kafka.version>2.4.0</kafka.version>
+        <log4j.version>2.13.1</log4j.version>
         <protobuf.version>3.11.4</protobuf.version>
         <slf4j.version>1.7.25</slf4j.version>
     </properties>
@@ -80,26 +81,55 @@
             </plugins>
         </pluginManagement>
         <plugins>
-          <!-- Uncomment to generate Java classes from protobuf
             <plugin>
-                <groupId>org.xolstice.maven.plugins</groupId>
-                <artifactId>protobuf-maven-plugin</artifactId>
-                <version>0.6.1</version>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.2.0</version>
+
                 <configuration>
-                    <protocArtifact>com.google.protobuf:protoc:3.9.0:exe:${os.detected.classifier}</protocArtifact>
-                    <pluginId>grpc-java</pluginId>
-                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.24.0:exe:${os.detected.classifier}</pluginArtifact>
+                    <archive>
+                        <manifest>
+                            <mainClass>
+                                org.opennms.nephron.Nephron
+                            </mainClass>
+                        </manifest>
+                    </archive>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
                 </configuration>
+
                 <executions>
                     <execution>
+                        <id>make-assembly</id>
+                        <phase>package</phase>
                         <goals>
-                            <goal>compile</goal>
-                            <goal>compile-custom</goal>
+                            <goal>single</goal>
                         </goals>
                     </execution>
                 </executions>
             </plugin>
-          -->
+
+            <!-- Uncomment to generate Java classes from protobuf
+              <plugin>
+                  <groupId>org.xolstice.maven.plugins</groupId>
+                  <artifactId>protobuf-maven-plugin</artifactId>
+                  <version>0.6.1</version>
+                  <configuration>
+                      <protocArtifact>com.google.protobuf:protoc:3.9.0:exe:${os.detected.classifier}</protocArtifact>
+                      <pluginId>grpc-java</pluginId>
+                      <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.24.0:exe:${os.detected.classifier}</pluginArtifact>
+                  </configuration>
+                  <executions>
+                      <execution>
+                          <goals>
+                              <goal>compile</goal>
+                              <goal>compile-custom</goal>
+                          </goals>
+                      </execution>
+                  </executions>
+              </plugin>
+            -->
         </plugins>
     </build>
 
@@ -134,6 +164,16 @@
           <artifactId>protobuf-java</artifactId>
           <version>${protobuf.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j-impl</artifactId>
+            <version>${log4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>${log4j.version}</version>
+        </dependency>
 
 
         <!-- Test dependencies -->
@@ -141,12 +181,6 @@
             <groupId>org.apache.beam</groupId>
             <artifactId>beam-runners-direct-java</artifactId>
             <version>${beam.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>${slf4j.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -174,5 +208,29 @@
             <version>1.13.0</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>3.3.3</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>direct-runner</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <!-- Makes the DirectRunner available when running a pipeline. -->
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.beam</groupId>
+                    <artifactId>beam-runners-direct-java</artifactId>
+                    <version>${beam.version}</version>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 </project>

@@ -45,8 +45,6 @@ import java.util.Objects;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
-import org.apache.beam.sdk.options.PipelineOptions;
-import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
@@ -74,29 +72,60 @@ import com.google.protobuf.InvalidProtocolBufferException;
 public class FlowAnalyzer {
     private static final Gson gson = new Gson();
 
-    public static void main(String[] args) {
-        String bootstrapServers = args[0];
-        Pipeline pipeline = getPipeline(PipeOptions.builder()
-                .withBootstrapServers(bootstrapServers)
-                .build());
-        pipeline.run().waitUntilFinish();
+    /**
+     * Dispatches a {@link FlowDocument} to all of the windows that overlap with the flow range.
+     * @return transform
+     */
+    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps() {
+         return ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
+            @ProcessElement
+            public void processElement(ProcessContext c) {
+                final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
+
+                final FlowDocument flow = c.element();
+                // We want to dispatch the flow to all the windows it may be a part of
+                // The flow ranges from [delta_switched, last_switched]
+                long timestamp = flow.getDeltaSwitched().getValue() - windowSizeMs;
+                while (timestamp <= flow.getLastSwitched().getValue()) {
+                    c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
+                    timestamp += windowSizeMs;
+                }
+            }
+
+            @Override
+            public Duration getAllowedTimestampSkew() {
+                // TODO: Make configurable
+                return Duration.standardHours(4);
+            }
+        });
     }
 
-    public static Pipeline getPipeline(PipeOptions pipeOptions) {
-        Objects.requireNonNull(pipeOptions);
-        PipelineOptions options = PipelineOptionsFactory.create();
+    public static Window<FlowDocument> toWindow(NephronOptions options) {
+        return Window.<FlowDocument>into(FixedWindows.of(DurationUtils.toDuration(options.getFixedWindowSize())))
+                // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
+                .triggering(AfterWatermark
+                        .pastEndOfWindow()
+                        .withLateFirings(AfterProcessingTime
+                                .pastFirstElementInPane()
+                                .plusDelayOf(Duration.standardMinutes(10))))
+                .discardingFiredPanes() // FIXME: Not sure what this means :)
+                .withAllowedLateness(Duration.standardHours(4)); // FIXME: Make this configurable
+    }
+
+    public static Pipeline create(NephronOptions options) {
+        Objects.requireNonNull(options);
         Pipeline p = Pipeline.create(options);
         p.getCoderRegistry().registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
         p.getCoderRegistry().registerCoderForClass(TopKFlows.class, new TopKFlowsGsonCoder());
 
         Map<String, Object> kafkaConsumerConfig = new HashMap<>();
-        kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, "myapp");
+        kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, options.getGroupId());
         kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true);
         kafkaConsumerConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // For testing only :)
 
         // This example reads a public data set consisting of the complete works of Shakespeare.
         PCollection<FlowDocument> windowedStreamOfFlows = p.apply(KafkaIO.<String, byte[]>read()
-                .withBootstrapServers(pipeOptions.getBootstrapServers())
+                .withBootstrapServers(options.getBootstrapServers())
                 .withTopic("flows")
                 .withKeyDeserializer(StringDeserializer.class)
                 .withValueDeserializer(ByteArrayDeserializer.class)
@@ -107,76 +136,58 @@ public class FlowAnalyzer {
                 .apply(ParDo.of(new DoFn<byte[], FlowDocument>() {
                     @ProcessElement
                     public void processElement(ProcessContext c) {
-                        final FlowDocument flow;
                         try {
-                            flow = FlowDocument.parseFrom(c.element());
+                            c.output(FlowDocument.parseFrom(c.element()));
                         } catch (InvalidProtocolBufferException e) {
                             throw new RuntimeException(e);
                         }
-                        // We want to dispatch the flow to all the windows it may be a part of
-                        // The flow ranges from [delta_switched, last_switched]
-                        final long windowSize = pipeOptions.getFixedWindowSize().getMillis();
-                        long timestamp = flow.getDeltaSwitched().getValue() - windowSize;
-                        while (timestamp <= flow.getLastSwitched().getValue()) {
-                            c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
-                            timestamp += windowSize;
-                        }
-                    }
-
-                    @Override
-                    public Duration getAllowedTimestampSkew() {
-                        return Duration.standardHours(4);
                     }
                 }))
-                .apply(Window.<FlowDocument>into(FixedWindows.of(pipeOptions.getFixedWindowSize()))
-                        // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
-                        .triggering(AfterWatermark
-                                .pastEndOfWindow()
-                                .withLateFirings(AfterProcessingTime
-                                        .pastFirstElementInPane()
-                                        .plusDelayOf(Duration.standardMinutes(10))))
-                        .discardingFiredPanes() // FIXME: Not sure what this means :)
-                        .withAllowedLateness(Duration.standardHours(4))); // FIXME: Make this configurable
-
+                .apply(attachTimestamps())
+                .apply(toWindow(options));
 
         PCollection<TopKFlows> topKAppsFlows = windowedStreamOfFlows.apply(ParDo.of(new ExtractApplicationName()))
-                .apply(ParDo.of(new ToWindowedBytes(pipeOptions.getFixedWindowSize())))
+                .apply(ParDo.of(new ToWindowedBytes()))
                 .apply(Combine.perKey(new SumBytes()))
-                .apply(Top.of(pipeOptions.getTopN(), new ByteValueComparator()).withoutDefaults())
+                .apply(Top.of(options.getTopK(), new ByteValueComparator()).withoutDefaults())
                 .apply(ParDo.of(new DoFn<List<KV<String, FlowBytes>>, TopKFlows>() {
                     @ProcessElement
                     public void processElement(ProcessContext c, BoundedWindow boundedWindow) {
+                        final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
+
                         final TopKFlows topK = new TopKFlows();
                         topK.setContext("apps");
                         topK.setWindowMaxMs(boundedWindow.maxTimestamp().getMillis());
-                        topK.setWindowMinMs(topK.getWindowMaxMs() - pipeOptions.getFixedWindowSize().getMillis());
+                        topK.setWindowMinMs(topK.getWindowMaxMs() - windowSizeMs);
                         topK.setFlows(toMap(c.element()));
                         c.output(topK);
                     }
                 }));
-        pushToKafka(pipeOptions, topKAppsFlows);
+        pushToKafka(options, topKAppsFlows);
 
         PCollection<TopKFlows> topKSrcFlows = windowedStreamOfFlows.apply(ParDo.of(new ExtractSrcAddr()))
-                .apply(ParDo.of(new ToWindowedBytes(pipeOptions.getFixedWindowSize())))
+                .apply(ParDo.of(new ToWindowedBytes()))
                 .apply(Combine.perKey(new SumBytes()))
-                .apply(Top.of(pipeOptions.getTopN(), new ByteValueComparator()).withoutDefaults())
+                .apply(Top.of(options.getTopK(), new ByteValueComparator()).withoutDefaults())
                 .apply(ParDo.of(new DoFn<List<KV<String, FlowBytes>>, TopKFlows>() {
                     @ProcessElement
                     public void processElement(ProcessContext c, BoundedWindow boundedWindow) {
+                        final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
+
                         final TopKFlows topK = new TopKFlows();
                         topK.setContext("src-addr");
                         topK.setWindowMaxMs(boundedWindow.maxTimestamp().getMillis());
-                        topK.setWindowMinMs(topK.getWindowMaxMs() - pipeOptions.getFixedWindowSize().getMillis());
+                        topK.setWindowMinMs(topK.getWindowMaxMs() - windowSizeMs);
                         topK.setFlows(toMap(c.element()));
                         c.output(topK);
                     }
                 }));
-        pushToKafka(pipeOptions, topKSrcFlows);
+        pushToKafka(options, topKSrcFlows);
 
         return p;
     }
 
-    private static void pushToKafka(PipeOptions pipeOptions, PCollection<TopKFlows> topKFlowStream) {
+    private static void pushToKafka(NephronOptions options, PCollection<TopKFlows> topKFlowStream) {
         topKFlowStream
                 .apply(ParDo.of(new DoFn<TopKFlows, String>() {
                     @ProcessElement
@@ -185,7 +196,7 @@ public class FlowAnalyzer {
                     }
                 }))
                 .apply(KafkaIO.<Void, String>write()
-                .withBootstrapServers(pipeOptions.getBootstrapServers())
+                .withBootstrapServers(options.getBootstrapServers())
                 .withTopic("flows_processed")
                 .withValueSerializer(StringSerializer.class)
                 .values()
@@ -200,6 +211,7 @@ public class FlowAnalyzer {
                         (map, item) -> map.put(item.getKey(), item.getValue()),
                         Map::putAll);
     }
+
 
     static class SumBytes extends Combine.BinaryCombineFn<FlowBytes> {
         @Override
@@ -226,14 +238,9 @@ public class FlowAnalyzer {
 
 
     static class ToWindowedBytes extends DoFn<KV<String, FlowDocument>, KV<String, FlowBytes>> {
-        private final long windowSizeMs;
-
-        public ToWindowedBytes(Duration fixedWindowSize) {
-            this.windowSizeMs = fixedWindowSize.getMillis();
-        }
-
         @ProcessElement
         public void processElement(ProcessContext c, BoundedWindow window) {
+            final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
             final KV<String, FlowDocument> keyedFlow = c.element();
             final FlowDocument flow = keyedFlow.getValue();
 
