@@ -25,7 +25,13 @@ mvn clean package -DskipTests -Pflink-runner -P '!direct-runner'
 
 Run on Flink
 ```
-bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/target/nephron-1.0.0-SNAPSHOT-jar-with-dependencies.jar --runner=FlinkRunner --checkpointingInterval=5000
+bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/target/nephron-bundled-1.0.0-SNAPSHOT.jar --runner=FlinkRunner --checkpointingInterval=60000
+```
+
+Stop the job:
+```
+./bin/flink list
+./bin/flink stop 99d87bc4d3a271a72f3f89dfe5a904d7 -p /tmp/state
 ```
 
 ### OpenNMS Configuration
