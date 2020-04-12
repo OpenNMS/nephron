@@ -6,6 +6,9 @@
         </Console>
     </Appenders>
     <Loggers>
+        <Logger name="org.apache.beam.sdk.util.WindowTracing" level="INFO">
+            <AppenderRef ref="Console"/>
+        </Logger>
         <Root level="DEBUG">
             <AppenderRef ref="Console"/>
         </Root>
