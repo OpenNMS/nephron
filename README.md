@@ -4,7 +4,7 @@ Streaming analytics for telemetry & flows.
 
 ## Architecture
 
-Sentinel -> Kafka -> Nephron / Beam / Spark -> Elasticsearch
+Sentinel -> Kafka -> Nephron / Beam / Flink -> Elasticsearch
 
 ## Setup
 
@@ -12,6 +12,18 @@ Build & run:
 ```
 mvn package
 java -jar target/nephron-1.0.0-SNAPSHOT-jar-with-dependencies.jar
+```
+
+## Flink
+
+Build for Flink
+```
+mvn clean package -DskipTests -Pflink-runner -P '!direct-runner'
+```
+
+Run on Flink
+```
+bin/flink run -c org.opennms.nephron.Nephron target/nephron-1.0.0-SNAPSHOT-jar-with-dependencies.jar --runner=FlinkRunner --checkpointingInterval=5000
 ```
 
 ### OpenNMS Configuration
