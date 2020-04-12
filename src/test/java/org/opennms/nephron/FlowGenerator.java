@@ -69,7 +69,7 @@ public class FlowGenerator implements Runnable {
                     .build();
 
             for (FlowDocument flow : flows) {
-                producer.send(new ProducerRecord<>("flows", flow.toByteArray()));
+                producer.send(new ProducerRecord<>(NephronOptions.DEFAULT_FLOW_SOURCE_TOPIC, flow.toByteArray()));
             }
 
             lastFlow = then;

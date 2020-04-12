@@ -126,7 +126,7 @@ public class FlowAnalyzer {
         // This example reads a public data set consisting of the complete works of Shakespeare.
         PCollection<FlowDocument> windowedStreamOfFlows = p.apply(KafkaIO.<String, byte[]>read()
                 .withBootstrapServers(options.getBootstrapServers())
-                .withTopic("flows")
+                .withTopic(options.getFlowSourceTopic())
                 .withKeyDeserializer(StringDeserializer.class)
                 .withValueDeserializer(ByteArrayDeserializer.class)
                 .withConsumerConfigUpdates(kafkaConsumerConfig)

@@ -35,6 +35,8 @@ import org.apache.beam.sdk.options.Validation;
 
 public interface NephronOptions extends PipelineOptions {
 
+    String DEFAULT_FLOW_SOURCE_TOPIC = "opennms-flows";
+
     @Description("Kafka Bootstrap Servers")
     @Default.String("localhost:9092")
     String getBootstrapServers();
@@ -46,6 +48,12 @@ public interface NephronOptions extends PipelineOptions {
     String getGroupId();
 
     void setGroupId(String value);
+
+    @Description("Source topic for flows")
+    @Default.String(DEFAULT_FLOW_SOURCE_TOPIC)
+    String getFlowSourceTopic();
+
+    void setFlowSourceTopic(String value);
 
     @Description("Size of the window i.e. 30s")
     @Default.String("10s")
@@ -59,6 +67,7 @@ public interface NephronOptions extends PipelineOptions {
     int getTopK();
 
     void setTopK(int value);
+
 
 
 }
