@@ -16,6 +16,8 @@ java -jar target/nephron-1.0.0-SNAPSHOT-jar-with-dependencies.jar
 
 ## Flink
 
+> Requires Flink 1.9.x
+
 Build for Flink
 ```
 mvn clean package -DskipTests -Pflink-runner -P '!direct-runner'
@@ -23,7 +25,7 @@ mvn clean package -DskipTests -Pflink-runner -P '!direct-runner'
 
 Run on Flink
 ```
-bin/flink run -c org.opennms.nephron.Nephron target/nephron-1.0.0-SNAPSHOT-jar-with-dependencies.jar --runner=FlinkRunner --checkpointingInterval=5000
+bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/target/nephron-1.0.0-SNAPSHOT-jar-with-dependencies.jar --runner=FlinkRunner --checkpointingInterval=5000
 ```
 
 ### OpenNMS Configuration
