@@ -30,10 +30,8 @@ package org.opennms.nephron;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.Serializable;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -43,7 +41,9 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -57,7 +57,6 @@ import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
-import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.io.CharStreams;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -67,10 +66,14 @@ import org.joda.time.Instant;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonSyntaxException;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 public class FlowAnalyzer {
-    private static final Gson gson = new Gson();
+    private static final Gson gson = new GsonBuilder()
+            .setLenient()
+            .create();
 
     /**
      * Dispatches a {@link FlowDocument} to all of the windows that overlap with the flow range.
@@ -86,6 +89,11 @@ public class FlowAnalyzer {
                 // We want to dispatch the flow to all the windows it may be a part of
                 // The flow ranges from [delta_switched, last_switched]
                 long timestamp = flow.getDeltaSwitched().getValue() - windowSizeMs;
+
+                // If we're exactly on the window boundary, then don't go back
+                if (timestamp % windowSizeMs == 0) {
+                    timestamp += windowSizeMs;
+                }
                 while (timestamp <= flow.getLastSwitched().getValue()) {
                     c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
                     timestamp += windowSizeMs;
@@ -112,18 +120,46 @@ public class FlowAnalyzer {
                 .withAllowedLateness(Duration.standardHours(4)); // FIXME: Make this configurable
     }
 
+    public static PCollection<TopKFlows> doTopKFlows(PCollection<FlowDocument> input, NephronOptions options) {
+        PCollection<FlowDocument> windowedStreamOfFlows = input.apply("attach_timestamp", attachTimestamps())
+                .apply("to_windows", toWindow(options));
+
+        PCollection<TopKFlows> topKAppsFlows = windowedStreamOfFlows.apply("key_by_app", ParDo.of(new ExtractApplicationName()))
+                .apply("compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
+                .apply("sum_bytes_by_key", Combine.perKey(new SumBytes()))
+                .apply("top_k_per_key", Top.of(options.getTopK(), new ByteValueComparator()).withoutDefaults())
+                .apply("top_k_summary_for_window", ParDo.of(new DoFn<List<KV<String, FlowBytes>>, TopKFlows>() {
+                    @ProcessElement
+                    public void processElement(ProcessContext c, BoundedWindow boundedWindow) {
+                        final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
+
+                        final TopKFlows topK = new TopKFlows();
+                        topK.setContext("apps");
+                        topK.setWindowMaxMs(boundedWindow.maxTimestamp().getMillis());
+                        topK.setWindowMinMs(topK.getWindowMaxMs() - windowSizeMs);
+                        topK.setFlows(toMap(c.element()));
+                        c.output(topK);
+                    }
+                }));
+
+        return topKAppsFlows;
+    }
+
+    public static void registerCoders(Pipeline p) {
+        p.getCoderRegistry().registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
+        p.getCoderRegistry().registerCoderForClass(TopKFlows.class, new TopKFlowsGsonCoder());
+    }
+
     public static Pipeline create(NephronOptions options) {
         Objects.requireNonNull(options);
         Pipeline p = Pipeline.create(options);
-        p.getCoderRegistry().registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
-        p.getCoderRegistry().registerCoderForClass(TopKFlows.class, new TopKFlowsGsonCoder());
+        registerCoders(p);
 
         Map<String, Object> kafkaConsumerConfig = new HashMap<>();
         kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, options.getGroupId());
         kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true);
         kafkaConsumerConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // For testing only :)
 
-        // This example reads a public data set consisting of the complete works of Shakespeare.
         PCollection<FlowDocument> windowedStreamOfFlows = p.apply(KafkaIO.<String, byte[]>read()
                 .withBootstrapServers(options.getBootstrapServers())
                 .withTopic(options.getFlowSourceTopic())
@@ -276,14 +312,16 @@ public class FlowAnalyzer {
     }
 
     public static class FlowDocumentProtobufCoder extends Coder<FlowDocument> {
+        private final ByteArrayCoder delegate = ByteArrayCoder.of();
+
         @Override
         public void encode(FlowDocument value, OutputStream outStream) throws IOException {
-            outStream.write(value.toByteArray());
+            delegate.encode(value.toByteArray(), outStream);
         }
 
         @Override
         public FlowDocument decode(InputStream inStream) throws IOException {
-            return FlowDocument.parseFrom(inStream);
+            return FlowDocument.parseFrom(delegate.decode(inStream));
         }
 
         @Override
@@ -298,17 +336,23 @@ public class FlowAnalyzer {
     }
 
     public static class TopKFlowsGsonCoder extends Coder<TopKFlows> {
+
+        private final StringUtf8Coder delegate = StringUtf8Coder.of();
+
         @Override
         public void encode(TopKFlows value, OutputStream outStream) throws IOException {
-            final String json =  gson.toJson(value);
-            outStream.write(json.getBytes(StandardCharsets.UTF_8));
+            final String json = gson.toJson(value);
+            delegate.encode(json, outStream);
         }
 
         @Override
         public TopKFlows decode(InputStream inStream) throws IOException {
-            String json = CharStreams.toString(new InputStreamReader(
-                    inStream, StandardCharsets.UTF_8));
-            return gson.fromJson(json, TopKFlows.class);
+            String json = delegate.decode(inStream);
+            try {
+                return gson.fromJson(json, TopKFlows.class);
+            } catch (JsonSyntaxException e) {
+                throw new RuntimeException("Invalid JSON: " + json, e);
+            }
         }
 
         @Override
