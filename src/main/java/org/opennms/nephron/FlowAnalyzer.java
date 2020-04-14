@@ -39,13 +39,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
+import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
+import org.apache.beam.sdk.io.kafka.TimestampPolicy;
+import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
@@ -55,10 +59,12 @@ import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
+import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -117,8 +123,8 @@ public class FlowAnalyzer {
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.outputWithTimestamp(SimpleDoFnRunner.java:573)
                         //                    at org.opennms.nephron.FlowAnalyzer$1.processElement(FlowAnalyzer.java:96)
-                        rateLimitedLog.warn("Skipping output for flow w/ start: {}, end: {} & current: {}. Full flow: {}",
-                                Instant.ofEpochMilli(flowStart), Instant.ofEpochMilli(flow.getLastSwitched().getValue()), Instant.ofEpochMilli(timestamp),
+                        rateLimitedLog.warn("Skipping output for flow w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
+                                Instant.ofEpochMilli(flowStart), Instant.ofEpochMilli(flow.getLastSwitched().getValue()), Instant.ofEpochMilli(timestamp), c.timestamp(),
                                 flow);
                         timestamp += windowSizeMs;
                         continue;
@@ -139,13 +145,9 @@ public class FlowAnalyzer {
     public static Window<FlowDocument> toWindow(NephronOptions options) {
         return Window.<FlowDocument>into(FixedWindows.of(DurationUtils.toDuration(options.getFixedWindowSize())))
                 // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
-                .triggering(AfterWatermark
-                        .pastEndOfWindow()
-                        .withLateFirings(AfterProcessingTime
-                                .pastFirstElementInPane()
-                                .plusDelayOf(Duration.standardMinutes(10))))
-                .discardingFiredPanes() // FIXME: Not sure what this means :)
-                .withAllowedLateness(Duration.standardHours(4)); // FIXME: Make this configurable
+                .triggering(Repeatedly.forever(AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.standardMinutes(1))))
+                .accumulatingFiredPanes()
+                .withAllowedLateness(Duration.standardMinutes(10));
     }
 
     public static PCollection<TopKFlows> doTopKFlows(PCollection<FlowDocument> input, NephronOptions options) {
@@ -186,27 +188,22 @@ public class FlowAnalyzer {
         Map<String, Object> kafkaConsumerConfig = new HashMap<>();
         kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, options.getGroupId());
         kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true);
-        kafkaConsumerConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // For testing only :)
+        // kafkaConsumerConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // For testing only :)
 
-        PCollection<FlowDocument> windowedStreamOfFlows = p.apply(KafkaIO.<String, byte[]>read()
+        PCollection<FlowDocument> windowedStreamOfFlows = p.apply(KafkaIO.<String, FlowDocument>read()
                 .withBootstrapServers(options.getBootstrapServers())
                 .withTopic(options.getFlowSourceTopic())
                 .withKeyDeserializer(StringDeserializer.class)
-                .withValueDeserializer(ByteArrayDeserializer.class)
+                .withValueDeserializer(FlowDocumentDeserializer.class)
                 .withConsumerConfigUpdates(kafkaConsumerConfig)
+                .withTimestampPolicyFactory((TimestampPolicyFactory<String, FlowDocument>) (tp, previousWatermark) -> {
+                    // TODO: FIXME: Use delta-switched here instead?!
+                    return new CustomTimestampPolicyWithLimitedDelay<>((rec) -> Instant.ofEpochMilli(rec.getKV().getValue().getFirstSwitched().getValue()),
+                            Duration.standardMinutes(5), previousWatermark);
+                })
                 .withoutMetadata()
         )
                 .apply(Values.create())
-                .apply(ParDo.of(new DoFn<byte[], FlowDocument>() {
-                    @ProcessElement
-                    public void processElement(ProcessContext c) {
-                        try {
-                            c.output(FlowDocument.parseFrom(c.element()));
-                        } catch (InvalidProtocolBufferException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-                }))
                 .apply(attachTimestamps())
                 .apply(toWindow(options));
 
