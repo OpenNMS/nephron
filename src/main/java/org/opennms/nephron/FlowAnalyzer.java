@@ -120,6 +120,7 @@ public class FlowAnalyzer {
                         rateLimitedLog.warn("Skipping output for flow w/ start: {}, end: {} & current: {}. Full flow: {}",
                                 Instant.ofEpochMilli(flowStart), Instant.ofEpochMilli(flow.getLastSwitched().getValue()), Instant.ofEpochMilli(timestamp),
                                 flow);
+                        timestamp += windowSizeMs;
                         continue;
                     }
                     c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
