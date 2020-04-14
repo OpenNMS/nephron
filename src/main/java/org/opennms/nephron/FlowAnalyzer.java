@@ -66,6 +66,7 @@ import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
@@ -224,7 +225,13 @@ public class FlowAnalyzer {
         topKSrcFlows.apply(toJson())
                 .apply(ElasticsearchIO.write().withConnectionConfiguration(
                 ElasticsearchIO.ConnectionConfiguration.create(
-                        new String[]{options.getElasticUrl()}, options.getElasticIndex(), "agg")));
+                        new String[]{options.getElasticUrl()}, options.getElasticIndex(), "_doc"))
+                        .withIdFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
+                            @Override
+                            public String apply(JsonNode input) {
+                                return "aggregated-flows";
+                            }
+                        }));
 
         return p;
     }

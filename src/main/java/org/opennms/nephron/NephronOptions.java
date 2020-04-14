@@ -75,7 +75,7 @@ public interface NephronOptions extends PipelineOptions {
     void setElasticUrl(String value);
 
     @Description("Elasticsearch Index")
-    @Default.String("aggflows")
+    @Default.String("aggregated-flows")
     String getElasticIndex();
 
     void setElasticIndex(String value);

@@ -31,7 +31,9 @@ package org.opennms.nephron;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.notNullValue;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
@@ -44,6 +46,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.http.HttpHost;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -53,6 +56,16 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestClientBuilder;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.core.CountRequest;
+import org.elasticsearch.client.core.CountResponse;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.junit.Rule;
 import org.junit.Test;
 import org.testcontainers.containers.KafkaContainer;
@@ -74,7 +87,7 @@ public class FlowAnalyzerIT {
     public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
 
     @Test
-    public void canStreamIt() throws InterruptedException {
+    public void canStreamIt() throws InterruptedException, IOException {
         Executor executor = Executors.newCachedThreadPool();
 
         Map<String, Object> producerProps = new HashMap<>();
@@ -137,5 +150,21 @@ public class FlowAnalyzerIT {
 
         t.interrupt();
         t.join();
+
+        // Wait for documents to be indexed in Elasticsearch
+        RestClientBuilder restClientBuilder = RestClient.builder(new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http"));
+        RestHighLevelClient client = new RestHighLevelClient(restClientBuilder);
+        await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
+                .ignoreExceptions()
+                .until(() -> countAggregatedFlowDocuments(client), greaterThanOrEqualTo(1L));
     }
+
+    private static long countAggregatedFlowDocuments(RestHighLevelClient client) throws IOException {
+        CountRequest countRequest = new CountRequest("aggregated-flows");
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+        searchSourceBuilder.query(QueryBuilders.matchAllQuery());
+        countRequest.source(searchSourceBuilder);
+        return client.count(countRequest, RequestOptions.DEFAULT).getCount();
+    }
+
 }
