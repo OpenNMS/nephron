@@ -90,7 +90,15 @@ public class FlowAnalyzer {
                 final FlowDocument flow = c.element();
                 // We want to dispatch the flow to all the windows it may be a part of
                 // The flow ranges from [delta_switched, last_switched]
-                long timestamp = flow.getDeltaSwitched().getValue() - windowSizeMs;
+
+                long flowStart;
+                if (flow.hasDeltaSwitched()) {
+                    // FIXME: Delta-switch should always be populated, but it is not currently
+                    flowStart = flow.getDeltaSwitched().getValue();
+                } else {
+                    flowStart = flow.getFirstSwitched().getValue();
+                }
+                long timestamp = flowStart - windowSizeMs;
 
                 // If we're exactly on the window boundary, then don't go back
                 if (timestamp % windowSizeMs == 0) {
