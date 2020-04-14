@@ -4,8 +4,7 @@ Streaming analytics for telemetry & flows.
 
 ## Architecture
 
-Sentinel -> Kafka -> Nephron / Beam / Flink -> Kafka -> Sentinel -> Elasticsearch
-                                                        Lightstreamer -> SPA
+Sentinel -> Kafka -> Nephron / Beam / Flink -> Elasticsearch
 
 ## Setup
 
