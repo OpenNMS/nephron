@@ -16,7 +16,7 @@ java -jar target/nephron-1.0.0-SNAPSHOT-jar-with-dependencies.jar
 
 ## Flink
 
-> Requires Flink 1.9.x
+>  We require Flink 1.9.x since no release of Apache Beam is compatible with Flink 1.10.x yet.
 
 Build for Flink
 ```
