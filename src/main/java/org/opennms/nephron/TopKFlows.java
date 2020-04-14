@@ -32,12 +32,25 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class TopKFlows {
+
+    @JsonProperty("@timestamp")
+    private long timestamp;
 
     private String context;
     private long windowMinMs;
     private long windowMaxMs;
     private Map<String, FlowBytes> flows = new LinkedHashMap<>();
+
+    public long getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(long timestamp) {
+        this.timestamp = timestamp;
+    }
 
     public String getContext() {
         return context;
@@ -72,21 +85,12 @@ public class TopKFlows {
     }
 
     @Override
-    public String toString() {
-        return "TopKFlows{" +
-                "context='" + context + '\'' +
-                ", windowMinMs=" + windowMinMs +
-                ", windowMaxMs=" + windowMaxMs +
-                ", flows=" + flows +
-                '}';
-    }
-
-    @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof TopKFlows)) return false;
         TopKFlows topKFlows = (TopKFlows) o;
-        return windowMinMs == topKFlows.windowMinMs &&
+        return timestamp == topKFlows.timestamp &&
+                windowMinMs == topKFlows.windowMinMs &&
                 windowMaxMs == topKFlows.windowMaxMs &&
                 Objects.equals(context, topKFlows.context) &&
                 Objects.equals(flows, topKFlows.flows);
@@ -94,6 +98,17 @@ public class TopKFlows {
 
     @Override
     public int hashCode() {
-        return Objects.hash(context, windowMinMs, windowMaxMs, flows);
+        return Objects.hash(timestamp, context, windowMinMs, windowMaxMs, flows);
+    }
+
+    @Override
+    public String toString() {
+        return "TopKFlows{" +
+                "timestamp=" + timestamp +
+                ", context='" + context + '\'' +
+                ", windowMinMs=" + windowMinMs +
+                ", windowMaxMs=" + windowMaxMs +
+                ", flows=" + flows +
+                '}';
     }
 }

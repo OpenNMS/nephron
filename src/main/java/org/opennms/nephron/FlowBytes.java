@@ -34,11 +34,15 @@ import java.util.Objects;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class FlowBytes implements Serializable, Comparable<FlowBytes> {
     final long bytesIn;
     final long bytesOut;
 
-    public FlowBytes(long bytesIn, long bytesOut) {
+    @JsonCreator
+    public FlowBytes(@JsonProperty("bytesIn") long bytesIn,@JsonProperty("bytesOut") long bytesOut) {
         this.bytesIn = bytesIn;
         this.bytesOut = bytesOut;
     }
@@ -55,6 +59,14 @@ public class FlowBytes implements Serializable, Comparable<FlowBytes> {
 
     public static FlowBytes sum(FlowBytes a, FlowBytes b) {
         return new FlowBytes(a.bytesIn + b.bytesIn, a.bytesOut + b.bytesOut);
+    }
+
+    public long getBytesIn() {
+        return bytesIn;
+    }
+
+    public long getBytesOut() {
+        return bytesOut;
     }
 
     @Override

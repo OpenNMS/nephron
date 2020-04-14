@@ -66,16 +66,12 @@ import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonSyntaxException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 public class FlowAnalyzer {
-    private static final Gson gson = new GsonBuilder()
-            .setLenient()
-            .create();
 
     /**
      * Dispatches a {@link FlowDocument} to all of the windows that overlap with the flow range.
@@ -149,7 +145,7 @@ public class FlowAnalyzer {
 
     public static void registerCoders(Pipeline p) {
         p.getCoderRegistry().registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
-        p.getCoderRegistry().registerCoderForClass(TopKFlows.class, new TopKFlowsGsonCoder());
+        p.getCoderRegistry().registerCoderForClass(TopKFlows.class, new TopKFlowsJacksonCoder());
     }
 
     public static Pipeline create(NephronOptions options) {
@@ -239,8 +235,9 @@ public class FlowAnalyzer {
     private static ParDo.SingleOutput<TopKFlows, String> toJson() {
         return ParDo.of(new DoFn<TopKFlows, String>() {
             @ProcessElement
-            public void processElement(ProcessContext c) {
-                c.output(gson.toJson(c.element()));
+            public void processElement(ProcessContext c) throws JsonProcessingException {
+                final ObjectMapper mapper = new ObjectMapper();
+                c.output(mapper.writeValueAsString(c.element()));
             }
         });
     }
@@ -352,24 +349,21 @@ public class FlowAnalyzer {
         }
     }
 
-    public static class TopKFlowsGsonCoder extends Coder<TopKFlows> {
+    public static class TopKFlowsJacksonCoder extends Coder<TopKFlows> {
 
-        private final StringUtf8Coder delegate = StringUtf8Coder.of();
+        private static final ObjectMapper mapper = new ObjectMapper();
+        private static final StringUtf8Coder delegate = StringUtf8Coder.of();
 
         @Override
         public void encode(TopKFlows value, OutputStream outStream) throws IOException {
-            final String json = gson.toJson(value);
+            final String json = mapper.writeValueAsString(value);
             delegate.encode(json, outStream);
         }
 
         @Override
         public TopKFlows decode(InputStream inStream) throws IOException {
             String json = delegate.decode(inStream);
-            try {
-                return gson.fromJson(json, TopKFlows.class);
-            } catch (JsonSyntaxException e) {
-                throw new RuntimeException("Invalid JSON: " + json, e);
-            }
+            return mapper.readValue(json, TopKFlows.class);
         }
 
         @Override
