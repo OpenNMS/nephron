@@ -28,8 +28,8 @@
 
 package org.opennms.nephron;
 
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 
@@ -81,20 +81,20 @@ public class SyntheticFlowBuilder {
         return this;
     }
 
-    public SyntheticFlowBuilder withFlow(Date date, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
+    public SyntheticFlowBuilder withFlow(Instant date, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
         return withFlow(date, date, date, sourceIp, sourcePort, destIp, destPort, numBytes);
     }
 
-    public SyntheticFlowBuilder withFlow(Date firstSwitched, Date lastSwitched, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
+    public SyntheticFlowBuilder withFlow(Instant firstSwitched, Instant lastSwitched, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
         return withFlow(firstSwitched, firstSwitched, lastSwitched, sourceIp, sourcePort, destIp, destPort, numBytes);
     }
 
-    public SyntheticFlowBuilder withFlow(Date firstSwitched, Date deltaSwitched, Date lastSwitched, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
+    public SyntheticFlowBuilder withFlow(Instant firstSwitched, Instant deltaSwitched, Instant lastSwitched, String sourceIp, int sourcePort, String destIp, int destPort, long numBytes) {
         final FlowDocument.Builder builder = FlowDocument.newBuilder();
-        builder.setTimestamp(lastSwitched.getTime());
-        builder.setFirstSwitched(UInt64Value.of(firstSwitched.getTime()));
-        builder.setDeltaSwitched(UInt64Value.of(deltaSwitched.getTime()));
-        builder.setLastSwitched(UInt64Value.of(lastSwitched.getTime()));
+        builder.setTimestamp(lastSwitched.toEpochMilli());
+        builder.setFirstSwitched(UInt64Value.of(firstSwitched.toEpochMilli()));
+        builder.setDeltaSwitched(UInt64Value.of(deltaSwitched.toEpochMilli()));
+        builder.setLastSwitched(UInt64Value.of(lastSwitched.toEpochMilli()));
         builder.setSrcAddress(sourceIp);
         builder.setSrcPort(UInt32Value.of(sourcePort));
         if (this.srcHostname != null) {

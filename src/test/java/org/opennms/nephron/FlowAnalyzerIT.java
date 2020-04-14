@@ -80,7 +80,7 @@ public class FlowAnalyzerIT {
         KafkaProducer<String,byte[]> producer = new KafkaProducer<>(producerProps);
 
         // Write some flows
-        FlowGenerator flowGenerator = new FlowGenerator(producer);
+        OldFlowGenerator flowGenerator = new OldFlowGenerator(producer);
         executor.execute(flowGenerator);
 
         List<TopKFlows> allRecords = new LinkedList<>();

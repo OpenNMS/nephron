@@ -28,6 +28,7 @@
 
 package org.opennms.nephron;
 
+import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
@@ -40,22 +41,22 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class FlowGenerator implements Runnable {
-    private static final Logger LOG = LoggerFactory.getLogger(FlowGenerator.class);
+public class OldFlowGenerator implements Runnable {
+    private static final Logger LOG = LoggerFactory.getLogger(OldFlowGenerator.class);
     private final KafkaProducer<String,byte[]> producer;
 
-    public FlowGenerator(KafkaProducer<String,byte[]> producer) {
+    public OldFlowGenerator(KafkaProducer<String,byte[]> producer) {
         this.producer = Objects.requireNonNull(producer);
     }
 
     @Override
     public void run() {
         long flowIntervalMs = TimeUnit.SECONDS.toMillis(5);
-        Date lastFlow = new Date(System.currentTimeMillis() - flowIntervalMs);
+        Instant lastFlow = new Date(System.currentTimeMillis() - flowIntervalMs).toInstant();
 
         while (true) {
-            Date now = new Date();
-            Date then = lastFlow;
+            Instant now = new Date().toInstant();
+            Instant then = lastFlow;
 
             final List<FlowDocument> flows = new SyntheticFlowBuilder()
                     .withExporter("SomeFs", "SomeFid", 99)

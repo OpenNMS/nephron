@@ -28,18 +28,21 @@
 
 package org.opennms.nephron;
 
-import java.util.Date;
+import static org.opennms.nephron.FlowGenerator.GIGABYTE;
+
+import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
+import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.PCollection;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.testcontainers.shaded.com.google.common.collect.ImmutableMap;
 
@@ -53,41 +56,39 @@ public class FlowAnalyzerTest {
         FlowAnalyzer.registerCoders(p);
     }
 
-    private static final Date FLOW_START = new Date(0);
-    private static final Date FLOW_END = new Date(1);
-    private static final List<FlowDocument> FLOWS = new SyntheticFlowBuilder()
-            .withExporter("SomeFs", "SomeFid", 99)
-            .withSnmpInterfaceId(98)
-            // 192.168.1.100:43444 <-> 10.1.1.11:80 (110 bytes in total)
-            .withApplication("http")
-            .withDirection(Direction.INGRESS)
-            .withFlow(FLOW_START, FLOW_END, "192.168.1.100", 43444, "10.1.1.11", 80, 10)
-            .withDirection(Direction.EGRESS)
-            .withFlow(FLOW_START, FLOW_END, "10.1.1.11", 80, "192.168.1.100", 43444, 100)
-            // 192.168.1.100:43446 <-> 10.1.1.12:443 (500 bytes in total)
-            .withApplication("https")
-            .withDirection(Direction.INGRESS)
-            .withFlow(FLOW_START, FLOW_END, "192.168.1.100", 43446, "10.1.1.12", 443, 25)
-            .withDirection(Direction.EGRESS)
-            .withFlow(FLOW_START, FLOW_END, "10.1.1.12", 443, "192.168.1.100", 43446, 500)
-            .build();
+    private static final List<FlowDocument> FLOWS = FlowGenerator.builder()
+            .withNumConversations(2)
+            .withNumFlowsPerConversation(5)
+            .withConversationDuration(2, TimeUnit.MINUTES)
+            .withStartTime(Instant.ofEpochMilli(1546318800000L))
+            .withApplications("http", "https")
+            .withTotalIngressBytes(5*GIGABYTE)
+            .withTotalEgressBytes(2*GIGABYTE)
+            .withApplicationTrafficWeights(0.2d, 0.8d)
+            .allFlows();
 
     @Test
     public void canCalculateTopKApplications() {
+        TestStream.Builder<FlowDocument> builder = TestStream.create(new FlowAnalyzer.FlowDocumentProtobufCoder());
+        for (FlowDocument flow : FLOWS) {
+            builder.addElements(flow);
+        }
+        TestStream<FlowDocument> flows = builder.advanceWatermarkToInfinity();
+
         // Given this set of flows
         PCollection<FlowDocument> input = p.apply(Create.of(FLOWS));
         NephronOptions options = PipelineOptionsFactory.as(NephronOptions.class);
-        options.setTopK(1);
+        options.setFixedWindowSize("30s");
         PCollection<TopKFlows> output = FlowAnalyzer.doTopKFlows(input, options);
 
         // We expect the top application to be "http" with in=10 & out=100
         TopKFlows topKFlows = new TopKFlows();
-        topKFlows.setWindowMinMs(-1);
-        topKFlows.setWindowMaxMs(9999);
+        topKFlows.setWindowMinMs(1546318819999L);
+        topKFlows.setWindowMaxMs(1546318829999L);
         topKFlows.setContext("apps");
         topKFlows.setFlows(ImmutableMap.<String, FlowBytes>builder()
-                .put("https", new FlowBytes(25,500))
-                .put("http", new FlowBytes(10,100))
+                .put("https", new FlowBytes(2148020514L,859208202L))
+                .put("http", new FlowBytes(537005124L,214802046L))
             .build());
         PAssert.that(output).containsInAnyOrder(topKFlows);
         p.run();
