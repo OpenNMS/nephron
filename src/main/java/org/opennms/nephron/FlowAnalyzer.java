@@ -97,16 +97,16 @@ public class FlowAnalyzer {
                     timestamp += windowSizeMs;
                 }
                 while (timestamp <= flow.getLastSwitched().getValue()) {
-                    try {
-                        c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
-                    } catch (IllegalArgumentException e) {
+                    if (timestamp <= c.timestamp().minus(Duration.standardMinutes(30)).getMillis()) {
                         // Caused by: java.lang.IllegalArgumentException: Cannot output with timestamp 1970-01-01T00:00:00.000Z. Output timestamps must be no earlier than the timestamp of the current input (2020-
                         //                            04-14T15:33:11.302Z) minus the allowed skew (30 minutes). See the DoFn#getAllowedTimestampSkew() Javadoc for details on changing the allowed skew.
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.outputWithTimestamp(SimpleDoFnRunner.java:573)
                         //                    at org.opennms.nephron.FlowAnalyzer$1.processElement(FlowAnalyzer.java:96)
-                        LOG.warn("Oops for flow: {}", flow, e);
+                        LOG.warn("MIAU: Skipping output for flow: {}", flow);
+                        continue;
                     }
+                    c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
                     timestamp += windowSizeMs;
                 }
             }
