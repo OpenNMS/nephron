@@ -212,6 +212,11 @@
             <artifactId>elasticsearch-rest-high-level-client</artifactId>
             <version>${elasticsearch.client.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.swrve</groupId>
+            <artifactId>rate-limited-logger</artifactId>
+            <version>2.0.1</version>
+        </dependency>
 
         <!-- Test dependencies -->
         <dependency>

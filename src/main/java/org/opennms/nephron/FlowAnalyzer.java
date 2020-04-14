@@ -72,10 +72,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.InvalidProtocolBufferException;
+import com.swrve.ratelimitedlogger.RateLimitedLog;
 
 public class FlowAnalyzer {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlowAnalyzer.class);
+
+    private static final RateLimitedLog rateLimitedLog = RateLimitedLog
+            .withRateLimit(LOG)
+            .maxRate(5).every(java.time.Duration.ofSeconds(10))
+            .build();
 
     /**
      * Dispatches a {@link FlowDocument} to all of the windows that overlap with the flow range.
@@ -111,7 +117,9 @@ public class FlowAnalyzer {
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.outputWithTimestamp(SimpleDoFnRunner.java:573)
                         //                    at org.opennms.nephron.FlowAnalyzer$1.processElement(FlowAnalyzer.java:96)
-                        //LOG.warn("MIAU: Skipping output for flow: {}", flow);
+                        rateLimitedLog.warn("Skipping output for flow w/ start: {}, end: {} & current: {}. Full flow: {}",
+                                Instant.ofEpochMilli(flowStart), Instant.ofEpochMilli(flow.getLastSwitched().getValue()), Instant.ofEpochMilli(timestamp),
+                                flow);
                         continue;
                     }
                     c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
