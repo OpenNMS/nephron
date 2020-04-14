@@ -44,6 +44,7 @@ import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -220,17 +221,26 @@ public class FlowAnalyzer {
                 }));
         pushToKafka(options, topKSrcFlows);
 
+        topKSrcFlows.apply(toJson())
+                .apply(ElasticsearchIO.write().withConnectionConfiguration(
+                ElasticsearchIO.ConnectionConfiguration.create(
+                        new String[]{options.getElasticUrl()}, options.getElasticIndex(), "agg")));
+
         return p;
+    }
+
+    private static ParDo.SingleOutput<TopKFlows, String> toJson() {
+        return ParDo.of(new DoFn<TopKFlows, String>() {
+            @ProcessElement
+            public void processElement(ProcessContext c) {
+                c.output(gson.toJson(c.element()));
+            }
+        });
     }
 
     private static void pushToKafka(NephronOptions options, PCollection<TopKFlows> topKFlowStream) {
         topKFlowStream
-                .apply(ParDo.of(new DoFn<TopKFlows, String>() {
-                    @ProcessElement
-                    public void processElement(ProcessContext c) {
-                        c.output(gson.toJson(c.element()));
-                    }
-                }))
+                .apply(toJson())
                 .apply(KafkaIO.<Void, String>write()
                 .withBootstrapServers(options.getBootstrapServers())
                 .withTopic("flows_processed")

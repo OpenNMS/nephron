@@ -112,6 +112,7 @@ public class FlowAnalyzerIT {
         NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
                 "--fixedWindowSize=5s")
                 .as(NephronOptions.class);
+        options.setElasticUrl("http://" + elastic.getHttpHostAddress());
 
         // Fire up the pipeline
         final Pipeline pipeline = FlowAnalyzer.create(options);

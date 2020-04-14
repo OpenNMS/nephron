@@ -68,6 +68,16 @@ public interface NephronOptions extends PipelineOptions {
 
     void setTopK(int value);
 
+    @Description("Elasticsearch URL")
+    @Default.String("http://localhost:9200")
+    String getElasticUrl();
 
+    void setElasticUrl(String value);
+
+    @Description("Elasticsearch Index")
+    @Default.String("aggflows")
+    String getElasticIndex();
+
+    void setElasticIndex(String value);
 
 }
