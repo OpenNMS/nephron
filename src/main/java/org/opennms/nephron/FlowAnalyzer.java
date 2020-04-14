@@ -111,7 +111,7 @@ public class FlowAnalyzer {
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.outputWithTimestamp(SimpleDoFnRunner.java:573)
                         //                    at org.opennms.nephron.FlowAnalyzer$1.processElement(FlowAnalyzer.java:96)
-                        LOG.warn("MIAU: Skipping output for flow: {}", flow);
+                        //LOG.warn("MIAU: Skipping output for flow: {}", flow);
                         continue;
                     }
                     c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
