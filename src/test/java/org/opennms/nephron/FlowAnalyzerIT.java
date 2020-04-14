@@ -56,6 +56,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.Rule;
 import org.junit.Test;
 import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
 import com.google.gson.Gson;
 
@@ -68,6 +69,9 @@ public class FlowAnalyzerIT {
 
     @Rule
     public KafkaContainer kafka = new KafkaContainer();
+
+    @Rule
+    public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
 
     @Test
     public void canStreamIt() throws InterruptedException {

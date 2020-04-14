@@ -102,8 +102,8 @@ public class FlowAnalyzer {
 
             @Override
             public Duration getAllowedTimestampSkew() {
-                // TODO: Make configurable
-                return Duration.standardHours(4);
+                // Max flow duration
+                return Duration.standardMinutes(30);
             }
         });
     }

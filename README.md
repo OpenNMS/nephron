@@ -87,3 +87,9 @@ feature:install opennms-kafka-producer
 * [events] Top K devices sending events
 * [alarms] Top K affected components by alarms
 * [bmp] Top K updates by prefix
+
+# References
+
+* Streaming 101 - https://www.oreilly.com/radar/the-world-beyond-batch-streaming-101/
+* Streaming 102 - https://www.oreilly.com/radar/the-world-beyond-batch-streaming-102/
+

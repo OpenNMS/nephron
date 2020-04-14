@@ -37,7 +37,6 @@ import java.util.concurrent.TimeUnit;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
-import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.PCollection;
 import org.junit.Before;
@@ -69,12 +68,6 @@ public class FlowAnalyzerTest {
 
     @Test
     public void canCalculateTopKApplications() {
-        TestStream.Builder<FlowDocument> builder = TestStream.create(new FlowAnalyzer.FlowDocumentProtobufCoder());
-        for (FlowDocument flow : FLOWS) {
-            builder.addElements(flow);
-        }
-        TestStream<FlowDocument> flows = builder.advanceWatermarkToInfinity();
-
         // Given this set of flows
         PCollection<FlowDocument> input = p.apply(Create.of(FLOWS));
         NephronOptions options = PipelineOptionsFactory.as(NephronOptions.class);

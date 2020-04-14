@@ -20,6 +20,7 @@
         <log4j.version>2.13.1</log4j.version>
         <protobuf.version>3.11.4</protobuf.version>
         <slf4j.version>1.7.28</slf4j.version>
+        <testcontainers.version>1.13.0</testcontainers.version>
     </properties>
 
     <build>
@@ -211,7 +212,6 @@
             <version>4.0.2</version>
             <scope>test</scope>
         </dependency>
-
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
@@ -227,7 +227,13 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>kafka</artifactId>
-            <version>1.13.0</version>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>elasticsearch</artifactId>
+            <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
