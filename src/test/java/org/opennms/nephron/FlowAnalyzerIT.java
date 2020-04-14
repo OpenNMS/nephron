@@ -31,7 +31,6 @@ package org.opennms.nephron;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.notNullValue;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -56,14 +55,11 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.elasticsearch.action.search.SearchRequest;
-import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.client.core.CountRequest;
-import org.elasticsearch.client.core.CountResponse;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.junit.Rule;
@@ -71,14 +67,14 @@ import org.junit.Test;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
-import com.google.gson.Gson;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Complete end-to-end test - reading & writing to/from Kafka
  */
 public class FlowAnalyzerIT {
 
-    private Gson gson = new Gson();
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @Rule
     public KafkaContainer kafka = new KafkaContainer();
@@ -116,7 +112,11 @@ public class FlowAnalyzerIT {
                     ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
                     for (final ConsumerRecord<String, String> record : records) {
                         System.out.println("Got record: " + record);
-                        allRecords.add(gson.fromJson(record.value(), TopKFlows.class));
+                        try {
+                            allRecords.add(objectMapper.readValue(record.value(), TopKFlows.class));
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
                     }
                 }
             }
@@ -160,7 +160,7 @@ public class FlowAnalyzerIT {
     }
 
     private static long countAggregatedFlowDocuments(RestHighLevelClient client) throws IOException {
-        CountRequest countRequest = new CountRequest("aggregated-flows");
+        CountRequest countRequest = new CountRequest("aggregated-flows-*");
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
         searchSourceBuilder.query(QueryBuilders.matchAllQuery());
         countRequest.source(searchSourceBuilder);

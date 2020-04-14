@@ -34,6 +34,13 @@ Stop the job:
 ./bin/flink stop 99d87bc4d3a271a72f3f89dfe5a904d7 -p /tmp/state
 ```
 
+## Elasticsearch
+
+Install the template using:
+```
+curl -XPUT -H 'Content-Type: application/json' http://localhost:9200/_template/aggregated-flows -d@aggregated-flows-template.json
+```
+
 ### OpenNMS Configuration
 
 On OpenNMS or Sentinel, enable the Kafka exporter for flows:

@@ -222,10 +222,10 @@ public class FlowAnalyzer {
                 .apply(ElasticsearchIO.write().withConnectionConfiguration(
                 ElasticsearchIO.ConnectionConfiguration.create(
                         new String[]{options.getElasticUrl()}, options.getElasticIndex(), "_doc"))
-                        .withIdFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
+                        .withIndexFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
                             @Override
                             public String apply(JsonNode input) {
-                                return "aggregated-flows";
+                                return "aggregated-flows-2020";
                             }
                         }));
 
