@@ -28,14 +28,27 @@
 
 package org.opennms.nephron;
 
+import static org.awaitility.Awaitility.await;
+import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.testing.TestPipeline;
+import org.apache.beam.sdk.testing.TestStream;
+import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.http.HttpHost;
+import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.Request;
@@ -47,25 +60,46 @@ import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.TopKFlow;
+import org.opennms.nephron.query.NGFlowRepository;
+import org.opennms.netmgt.flows.api.TrafficSummary;
+import org.opennms.netmgt.flows.filter.api.Filter;
+import org.opennms.netmgt.flows.filter.api.SnmpInterfaceIdFilter;
+import org.opennms.netmgt.flows.filter.api.TimeRangeFilter;
+import org.opennms.netmgt.flows.persistence.model.Direction;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
+import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.Lists;
 import com.google.common.io.Resources;
 
 public class ElasticModelIT {
 
-//    @Rule
-//    public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
+    @Rule
+    public TestPipeline p = TestPipeline.create();
+
+    @Rule
+    public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
+
+    private HttpHost elasticHost;
 
     private RestHighLevelClient client;
+    private NGFlowRepository flowRepository;
 
     @Before
     public void setUp() throws IOException {
-     //   RestClientBuilder restClientBuilder = RestClient.builder(new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http"));
-        RestClientBuilder restClientBuilder = RestClient.builder(new HttpHost("maas-m1-demo.opennms.com", 9200, "http"));
+        //elasticHost = new HttpHost("maas-m1-demo.opennms.com", 9200, "http");
+        elasticHost = new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http");
+        RestClientBuilder restClientBuilder = RestClient.builder(elasticHost);
         client = new RestHighLevelClient(restClientBuilder);
+
+        deleteExistingIndices();
         insertIndexMapping();
+
+        flowRepository = new NGFlowRepository(elasticHost);
     }
 
     @After
@@ -73,6 +107,7 @@ public class ElasticModelIT {
         if (client != null) {
             client.close();
         }
+        flowRepository.destroy();
     }
 
     private void insertIndexMapping() throws IOException {
@@ -80,6 +115,12 @@ public class ElasticModelIT {
         request.setJsonEntity(Resources.toString(Resources.getResource("aggregated-flows-template.json"), StandardCharsets.UTF_8));
         Response response = client.getLowLevelClient().performRequest(request);
         assertThat(response.getWarnings(), hasSize(0));
+    }
+
+    private void deleteExistingIndices() throws IOException {
+        DeleteIndexRequest deleteIndexRequest = new DeleteIndexRequest();
+        deleteIndexRequest.indices("aggregated-flows-*");
+        client.indices().delete(deleteIndexRequest, RequestOptions.DEFAULT);
     }
 
     @Test
@@ -94,25 +135,117 @@ public class ElasticModelIT {
     }
 
     @Test
-    public void canIndexAndRenderSeries() throws IOException {
+    public void canIndexAndQuery() throws ExecutionException, InterruptedException {
         // Take some flows
-
-        // Index the raw flows into ES
+        final List<FlowDocument> flows = defaultFlows();
 
         // Pass those same flows through the pipeline and persist the aggregations
+        NephronOptions options = PipelineOptionsFactory.as(NephronOptions.class);
+        options.setFixedWindowSize("30s");
+        doPipeline(flows, options);
 
-        // Issue queries against both data sets
+        // Verify
+        await().atMost(1, TimeUnit.MINUTES).until(() -> flowRepository.getFlowCount(Collections.singletonList(
+                new TimeRangeFilter(0, System.currentTimeMillis()))).get(), greaterThanOrEqualTo(1L));
 
-        // Expect results to be close by some margin
+        // Retrieve the Top N applications over the entire time range
+        List<TrafficSummary<String>> appTrafficSummary = flowRepository.getTopNApplicationSummaries(10, false, getFilters()).get();
 
-        // MUST be able to render series with a single query
+        // Expect all of the applications, with the sum of all the bytes from all the flows
+        assertThat(appTrafficSummary, hasSize(3));
+        TrafficSummary<String> https = appTrafficSummary.get(0);
+        assertThat(https.getEntity(), equalTo("https"));
+        assertThat(https.getBytesIn(), equalTo(210L));
+        assertThat(https.getBytesOut(), equalTo(2100L));
 
-        // Top N applications by ifIndex, by time
-        //   Filter by time, range_start, range_end
-        //   Filter by exporter & ifindex
-        //   filter by group_by = {export:X, ifIndex:Y, iafd:Y}
-        //   Group by application - there's only 1 result per application per range
-        //   Generate time series (time, app, in, out)
+        // Unclassified applications should show up too
+        TrafficSummary<String> unknown = appTrafficSummary.get(1);
+        assertThat(unknown.getEntity(), equalTo("Unknown"));
+        assertThat(unknown.getBytesIn(), equalTo(200L));
+        assertThat(unknown.getBytesOut(), equalTo(100L));
+
+        TrafficSummary<String> http = appTrafficSummary.get(2);
+        assertThat(http.getEntity(), equalTo("http"));
+        assertThat(http.getBytesIn(), equalTo(10L));
+        assertThat(http.getBytesOut(), equalTo(100L));
+
+        appTrafficSummary = flowRepository.getTopNApplicationSummaries(1, false, getFilters()).get();
+
+        // Expect all of the applications, with the sum of all the bytes from all the flows
+        assertThat(appTrafficSummary, hasSize(1));
+        https = appTrafficSummary.get(0);
+        assertThat(https.getEntity(), equalTo("https"));
+        assertThat(https.getBytesIn(), equalTo(210L));
+        assertThat(https.getBytesOut(), equalTo(2100L));
+
+        // Now set N to zero
+        appTrafficSummary = flowRepository.getTopNApplicationSummaries(0, false, getFilters()).get();
+        assertThat(appTrafficSummary, hasSize(0));
+    }
+
+    private void doPipeline(List<FlowDocument> flows, NephronOptions options) {
+        FlowAnalyzer.registerCoders(p);
+
+        // Build a stream from the given set of flows
+        long timestampOffsetMillis = TimeUnit.MINUTES.toMillis(1);
+        TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowAnalyzer.FlowDocumentProtobufCoder());
+        for (FlowDocument flow : flows) {
+            flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(flow,
+                    org.joda.time.Instant.ofEpochMilli(flow.getLastSwitched().getValue() + timestampOffsetMillis)));
+        }
+        TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
+
+        // Build the pipeline
+        options.setElasticUrl(elasticHost.toURI());
+        p.apply(flowStream)
+                .apply(new FlowAnalyzer.CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()))
+                .apply(new FlowAnalyzer.WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex()));
+
+        // Run the pipeline until completion
+        p.run().waitUntilFinish();
+    }
+
+    private List<Filter> getFilters(Filter... filters) {
+        final List<Filter> filterList = Lists.newArrayList(filters);
+        filterList.add(new TimeRangeFilter(0, System.currentTimeMillis()));
+        // Match the SNMP interface id in the flows
+        filterList.add(new SnmpInterfaceIdFilter(98));
+        return filterList;
+    }
+
+    private static List<FlowDocument> defaultFlows() {
+        return new SyntheticFlowBuilder()
+                .withExporter("SomeFs", "SomeFid", 99)
+                .withSnmpInterfaceId(98)
+                // 192.168.1.100:43444 <-> 10.1.1.11:80 (110 bytes in [3,15])
+                .withApplication("http")
+                .withDirection(Direction.INGRESS)
+                .withFlow(Instant.ofEpochMilli(3), Instant.ofEpochMilli(15), "192.168.1.100", 43444, "10.1.1.11", 80, 10)
+                .withDirection(Direction.EGRESS)
+                .withFlow(Instant.ofEpochMilli(3), Instant.ofEpochMilli(15), "10.1.1.11", 80, "192.168.1.100", 43444, 100)
+                // 192.168.1.100:43445 <-> 10.1.1.12:443 (1100 bytes in [13,26])
+                .withApplication("https")
+                .withDirection(Direction.INGRESS)
+                .withHostnames(null, "la.le.lu")
+                .withFlow(Instant.ofEpochMilli(13), Instant.ofEpochMilli(26), "192.168.1.100", 43445, "10.1.1.12", 443, 100)
+                .withDirection(Direction.EGRESS)
+                .withHostnames("la.le.lu", null)
+                .withFlow(Instant.ofEpochMilli(13), Instant.ofEpochMilli(26), "10.1.1.12", 443, "192.168.1.100", 43445, 1000)
+                // 192.168.1.101:43442 <-> 10.1.1.12:443 (1210 bytes in [14, 45])
+                .withApplication("https")
+                .withDirection(Direction.INGRESS)
+                .withHostnames("ingress.only", "la.le.lu")
+                .withFlow(Instant.ofEpochMilli(14), Instant.ofEpochMilli(45), "192.168.1.101", 43442, "10.1.1.12", 443, 110)
+                .withDirection(Direction.EGRESS)
+                .withHostnames("la.le.lu", null)
+                .withFlow(Instant.ofEpochMilli(14), Instant.ofEpochMilli(45), "10.1.1.12", 443, "192.168.1.101", 43442, 1100)
+                // 192.168.1.102:50000 <-> 10.1.1.13:50001 (200 bytes in [50, 52])
+                .withApplication(null) // Unknown
+                .withDirection(Direction.INGRESS)
+                .withFlow(Instant.ofEpochMilli(50), Instant.ofEpochMilli(52), "192.168.1.102", 50000, "10.1.1.13", 50001, 200)
+                .withDirection(Direction.EGRESS)
+                .withFlow(Instant.ofEpochMilli(50), Instant.ofEpochMilli(52), "10.1.1.13", 50001, "192.168.1.102", 50000, 100)
+                .build();
     }
 
 }

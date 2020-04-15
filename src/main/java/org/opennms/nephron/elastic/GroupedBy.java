@@ -35,13 +35,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public class GroupedBy {
 
     @JsonProperty("application")
-    private String application;
+    private boolean application;
 
-    public String getApplication() {
+    public boolean isApplication() {
         return application;
     }
 
-    public void setApplication(String application) {
+    public void setApplication(boolean application) {
         this.application = application;
     }
 

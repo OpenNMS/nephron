@@ -28,11 +28,15 @@
 
 package org.opennms.nephron.elastic;
 
-import java.util.Objects;
-
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class TopKFlow {
+
+    public static final String UNKNOWN_APPLICATION_NAME_KEY = "__unknown";
+    public static final String UNKNOWN_APPLICATION_NAME_DISPLAY = "Unknown";
+
+    public static final String OTHER_APPLICATION_NAME_KEY = "__other";
+    public static final String OTHER_APPLICATION_NAME_DISPLAY = "Other";
 
     @JsonProperty("@timestamp")
     private long timestamp;
@@ -54,6 +58,9 @@ public class TopKFlow {
 
     @JsonProperty("bytes_egress")
     private Long bytes_egress;
+
+    @JsonProperty("bytes_total")
+    private Long bytes_total;
 
     @JsonProperty("exporter")
     private ExporterNode exporter;
@@ -86,11 +93,11 @@ public class TopKFlow {
         this.rangeEndMs = rangeEndMs;
     }
 
-    public GroupedBy getGrouped_by() {
+    public GroupedBy getGroupedBy() {
         return grouped_by;
     }
 
-    public void setGrouped_by(GroupedBy grouped_by) {
+    public void setGroupedBy(GroupedBy grouped_by) {
         this.grouped_by = grouped_by;
     }
 
@@ -102,20 +109,28 @@ public class TopKFlow {
         this.ranking = ranking;
     }
 
-    public Long getBytes_ingress() {
+    public Long getBytesIngress() {
         return bytes_ingress;
     }
 
-    public void setBytes_ingress(Long bytes_ingress) {
+    public void setBytesIngress(Long bytes_ingress) {
         this.bytes_ingress = bytes_ingress;
     }
 
-    public Long getBytes_egress() {
+    public Long getBytesEgress() {
         return bytes_egress;
     }
 
-    public void setBytes_egress(Long bytes_egress) {
+    public void setBytesEgress(Long bytes_egress) {
         this.bytes_egress = bytes_egress;
+    }
+
+    public Long getBytesTotal() {
+        return bytes_total;
+    }
+
+    public void setBytesTotal(Long bytes_total) {
+        this.bytes_total = bytes_total;
     }
 
     public ExporterNode getExporter() {
@@ -134,39 +149,4 @@ public class TopKFlow {
         this.application = application;
     }
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        TopKFlow topKFlow = (TopKFlow) o;
-        return timestamp == topKFlow.timestamp &&
-                rangeStartMs == topKFlow.rangeStartMs &&
-                rangeEndMs == topKFlow.rangeEndMs &&
-                ranking == topKFlow.ranking &&
-                Objects.equals(grouped_by, topKFlow.grouped_by) &&
-                Objects.equals(bytes_ingress, topKFlow.bytes_ingress) &&
-                Objects.equals(bytes_egress, topKFlow.bytes_egress) &&
-                Objects.equals(exporter, topKFlow.exporter) &&
-                Objects.equals(application, topKFlow.application);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(timestamp, rangeStartMs, rangeEndMs, ranking, grouped_by, bytes_ingress, bytes_egress, exporter, application);
-    }
-
-    @Override
-    public String toString() {
-        return "TopKFlow{" +
-                "timestamp=" + timestamp +
-                ", rangeStartMs=" + rangeStartMs +
-                ", rangeEndMs=" + rangeEndMs +
-                ", ranking=" + ranking +
-                ", grouped_by=" + grouped_by +
-                ", bytes_ingress=" + bytes_ingress +
-                ", bytes_egress=" + bytes_egress +
-                ", exporter=" + exporter +
-                ", application='" + application + '\'' +
-                '}';
-    }
 }

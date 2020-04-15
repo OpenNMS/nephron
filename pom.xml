@@ -18,6 +18,7 @@
         <junit.version>4.13</junit.version>
         <kafka.version>2.4.1</kafka.version>
         <log4j.version>2.13.1</log4j.version>
+        <opennms.version>26.0.0</opennms.version>
         <protobuf.version>3.11.4</protobuf.version>
         <slf4j.version>1.7.28</slf4j.version>
         <testcontainers.version>1.13.0</testcontainers.version>
@@ -217,6 +218,17 @@
             <artifactId>rate-limited-logger</artifactId>
             <version>2.0.1</version>
         </dependency>
+        <dependency>
+            <groupId>org.opennms.features.flows</groupId>
+            <artifactId>org.opennms.features.flows.api</artifactId>
+            <version>${opennms.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.opennms.core.ipc.rpc</groupId>
+                    <artifactId>org.opennms.core.ipc.rpc.utils</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
 
         <!-- Test dependencies -->
         <dependency>
@@ -301,4 +313,18 @@
             </dependencies>
         </profile>
     </profiles>
+
+    <repositories>
+        <repository>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <id>opennms-repo</id>
+            <name>OpenNMS Repository</name>
+            <url>http://maven.opennms.org/content/groups/opennms.org-release/</url>
+        </repository>
+    </repositories>
 </project>

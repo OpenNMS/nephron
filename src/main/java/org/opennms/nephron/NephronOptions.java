@@ -35,6 +35,8 @@ import org.apache.beam.sdk.options.Validation;
 
 public interface NephronOptions extends PipelineOptions {
 
+    int MAX_K = 100;
+
     String DEFAULT_FLOW_SOURCE_TOPIC = "opennms-flows";
 
     @Description("Kafka Bootstrap Servers")

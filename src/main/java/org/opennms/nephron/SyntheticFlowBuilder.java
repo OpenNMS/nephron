@@ -115,7 +115,9 @@ public class SyntheticFlowBuilder {
         } else if (direction == Direction.EGRESS) {
             builder.setOutputSnmpIfindex(UInt32Value.of(snmpInterfaceId));
         }
-        builder.setApplication(application);
+        if (application != null) {
+            builder.setApplication(application);
+        }
         builder.setDirection(direction);
         flows.add(builder.build());
         return this;

@@ -80,8 +80,8 @@ public class FlowAnalyzerTest {
         topKFlows.setWindowMaxMs(1546318829999L);
         topKFlows.setContext("apps");
         topKFlows.setFlows(ImmutableMap.<String, FlowBytes>builder()
-                .put("https", new FlowBytes(2148020514L,859208202L))
-                .put("http", new FlowBytes(537005124L,214802046L))
+                .put("https", new FlowBytes(12884901885L,5153960754L))
+                .put("http", new FlowBytes(3221225469L,1288490184L))
             .build());
         PAssert.that(output).containsInAnyOrder(topKFlows);
         p.run();
