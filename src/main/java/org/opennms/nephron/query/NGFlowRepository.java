@@ -75,7 +75,7 @@ import com.google.common.collect.Table;
 public class NGFlowRepository implements FlowRepository {
     private static final Logger LOG = LoggerFactory.getLogger(NGFlowRepository.class);
 
-    public static final String NETFLOW_AGG_INDEX_PREFIX = "netflow_agg-";
+    public static final String NETFLOW_AGG_INDEX_PREFIX = "netflow_agg";
 
     private final RestHighLevelClient client;
 
@@ -297,7 +297,7 @@ public class NGFlowRepository implements FlowRepository {
 
     private String[] getIndices(List<Filter> filters) {
         // FIXME: Do smart index limiting
-        return new String[]{NETFLOW_AGG_INDEX_PREFIX + "*"};
+        return new String[]{NETFLOW_AGG_INDEX_PREFIX + "-*"};
     }
 
     private static <T> ActionListener<T> toFuture(CompletableFuture<T> future) {

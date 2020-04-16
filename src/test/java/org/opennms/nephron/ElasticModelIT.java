@@ -64,6 +64,7 @@ import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.FlowSummary;
+import org.opennms.nephron.elastic.IndexStrategy;
 import org.opennms.nephron.query.NGFlowRepository;
 import org.opennms.netmgt.flows.api.Conversation;
 import org.opennms.netmgt.flows.api.Host;
@@ -122,7 +123,7 @@ public class ElasticModelIT {
 
     private void deleteExistingIndices() throws IOException {
         DeleteIndexRequest deleteIndexRequest = new DeleteIndexRequest();
-        deleteIndexRequest.indices(NGFlowRepository.NETFLOW_AGG_INDEX_PREFIX + "*");
+        deleteIndexRequest.indices(NGFlowRepository.NETFLOW_AGG_INDEX_PREFIX + "-*");
         client.indices().delete(deleteIndexRequest, RequestOptions.DEFAULT);
     }
 
@@ -333,7 +334,7 @@ public class ElasticModelIT {
         options.setElasticUrl(elasticHost.toURI());
         p.apply(flowStream)
                 .apply(new FlowAnalyzer.CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()))
-                .apply(new FlowAnalyzer.WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex()));
+                .apply(new FlowAnalyzer.WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex(), IndexStrategy.DAILY));
 
         // Run the pipeline until completion
         p.run().waitUntilFinish();

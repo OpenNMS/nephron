@@ -32,6 +32,7 @@ import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.Validation;
+import org.opennms.nephron.query.NGFlowRepository;
 
 public interface NephronOptions extends PipelineOptions {
 
@@ -80,7 +81,7 @@ public interface NephronOptions extends PipelineOptions {
     void setElasticUrl(String value);
 
     @Description("Elasticsearch Index")
-    @Default.String("aggregated-flows")
+    @Default.String(NGFlowRepository.NETFLOW_AGG_INDEX_PREFIX)
     String getElasticIndex();
 
     void setElasticIndex(String value);

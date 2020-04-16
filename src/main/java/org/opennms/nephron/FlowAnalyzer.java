@@ -72,6 +72,7 @@ import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.nephron.elastic.Context;
 import org.opennms.nephron.elastic.FlowSummary;
+import org.opennms.nephron.elastic.IndexStrategy;
 import org.opennms.nephron.query.NGFlowRepository;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
@@ -112,7 +113,7 @@ public class FlowAnalyzer {
         PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()));
 
         // Write the results out to Elasticsearch
-        flowSummaries.apply(new WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex()));
+        flowSummaries.apply(new WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex(), IndexStrategy.DAILY));
 
         // Optionally write out to Kafka as well
         if (options.getFlowDestTopic() != null) {
@@ -251,10 +252,13 @@ public class FlowAnalyzer {
     public static class WriteToElasticsearch extends PTransform<PCollection<FlowSummary>, PDone> {
         private final String elasticUrl;
         private final String elasticIndex;
+        private final IndexStrategy indexStrategy;
 
-        public WriteToElasticsearch(String elasticUrl, String elasticIndex) {
+        public WriteToElasticsearch(String elasticUrl, String elasticIndex, IndexStrategy indexStrategy) {
             this.elasticUrl = Objects.requireNonNull(elasticUrl);
             this.elasticIndex = Objects.requireNonNull(elasticIndex);
+            this.indexStrategy = Objects.requireNonNull(indexStrategy);
+
         }
 
         @Override
@@ -266,7 +270,7 @@ public class FlowAnalyzer {
                             .withIndexFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
                                 @Override
                                 public String apply(JsonNode input) {
-                                    return NGFlowRepository.NETFLOW_AGG_INDEX_PREFIX + "2020";
+                                    return indexStrategy.getIndex(elasticIndex, java.time.Instant.ofEpochMilli(input.get("@timestamp").asLong()));
                                 }
                             }));
         }

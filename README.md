@@ -38,7 +38,7 @@ Stop the job:
 
 Install the template using:
 ```
-curl -XPUT -H 'Content-Type: application/json' http://localhost:9200/_template/aggregated-flows -d@aggregated-flows-template.json
+curl -XPUT -H 'Content-Type: application/json' http://localhost:9200/_template/netflow_agg -d@./src/main/resources/aggregated-flows-template.json
 ```
 
 ### OpenNMS Configuration
