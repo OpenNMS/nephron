@@ -60,6 +60,12 @@
         "type": "keyword",
         "norms": false
       },
+      "host_address": {
+        "type": "keyword"
+      },
+      "host_name": {
+        "type": "keyword"
+      },
       "convo_key": {
         "type": "keyword",
         "norms": false

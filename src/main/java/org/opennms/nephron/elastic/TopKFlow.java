@@ -71,6 +71,11 @@ public class TopKFlow {
     @JsonProperty("application")
     private String application;
 
+    @JsonProperty("host_address")
+    private String hostAddress;
+
+    @JsonProperty("host_name")
+    private String hostName;
 
     public long getTimestamp() {
         return timestamp;
@@ -160,4 +165,19 @@ public class TopKFlow {
         this.application = application;
     }
 
+    public String getHostAddress() {
+        return hostAddress;
+    }
+
+    public void setHostAddress(String hostAddress) {
+        this.hostAddress = hostAddress;
+    }
+
+    public String getHostName() {
+        return hostName;
+    }
+
+    public void setHostName(String hostName) {
+        this.hostName = hostName;
+    }
 }

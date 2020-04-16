@@ -205,7 +205,87 @@ public class NGFlowRepository implements FlowRepository {
 
     @Override
     public CompletableFuture<List<TrafficSummary<Host>>> getTopNHostSummaries(int N, boolean includeOther, List<Filter> filters) {
-        return CompletableFuture.completedFuture(Collections.emptyList());
+        CompletableFuture<SearchResponse> future = new CompletableFuture<>();
+        SearchRequest searchRequest = new SearchRequest(getIndices(filters));
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.query(QueryBuilders.termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE_HOST));
+        sourceBuilder.size(0); // We don't need the hits - only the aggregations
+        searchRequest.source(sourceBuilder);
+
+        TermsAggregationBuilder aggregation = AggregationBuilders.terms("by_host")
+                .size(NephronOptions.MAX_K + 1) // Add 1 to account for the "Other" bucket
+                .order(BucketOrder.aggregation("bytes_total", false))
+                .field("host_address");
+        // Track the total bytes for result ordering
+        aggregation.subAggregation(AggregationBuilders.sum("bytes_total")
+                .field("bytes_total"));
+        aggregation.subAggregation(AggregationBuilders.sum("bytes_ingress")
+                .field("bytes_ingress"));
+        aggregation.subAggregation(AggregationBuilders.sum("bytes_egress")
+                .field("bytes_egress"));
+        sourceBuilder.aggregation(aggregation);
+
+        client.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
+        return future.thenApply(s -> {
+            // Extract the aggregations and build a map of traffic summaries
+            Map<Host, TrafficSummary<Host>> trafficSummaryByHost = new LinkedHashMap<>();
+            Aggregations aggregations = s.getAggregations();
+            Terms byApplicationAggregation = aggregations.get("by_host");
+            for (Terms.Bucket bucket : byApplicationAggregation.getBuckets()) {
+                Aggregations sums = bucket.getAggregations();
+                Sum ingress = sums.get("bytes_ingress");
+                Sum egress = sums.get("bytes_egress");
+
+                Host host = new Host(bucket.getKeyAsString());
+
+                TrafficSummary<Host> trafficSummary = TrafficSummary.<Host>builder()
+                        .withEntity(host)
+                        .withBytesIn(((Double)ingress.getValue()).longValue())
+                        .withBytesOut(((Double)egress.getValue()).longValue())
+                        .build();
+
+                trafficSummaryByHost.put(trafficSummary.getEntity(), trafficSummary);
+            }
+
+            // Nothing to do
+            if (trafficSummaryByHost.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            TrafficSummary<Host> otherTrafficSummary = trafficSummaryByHost.remove(Host.forOther().build());
+            if (otherTrafficSummary == null) {
+                otherTrafficSummary = TrafficSummary.<Host>builder()
+                        .withEntity(Host.forOther().build())
+                        .withBytesIn(0)
+                        .withBytesOut(0)
+                        .build();
+            }
+
+            List<TrafficSummary<Host>> hosts = new ArrayList<>(trafficSummaryByHost.values());
+
+            // Tally up apps to trim
+            long bytesIn = 0;
+            long bytesOut = 0;
+            for (int i = Math.min(N, hosts.size()); i < hosts.size(); i++) {
+                bytesIn += hosts.get(i).getBytesIn();
+                bytesOut += hosts.get(i).getBytesOut();
+            }
+            // Trim
+            hosts = hosts.subList(0, Math.min(N, hosts.size()));
+
+            // Add to other
+            otherTrafficSummary = TrafficSummary.<Host>builder()
+                    .withEntity(Host.forOther().build())
+                    .withBytesIn(otherTrafficSummary.getBytesIn() + bytesIn)
+                    .withBytesOut(otherTrafficSummary.getBytesOut() + bytesOut)
+                    .build();
+
+            if (includeOther) {
+                hosts.add(otherTrafficSummary);
+            }
+
+            return hosts;
+        });
     }
 
     private static <T> ActionListener<T> toFuture(CompletableFuture<T> future) {

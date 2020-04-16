@@ -52,6 +52,7 @@ import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Values;
@@ -62,6 +63,7 @@ import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -269,7 +271,44 @@ public class FlowAnalyzer {
                         }
                     }));
 
-            return topKAppsFlows;
+
+            String namePrefix = "flows_grouped_by_exporter_interface_host__";
+            PCollection<TopKFlow> topKHostsFlows = windowedStreamOfFlows
+                    .apply(namePrefix + "host_key_by_exporter_interface_host", ParDo.of(new Groupings.KeyByExporterInterfaceHost()))
+                    .apply(namePrefix +"compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
+                    .apply(namePrefix +"sum_bytes_by_key", Combine.perKey(new SumBytes()))
+                    .apply(namePrefix +"top_k_per_key", Combine.globally(new MyTop.TopCombineFn<>(topK, new ByteValueComparator(), new BinaryFlowBytesCombiner())).withoutDefaults())
+                    .apply(namePrefix +"top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, FlowBytes>>, TopKFlow>() {
+                        @ProcessElement
+                        public void processElement(ProcessContext c, IntervalWindow window) {
+                            int ranking = 1;
+                            for (KV<Groupings.CompoundKey, FlowBytes> topEl : c.element()) {
+                                Groupings.CompoundKey key = topEl.getKey();
+                                if (key == null) {
+                                    continue;
+                                }
+                                TopKFlow topKFlow = new TopKFlow();
+                                key.visit(new Groupings.FlowPopulatingVisitor(topKFlow));
+
+                                topKFlow.setRangeStartMs(window.start().getMillis());
+                                topKFlow.setRangeEndMs(window.end().getMillis());
+                                // Use the range end as the timestamp
+                                topKFlow.setTimestamp(topKFlow.getRangeEndMs());
+                                topKFlow.setRanking(ranking++);
+
+                                topKFlow.setBytesEgress(topEl.getValue().bytesOut);
+                                topKFlow.setBytesIngress(topEl.getValue().bytesIn);
+                                topKFlow.setBytesTotal(topKFlow.getBytesIngress() + topKFlow.getBytesEgress());
+
+                                c.output(topKFlow);
+                            }
+                        }
+                    }));
+
+            // Merge all the Top K collections
+            PCollectionList<TopKFlow> topKFlowsCollections = PCollectionList.of(topKAppsFlows).and(topKHostsFlows);
+            PCollection<TopKFlow> topKFlows = topKFlowsCollections.apply(Flatten.<TopKFlow>pCollections());
+            return topKFlows;
         }
     }
 

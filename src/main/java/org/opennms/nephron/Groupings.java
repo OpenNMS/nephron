@@ -87,6 +87,35 @@ public class Groupings {
         }
     }
 
+    static class KeyByExporterInterfaceHost extends DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> {
+        @ProcessElement
+        public void processElement(ProcessContext c) {
+            final FlowDocument flow = c.element();
+            if (!flow.hasExporterNode()) {
+                return;
+            }
+
+            final NodeRef nodeRef;
+            final NodeInfo exporterNode = flow.getExporterNode();
+            if (!Strings.isNullOrEmpty(exporterNode.getForeignSource())
+                    && !Strings.isNullOrEmpty(exporterNode.getForeginId())) {
+                nodeRef = NodeRef.of(exporterNode.getForeignSource(), exporterNode.getForeginId());
+            } else {
+                nodeRef = NodeRef.of(exporterNode.getNodeId());
+            }
+
+            final InterfaceRef interfaceRef;
+            if (Direction.INGRESS.equals(flow.getDirection())) {
+                interfaceRef = InterfaceRef.of(flow.getInputSnmpIfindex().getValue());
+            } else {
+                interfaceRef = InterfaceRef.of(flow.getOutputSnmpIfindex().getValue());
+            }
+
+            c.output(KV.of(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getSrcAddress(), flow.getSrcHostname())), flow));
+            c.output(KV.of(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getDstAddress(), flow.getDstHostname())), flow));
+        }
+    }
+
     public static class NodeRef {
         private String foreignSource;
         private String foreignId;
@@ -231,6 +260,56 @@ public class Groupings {
         }
     }
 
+    public static class HostRef {
+        private String address;
+        private String hostname;
+
+        public static HostRef of(String address, String hostname) {
+            HostRef hostRef = new HostRef();
+            hostRef.setAddress(address);
+            hostRef.setHostname(hostname);
+            return hostRef;
+        }
+
+        public String getAddress() {
+            return address;
+        }
+
+        public void setAddress(String address) {
+            this.address = address;
+        }
+
+        public String getHostname() {
+            return hostname;
+        }
+
+        public void setHostname(String hostname) {
+            this.hostname = hostname;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            HostRef hostRef = (HostRef) o;
+            return Objects.equals(address, hostRef.address) &&
+                    Objects.equals(hostname, hostRef.hostname);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(address, hostname);
+        }
+
+        @Override
+        public String toString() {
+            return "HostRef{" +
+                    "address='" + address + '\'' +
+                    ", hostname='" + hostname + '\'' +
+                    '}';
+        }
+    }
+
     @DefaultCoder(CompoundKeyCoder.class)
     public static class ExporterInterfaceApplicationKey extends CompoundKey {
         private NodeRef nodeRef;
@@ -299,6 +378,75 @@ public class Groupings {
         }
     }
 
+
+    @DefaultCoder(CompoundKeyCoder.class)
+    public static class ExporterInterfaceHostKey extends CompoundKey {
+        private NodeRef nodeRef;
+        private InterfaceRef interfaceRef;
+        private HostRef hostRef;
+
+        public static ExporterInterfaceHostKey of(NodeRef nodeRef, InterfaceRef interfaceRef, HostRef hostRef) {
+            ExporterInterfaceHostKey key = new ExporterInterfaceHostKey();
+            key.setNodeRef(nodeRef);
+            key.setInterfaceRef(interfaceRef);
+            key.setHostRef(hostRef);
+            return key;
+        }
+
+        public NodeRef getNodeRef() {
+            return nodeRef;
+        }
+
+        public void setNodeRef(NodeRef nodeRef) {
+            this.nodeRef = nodeRef;
+        }
+
+        public InterfaceRef getInterfaceRef() {
+            return interfaceRef;
+        }
+
+        public void setInterfaceRef(InterfaceRef interfaceRef) {
+            this.interfaceRef = interfaceRef;
+        }
+
+        public HostRef getHostRef() {
+            return hostRef;
+        }
+
+        public void setHostRef(HostRef hostRef) {
+            this.hostRef = hostRef;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ExporterInterfaceHostKey that = (ExporterInterfaceHostKey) o;
+            return Objects.equals(nodeRef, that.nodeRef) &&
+                    Objects.equals(interfaceRef, that.interfaceRef) &&
+                    Objects.equals(hostRef, that.hostRef);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(nodeRef, interfaceRef, hostRef);
+        }
+
+        @Override
+        public String toString() {
+            return "ExporterInterfaceHostKey{" +
+                    "nodeRef=" + nodeRef +
+                    ", interfaceRef=" + interfaceRef +
+                    ", applicationRef=" + hostRef +
+                    '}';
+        }
+
+        @Override
+        public void visit(Visitor visitor) {
+            visitor.visit(this);
+        }
+    }
+
     @DefaultCoder(CompoundKeyCoder.class)
     public static abstract class CompoundKey {
         public abstract void visit(Visitor visitor);
@@ -306,6 +454,7 @@ public class Groupings {
 
     public interface Visitor {
         void visit(ExporterInterfaceApplicationKey key);
+        void visit(ExporterInterfaceHostKey key);
     }
 
     public static class FlowPopulatingVisitor implements Visitor {
@@ -325,6 +474,19 @@ public class Groupings {
             flow.setExporter(exporterNode);
             flow.setIfIndex(key.interfaceRef.ifIndex);
             flow.setApplication(key.applicationRef.application);
+        }
+
+        @Override
+        public void visit(ExporterInterfaceHostKey key) {
+            flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_HOST);
+            ExporterNode exporterNode = new ExporterNode();
+            exporterNode.setForeignSource(key.nodeRef.foreignSource);
+            exporterNode.setForeignId(key.nodeRef.foreignId);
+            exporterNode.setNodeId(key.nodeRef.nodeId);
+            flow.setExporter(exporterNode);
+            flow.setIfIndex(key.interfaceRef.ifIndex);
+            flow.setHostAddress(key.hostRef.address);
+            flow.setHostName(key.hostRef.hostname);
         }
     }
 
@@ -348,6 +510,21 @@ public class Groupings {
                         throw new RuntimeException(e);
                     }
                 }
+
+                @Override
+                public void visit(ExporterInterfaceHostKey key) {
+                    try {
+                        INT_CODER.encode(2, os);
+                        STRING_CODER.encode(key.nodeRef.foreignSource, os);
+                        STRING_CODER.encode(key.nodeRef.foreignId, os);
+                        INT_CODER.encode(key.nodeRef.nodeId, os);
+                        INT_CODER.encode(key.interfaceRef.ifIndex, os);
+                        STRING_CODER.encode(key.hostRef.address, os);
+                        STRING_CODER.encode(key.hostRef.hostname, os);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
             });
         }
 
@@ -367,6 +544,21 @@ public class Groupings {
 
                 key.applicationRef = new ApplicationRef();
                 key.applicationRef.application = STRING_CODER.decode(is);
+                return key;
+            } else if (type == 2) {
+                ExporterInterfaceHostKey key = new ExporterInterfaceHostKey();
+
+                key.nodeRef = new NodeRef();
+                key.nodeRef.foreignSource = STRING_CODER.decode(is);
+                key.nodeRef.foreignId = STRING_CODER.decode(is);
+                key.nodeRef.nodeId = INT_CODER.decode(is);
+
+                key.interfaceRef = new InterfaceRef();
+                key.interfaceRef.ifIndex = INT_CODER.decode(is);
+
+                key.hostRef = new HostRef();
+                key.hostRef.address = STRING_CODER.decode(is);
+                key.hostRef.hostname = STRING_CODER.decode(is);
                 return key;
             }
             throw new RuntimeException("oops: " + type);
