@@ -35,7 +35,6 @@ import java.io.Serializable;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -43,6 +42,7 @@ import java.util.Objects;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
 import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
@@ -61,6 +61,7 @@ import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.PDone;
@@ -79,7 +80,6 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.base.Strings;
 import com.swrve.ratelimitedlogger.RateLimitedLog;
 
 public class FlowAnalyzer {
@@ -92,123 +92,43 @@ public class FlowAnalyzer {
             .build();
 
     /**
-     * Dispatches a {@link FlowDocument} to all of the windows that overlap with the flow range.
-     * @return transform
+     * Creates a new pipeline from the given set of runtime options.
+     *
+     * @param options runtime options
+     * @return a new pipeline
      */
-    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps() {
-         return ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
-            @ProcessElement
-            public void processElement(ProcessContext c) {
-                final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
-
-                final FlowDocument flow = c.element();
-                // We want to dispatch the flow to all the windows it may be a part of
-                // The flow ranges from [delta_switched, last_switched]
-
-                long flowStart;
-                if (flow.hasDeltaSwitched()) {
-                    // FIXME: Delta-switch should always be populated, but it is not currently
-                    flowStart = flow.getDeltaSwitched().getValue();
-                } else {
-                    flowStart = flow.getFirstSwitched().getValue();
-                }
-                long timestamp = flowStart - windowSizeMs;
-
-                // If we're exactly on the window boundary, then don't go back
-                if (timestamp % windowSizeMs == 0) {
-                    timestamp += windowSizeMs;
-                }
-                while (timestamp <= flow.getLastSwitched().getValue()) {
-                    if (timestamp <= c.timestamp().minus(Duration.standardMinutes(30)).getMillis()) {
-                        // Caused by: java.lang.IllegalArgumentException: Cannot output with timestamp 1970-01-01T00:00:00.000Z. Output timestamps must be no earlier than the timestamp of the current input (2020-
-                        //                            04-14T15:33:11.302Z) minus the allowed skew (30 minutes). See the DoFn#getAllowedTimestampSkew() Javadoc for details on changing the allowed skew.
-                        //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
-                        //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.outputWithTimestamp(SimpleDoFnRunner.java:573)
-                        //                    at org.opennms.nephron.FlowAnalyzer$1.processElement(FlowAnalyzer.java:96)
-                        rateLimitedLog.warn("Skipping output for flow w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
-                                Instant.ofEpochMilli(flowStart), Instant.ofEpochMilli(flow.getLastSwitched().getValue()), Instant.ofEpochMilli(timestamp), c.timestamp(),
-                                flow);
-                        timestamp += windowSizeMs;
-                        continue;
-                    }
-                    c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
-                    timestamp += windowSizeMs;
-                }
-            }
-
-            @Override
-            public Duration getAllowedTimestampSkew() {
-                // Max flow duration
-                return Duration.standardMinutes(30);
-            }
-        });
-    }
-
-    public static Window<FlowDocument> toWindow(NephronOptions options) {
-        return Window.<FlowDocument>into(FixedWindows.of(DurationUtils.toDuration(options.getFixedWindowSize())))
-                // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
-                .triggering(Repeatedly.forever(AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.standardMinutes(1))))
-                .accumulatingFiredPanes()
-                .withAllowedLateness(Duration.standardMinutes(10));
-    }
-
-    public static Window<FlowDocument> toWindow(String fixedWindowSize) {
-        return Window.<FlowDocument>into(FixedWindows.of(DurationUtils.toDuration(fixedWindowSize)))
-                // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
-                .triggering(Repeatedly.forever(AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.standardMinutes(1))))
-                .accumulatingFiredPanes()
-                .withAllowedLateness(Duration.standardMinutes(10));
-    }
-
-    public static void registerCoders(Pipeline p) {
-        p.getCoderRegistry().registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
-        p.getCoderRegistry().registerCoderForClass(TopKFlows.class, new JacksonJsonCoder<>(TopKFlows.class));
-        p.getCoderRegistry().registerCoderForClass(FlowSummary.class, new JacksonJsonCoder<>(FlowSummary.class));
-        p.getCoderRegistry().registerCoderForClass(Groupings.ExporterInterfaceApplicationKey.class, new Groupings.CompoundKeyCoder());
-        p.getCoderRegistry().registerCoderForClass(Groupings.CompoundKey.class, new Groupings.CompoundKeyCoder());
-    }
-
     public static Pipeline create(NephronOptions options) {
         Objects.requireNonNull(options);
         Pipeline p = Pipeline.create(options);
         registerCoders(p);
 
+        // Read from Kafka
         Map<String, Object> kafkaConsumerConfig = new HashMap<>();
         kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, options.getGroupId());
         kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true);
-        // kafkaConsumerConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // For testing only :)
+        PCollection<FlowDocument> streamOfFlows = p.apply(new ReadFromKafka(options.getBootstrapServers(), options.getFlowSourceTopic(), kafkaConsumerConfig));
 
-        PCollection<FlowDocument> streamOfFlows = p.apply(KafkaIO.<String, FlowDocument>read()
-                .withBootstrapServers(options.getBootstrapServers())
-                .withTopic(options.getFlowSourceTopic())
-                .withKeyDeserializer(StringDeserializer.class)
-                .withValueDeserializer(FlowDocumentDeserializer.class)
-                .withConsumerConfigUpdates(kafkaConsumerConfig)
-                .withTimestampPolicyFactory((TimestampPolicyFactory<String, FlowDocument>) (tp, previousWatermark) -> {
-                    // TODO: FIXME: Use delta-switched here instead?!
-                    return new CustomTimestampPolicyWithLimitedDelay<>((rec) -> Instant.ofEpochMilli(rec.getKV().getValue().getFirstSwitched().getValue()),
-                            Duration.standardMinutes(5), previousWatermark);
-                })
-                .withoutMetadata()
-        )
-                .apply(Values.create())
-                .apply("add_missing_DeltaSwitched", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
-                            @ProcessElement
-                            public void processElement(ProcessContext c) {
-                                FlowDocument flow = c.element();
-                                if (flow.hasDeltaSwitched()) {
-                                    c.output(flow);
-                                } else {
-                                    c.output(FlowDocument.newBuilder(c.element())
-                                            .setDeltaSwitched(flow.getFirstSwitched())
-                                            .build());
-                                }
-                        }}));
+        // Calculate the flow summary statistics
+        PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()));
 
-        PCollection<FlowSummary> topKFlows = streamOfFlows.apply(new CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()));
-        topKFlows.apply(new FlowAnalyzer.WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex()));
-        pushToKafka(options, topKFlows);
+        // Write the results out to Elasticsearch
+        flowSummaries.apply(new WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex()));
+
+        // Optionally write out to Kafka as well
+        if (options.getFlowDestTopic() != null) {
+            flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic()));
+        }
+
         return p;
+    }
+
+    public static void registerCoders(Pipeline p) {
+        final CoderRegistry coderRegistry = p.getCoderRegistry();
+        coderRegistry.registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
+        coderRegistry.registerCoderForClass(TopKFlows.class, new JacksonJsonCoder<>(TopKFlows.class));
+        coderRegistry.registerCoderForClass(FlowSummary.class, new JacksonJsonCoder<>(FlowSummary.class));
+        coderRegistry.registerCoderForClass(Groupings.ExporterInterfaceApplicationKey.class, new Groupings.CompoundKeyCoder());
+        coderRegistry.registerCoderForClass(Groupings.CompoundKey.class, new Groupings.CompoundKeyCoder());
     }
 
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
@@ -269,7 +189,7 @@ public class FlowAnalyzer {
                             c.output(KV.of(el.getKey().getOuterKey(), el));
                         }
                     }))
-                    .apply(transformPrefix + "top_k_per_key", Top.perKey(topK, new ByteValueComparator()))
+                    .apply(transformPrefix + "top_k_per_key", Top.perKey(topK, new FlowBytesValueComparator()))
                     .apply(transformPrefix + "flatten", Values.create())
                     .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, FlowBytes>>, FlowSummary>() {
                         @ProcessElement
@@ -323,7 +243,7 @@ public class FlowAnalyzer {
 
         @Override
         public PDone expand(PCollection<FlowSummary> input) {
-            return input.apply("SerializeToJson", toTopKFlowJson())
+            return input.apply("SerializeToJson", toJson())
                     .apply("WriteToElasticsearch", ElasticsearchIO.write().withConnectionConfiguration(
                             ElasticsearchIO.ConnectionConfiguration.create(
                                     new String[]{elasticUrl}, elasticIndex, "_doc"))
@@ -336,15 +256,70 @@ public class FlowAnalyzer {
         }
     }
 
-    private static ParDo.SingleOutput<FlowSummary, String> toTopKFlowJson() {
-        return ParDo.of(new DoFn<FlowSummary, String>() {
-            @ProcessElement
-            public void processElement(ProcessContext c) throws JsonProcessingException {
-                final ObjectMapper mapper = new ObjectMapper();
-                c.output(mapper.writeValueAsString(c.element()));
-            }
-        });
+    public static class ReadFromKafka extends PTransform<PBegin, PCollection<FlowDocument>> {
+        private final String bootstrapServers;
+        private final String topic;
+        private final Map<String, Object> kafkaConsumerConfig;
+
+        public ReadFromKafka(String bootstrapServers, String topic, Map<String, Object> kafkaConsumerConfig) {
+            this.bootstrapServers = Objects.requireNonNull(bootstrapServers);
+            this.topic = Objects.requireNonNull(topic);
+            this.kafkaConsumerConfig = Objects.requireNonNull(kafkaConsumerConfig);
+        }
+
+        @Override
+        public PCollection<FlowDocument> expand(PBegin input) {
+
+            return input.apply(KafkaIO.<String, FlowDocument>read()
+                        .withBootstrapServers(bootstrapServers)
+                        .withTopic(topic)
+                        .withKeyDeserializer(StringDeserializer.class)
+                        .withValueDeserializer(FlowDocumentDeserializer.class)
+                        .withConsumerConfigUpdates(kafkaConsumerConfig)
+                        .withTimestampPolicyFactory((TimestampPolicyFactory<String, FlowDocument>) (tp, previousWatermark) -> {
+                            // TODO: FIXME: Use delta-switched here instead?!
+                            return new CustomTimestampPolicyWithLimitedDelay<>((rec) -> Instant.ofEpochMilli(rec.getKV().getValue().getFirstSwitched().getValue()),
+                                    Duration.standardMinutes(5), previousWatermark);
+                        })
+                        .withoutMetadata()
+                    ).apply(Values.create())
+                    .apply("add_missing_DeltaSwitched", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
+                        @ProcessElement
+                        public void processElement(ProcessContext c) {
+                            FlowDocument flow = c.element();
+                            if (flow.hasDeltaSwitched()) {
+                                c.output(flow);
+                            } else {
+                                c.output(FlowDocument.newBuilder(c.element())
+                                        .setDeltaSwitched(flow.getFirstSwitched())
+                                        .build());
+                            }
+                        }}));
+        }
     }
+
+    public static class WriteToKafka extends PTransform<PCollection<FlowSummary>, PDone> {
+        private final String bootstrapServers;
+        private final String topic;
+
+        public WriteToKafka(String bootstrapServers, String topic) {
+            this.bootstrapServers = Objects.requireNonNull(bootstrapServers);
+            this.topic = Objects.requireNonNull(topic);
+        }
+
+        @Override
+        public PDone expand(PCollection<FlowSummary> input) {
+            return input.apply(toJson())
+                    .apply(KafkaIO.<Void, String>write()
+                            .withBootstrapServers(bootstrapServers)
+                            .withTopic(topic)
+                            .withValueSerializer(StringSerializer.class)
+                            .values()
+                    );
+        }
+    }
+
+
 
     private static ParDo.SingleOutput<FlowSummary, String> toJson() {
         return ParDo.of(new DoFn<FlowSummary, String>() {
@@ -356,80 +331,10 @@ public class FlowAnalyzer {
         });
     }
 
-    private static void pushToKafka(NephronOptions options, PCollection<FlowSummary> topKFlowStream) {
-        topKFlowStream
-                .apply(toJson())
-                .apply(KafkaIO.<Void, String>write()
-                .withBootstrapServers(options.getBootstrapServers())
-                .withTopic("flows_processed")
-                .withValueSerializer(StringSerializer.class)
-                .values()
-        );
-    }
-
-    private static Map<? extends Groupings.CompoundKey, FlowBytes> toMap(List<KV<? extends Groupings.CompoundKey, FlowBytes>> topKFlows) {
-        return topKFlows
-                .stream()
-                .collect(
-                        LinkedHashMap::new,
-                        (map, item) -> map.put(item.getKey(), item.getValue()),
-                        Map::putAll);
-    }
-
-
     static class SumBytes extends Combine.BinaryCombineFn<FlowBytes> {
         @Override
         public FlowBytes apply(FlowBytes left, FlowBytes right) {
             return FlowBytes.sum(left, right);
-        }
-    }
-
-    static class ExtractApplicationName extends DoFn<FlowDocument, KV<String, FlowDocument>> {
-        @ProcessElement
-        public void processElement(ProcessContext c) {
-            final FlowDocument flow = c.element();
-            String applicationName = flow.getApplication();
-            if (Strings.isNullOrEmpty(applicationName)) {
-                applicationName = FlowSummary.UNKNOWN_APPLICATION_NAME_KEY;
-            }
-            c.output(KV.of(applicationName, flow));
-        }
-    }
-
-    static class ExtractSrcAddr extends DoFn<FlowDocument, KV<String, FlowDocument>> {
-        @ProcessElement
-        public void processElement(ProcessContext c) {
-            final FlowDocument flow = c.element();
-            c.output(KV.of(flow.getSrcAddress(), flow));
-        }
-    }
-
-
-    static class ToWindowedBytesDead extends DoFn<KV<String, FlowDocument>, KV<String, FlowBytes>> {
-        @ProcessElement
-        public void processElement(ProcessContext c, IntervalWindow window) {
-            final KV<String, FlowDocument> keyedFlow = c.element();
-            final FlowDocument flow = keyedFlow.getValue();
-
-            // The flow duration ranges [delta_switched, last_switched]
-            long flowDurationMs = flow.getLastSwitched().getValue() - flow.getDeltaSwitched().getValue();
-            if (flowDurationMs <= 0) {
-                // 0 or negative duration, pass
-                return;
-            }
-
-            // Determine the avg. rate of bytes per ms for the duration of the flow
-            double bytesPerMs = flow.getNumBytes().getValue() / (double) flowDurationMs;
-
-            // Now determine how many milliseconds the flow overlaps with the window bounds
-            long flowWindowOverlapMs = Math.min(flow.getLastSwitched().getValue(), window.end().getMillis()) - Math.max(flow.getDeltaSwitched().getValue(), window.start().getMillis());
-            if (flowWindowOverlapMs < 0) {
-                // flow should not be in this windows! pass
-                return;
-            }
-
-            double multiplier = flowWindowOverlapMs / (double) flowDurationMs;
-            c.output(KV.of(keyedFlow.getKey(), new FlowBytes(keyedFlow.getValue(), multiplier)));
         }
     }
 
@@ -461,7 +366,7 @@ public class FlowAnalyzer {
         }
     }
 
-    static class ByteValueComparator implements Comparator<KV<Groupings.CompoundKey, FlowBytes>>, Serializable {
+    static class FlowBytesValueComparator implements Comparator<KV<Groupings.CompoundKey, FlowBytes>>, Serializable {
         @Override
         public int compare(KV<Groupings.CompoundKey, FlowBytes> a, KV<Groupings.CompoundKey, FlowBytes> b) {
             return a.getValue().compareTo(b.getValue());
@@ -525,6 +430,60 @@ public class FlowAnalyzer {
         }
     }
 
+
+    /**
+     * Dispatches a {@link FlowDocument} to all of the windows that overlap with the flow range.
+     * @return transform
+     */
+    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps() {
+        return ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
+            @ProcessElement
+            public void processElement(ProcessContext c) {
+                final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
+
+                final FlowDocument flow = c.element();
+                // We want to dispatch the flow to all the windows it may be a part of
+                // The flow ranges from [delta_switched, last_switched]
+
+                long flowStart;
+                if (flow.hasDeltaSwitched()) {
+                    // FIXME: Delta-switch should always be populated, but it is not currently
+                    flowStart = flow.getDeltaSwitched().getValue();
+                } else {
+                    flowStart = flow.getFirstSwitched().getValue();
+                }
+                long timestamp = flowStart - windowSizeMs;
+
+                // If we're exactly on the window boundary, then don't go back
+                if (timestamp % windowSizeMs == 0) {
+                    timestamp += windowSizeMs;
+                }
+                while (timestamp <= flow.getLastSwitched().getValue()) {
+                    if (timestamp <= c.timestamp().minus(Duration.standardMinutes(30)).getMillis()) {
+                        // Caused by: java.lang.IllegalArgumentException: Cannot output with timestamp 1970-01-01T00:00:00.000Z. Output timestamps must be no earlier than the timestamp of the current input (2020-
+                        //                            04-14T15:33:11.302Z) minus the allowed skew (30 minutes). See the DoFn#getAllowedTimestampSkew() Javadoc for details on changing the allowed skew.
+                        //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
+                        //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.outputWithTimestamp(SimpleDoFnRunner.java:573)
+                        //                    at org.opennms.nephron.FlowAnalyzer$1.processElement(FlowAnalyzer.java:96)
+                        rateLimitedLog.warn("Skipping output for flow w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
+                                Instant.ofEpochMilli(flowStart), Instant.ofEpochMilli(flow.getLastSwitched().getValue()), Instant.ofEpochMilli(timestamp), c.timestamp(),
+                                flow);
+                        timestamp += windowSizeMs;
+                        continue;
+                    }
+                    c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
+                    timestamp += windowSizeMs;
+                }
+            }
+
+            @Override
+            public Duration getAllowedTimestampSkew() {
+                // Max flow duration
+                return Duration.standardMinutes(30);
+            }
+        });
+    }
+
     public static FlowSummary toFlowSummary(Context ctx, IntervalWindow window, KV<Groupings.CompoundKey, FlowBytes> el) {
         FlowSummary flowSummary = new FlowSummary();
         el.getKey().visit(new Groupings.FlowPopulatingVisitor(flowSummary));
@@ -540,4 +499,14 @@ public class FlowAnalyzer {
         flowSummary.setBytesTotal(flowSummary.getBytesIngress() + flowSummary.getBytesEgress());
         return flowSummary;
     }
+
+
+    public static Window<FlowDocument> toWindow(String fixedWindowSize) {
+        return Window.<FlowDocument>into(FixedWindows.of(DurationUtils.toDuration(fixedWindowSize)))
+                // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
+                .triggering(Repeatedly.forever(AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.standardMinutes(1))))
+                .accumulatingFiredPanes()
+                .withAllowedLateness(Duration.standardMinutes(10));
+    }
+
 }

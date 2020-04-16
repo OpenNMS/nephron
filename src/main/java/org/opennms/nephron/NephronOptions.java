@@ -36,6 +36,7 @@ import org.apache.beam.sdk.options.Validation;
 public interface NephronOptions extends PipelineOptions {
 
     String DEFAULT_FLOW_SOURCE_TOPIC = "opennms-flows";
+    String DEFAULT_FLOW_DEST_TOPIC = "opennms-flows-agg";
 
     @Description("Kafka Bootstrap Servers")
     @Default.String("localhost:9092")
@@ -54,6 +55,11 @@ public interface NephronOptions extends PipelineOptions {
     String getFlowSourceTopic();
 
     void setFlowSourceTopic(String value);
+
+    @Description("Destination topic for aggregated flows")
+    String getFlowDestTopic();
+
+    void setFlowDestTopic(String value);
 
     @Description("Size of the window i.e. 30s")
     @Default.String("10s")
