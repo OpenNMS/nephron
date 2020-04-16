@@ -11,7 +11,7 @@ Sentinel -> Kafka -> Nephron / Beam / Flink -> Elasticsearch
 Build & run:
 ```
 mvn package
-java -jar target/nephron-1.0.0-SNAPSHOT-jar-with-dependencies.jar
+java -jar target/nephron-bundled-1.0.0-SNAPSHOT.jar
 ```
 
 ## Flink
