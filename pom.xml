@@ -25,6 +25,7 @@
     </properties>
 
     <build>
+      <!--
         <extensions>
             <extension>
                 <groupId>kr.motd.maven</groupId>
@@ -32,6 +33,7 @@
                 <version>1.6.2</version>
             </extension>
         </extensions>
+      -->
         <pluginManagement>
             <plugins>
                 <plugin>
