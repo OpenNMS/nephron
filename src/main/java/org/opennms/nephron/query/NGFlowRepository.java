@@ -37,6 +37,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 import org.apache.http.HttpHost;
 import org.elasticsearch.action.ActionListener;
@@ -55,8 +56,8 @@ import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilde
 import org.elasticsearch.search.aggregations.metrics.Sum;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.opennms.nephron.elastic.Context;
-import org.opennms.nephron.elastic.GroupedBy;
 import org.opennms.nephron.elastic.FlowSummary;
+import org.opennms.nephron.elastic.GroupedBy;
 import org.opennms.netmgt.flows.api.Conversation;
 import org.opennms.netmgt.flows.api.Directional;
 import org.opennms.netmgt.flows.api.Flow;
@@ -86,13 +87,8 @@ public class NGFlowRepository implements FlowRepository {
         try {
             client.close();
         } catch (IOException e) {
-            e.printStackTrace();
+            LOG.warn("Exception occurred when closing the client.", e);
         }
-    }
-
-    private String[] getIndices(List<Filter> filters) {
-        // FIXME: Do smart index limiting
-        return new String[]{NETFLOW_AGG_INDEX_PREFIX + "*"};
     }
 
     @Override
@@ -117,192 +113,19 @@ public class NGFlowRepository implements FlowRepository {
 
     @Override
     public CompletableFuture<List<TrafficSummary<String>>> getTopNApplicationSummaries(int N, boolean includeOther, List<Filter> filters) {
-        CompletableFuture<List<TrafficSummary<String>>> summaryFutures;
-        if (N > 0) {
-            CompletableFuture<SearchResponse> future = new CompletableFuture<>();
-            SearchRequest searchRequest = new SearchRequest(getIndices(filters));
-            SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-            sourceBuilder.query(QueryBuilders.boolQuery()
-                    .must(termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE_APPLICATION))
-                    .must(termQuery("context", Context.TOPK)));
-            sourceBuilder.size(0); // We don't need the hits - only the aggregations
-            searchRequest.source(sourceBuilder);
-
-            TermsAggregationBuilder aggregation = AggregationBuilders.terms("by_application")
-                    .size(N)
-                    .order(BucketOrder.aggregation("bytes_total", false))
-                    .field("application");
-            // Track the total bytes for result ordering
-            aggregation.subAggregation(AggregationBuilders.sum("bytes_total")
-                    .field("bytes_total"));
-            aggregation.subAggregation(AggregationBuilders.sum("bytes_ingress")
-                    .field("bytes_ingress"));
-            aggregation.subAggregation(AggregationBuilders.sum("bytes_egress")
-                    .field("bytes_egress"));
-            sourceBuilder.aggregation(aggregation);
-
-            client.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
-            summaryFutures = future.thenApply(s -> {
-                List<TrafficSummary<String>> trafficSummaries = new ArrayList<>(N);
-                Aggregations aggregations = s.getAggregations();
-                Terms byApplicationAggregation = aggregations.get("by_application");
-                for (Terms.Bucket bucket : byApplicationAggregation.getBuckets()) {
-                    Aggregations sums = bucket.getAggregations();
-                    Sum ingress = sums.get("bytes_ingress");
-                    Sum egress = sums.get("bytes_egress");
-
-                    String effectiveApplicationName = bucket.getKeyAsString();
-                    if (FlowSummary.UNKNOWN_APPLICATION_NAME_KEY.equals(effectiveApplicationName)) {
-                        effectiveApplicationName = FlowSummary.UNKNOWN_APPLICATION_NAME_DISPLAY;
-                    }
-
-                    trafficSummaries.add(TrafficSummary.<String>builder()
-                            .withEntity(effectiveApplicationName)
-                            .withBytesIn(((Double)ingress.getValue()).longValue())
-                            .withBytesOut(((Double)egress.getValue()).longValue())
-                            .build());
-                }
-                return trafficSummaries;
-            });
-        } else {
-            summaryFutures = CompletableFuture.completedFuture(Collections.emptyList());
-        }
-
-        if (!includeOther) {
-            return summaryFutures;
-        }
-
-        CompletableFuture<TrafficSummary<String>> totalTrafficFuture = getOtherTraffic(FlowSummary.OTHER_APPLICATION_NAME_DISPLAY, filters);
-        return summaryFutures.thenCombine(totalTrafficFuture, (topK,total) -> {
-            long bytesInRemainder = total.getBytesIn();
-            long bytesOutRemainder = total.getBytesOut();
-            for (TrafficSummary<?> topEl : topK) {
-                bytesInRemainder -= topEl.getBytesIn();
-                bytesOutRemainder -= topEl.getBytesOut();
+        return getTopNSummary(N, includeOther, filters, GroupedBy.EXPORTER_INTERFACE_APPLICATION, "application", (app) -> {
+            String effectiveApplicationName = app;
+            if (FlowSummary.UNKNOWN_APPLICATION_NAME_KEY.equals(effectiveApplicationName)) {
+                effectiveApplicationName = FlowSummary.UNKNOWN_APPLICATION_NAME_DISPLAY;
             }
-
-            List<TrafficSummary<String>> newTopK = new ArrayList<>(topK);
-            newTopK.add(TrafficSummary.<String>builder()
-                    .withEntity(FlowSummary.OTHER_APPLICATION_NAME_DISPLAY)
-                    .withBytesIn(Math.max(bytesInRemainder, 0L))
-                    .withBytesOut(Math.max(bytesOutRemainder, 0L))
-                    .build());
-            return newTopK;
-        });
+            return effectiveApplicationName;
+        }, FlowSummary.OTHER_APPLICATION_NAME_DISPLAY );
     }
-
-    private <T> CompletableFuture<TrafficSummary<T>> getOtherTraffic(T entity, List<Filter> filters) {
-        CompletableFuture<SearchResponse> future = new CompletableFuture<>();
-        SearchRequest searchRequest = new SearchRequest(getIndices(filters));
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.query(QueryBuilders.boolQuery()
-                .must(termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE))
-                .must(termQuery("context", Context.TOTAL)));
-        sourceBuilder.size(0); // We don't need the hits - only the aggregations
-        searchRequest.source(sourceBuilder);
-
-        // Sum all ingress/egress
-        sourceBuilder.aggregation(AggregationBuilders.sum("bytes_ingress")
-                .field("bytes_ingress"));
-        sourceBuilder.aggregation(AggregationBuilders.sum("bytes_egress")
-                .field("bytes_egress"));
-
-        client.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
-        return future.thenApply(s -> {
-            Sum ingress = s.getAggregations().get("bytes_ingress");
-            Sum egress = s.getAggregations().get("bytes_egress");
-
-            return TrafficSummary.<T>builder()
-                    .withEntity(entity)
-                    .withBytesIn(((Double)ingress.getValue()).longValue())
-                    .withBytesOut(((Double)egress.getValue()).longValue())
-                    .build();
-        });
-    }
-
     @Override
     public CompletableFuture<List<TrafficSummary<Host>>> getTopNHostSummaries(int N, boolean includeOther, List<Filter> filters) {
-        CompletableFuture<List<TrafficSummary<Host>>> summaryFutures;
-        if (N > 0) {
-            CompletableFuture<SearchResponse> future = new CompletableFuture<>();
-            SearchRequest searchRequest = new SearchRequest(getIndices(filters));
-            SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-            sourceBuilder.query(QueryBuilders.boolQuery()
-                    .must(termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE_HOST))
-                    .must(termQuery("context", Context.TOPK)));
-            sourceBuilder.size(0); // We don't need the hits - only the aggregations
-            searchRequest.source(sourceBuilder);
-
-            TermsAggregationBuilder aggregation = AggregationBuilders.terms("by_host")
-                    .size(N)
-                    .order(BucketOrder.aggregation("bytes_total", false))
-                    .field("host_address");
-            // Track the total bytes for result ordering
-            aggregation.subAggregation(AggregationBuilders.sum("bytes_total")
-                    .field("bytes_total"));
-            aggregation.subAggregation(AggregationBuilders.sum("bytes_ingress")
-                    .field("bytes_ingress"));
-            aggregation.subAggregation(AggregationBuilders.sum("bytes_egress")
-                    .field("bytes_egress"));
-            sourceBuilder.aggregation(aggregation);
-
-            client.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
-            summaryFutures = future.thenApply(s -> {
-                List<TrafficSummary<Host>> trafficSummaries = new ArrayList<>(N);
-                Aggregations aggregations = s.getAggregations();
-                Terms byHostAggregation = aggregations.get("by_host");
-                for (Terms.Bucket bucket : byHostAggregation.getBuckets()) {
-                    Aggregations sums = bucket.getAggregations();
-                    Sum ingress = sums.get("bytes_ingress");
-                    Sum egress = sums.get("bytes_egress");
-
-                    trafficSummaries.add(TrafficSummary.<Host>builder()
-                            .withEntity(Host.from(bucket.getKeyAsString()).build())
-                            .withBytesIn(((Double)ingress.getValue()).longValue())
-                            .withBytesOut(((Double)egress.getValue()).longValue())
-                            .build());
-                }
-                return trafficSummaries;
-            });
-        } else {
-            summaryFutures = CompletableFuture.completedFuture(Collections.emptyList());
-        }
-
-        if (!includeOther) {
-            return summaryFutures;
-        }
-
-        CompletableFuture<TrafficSummary<Host>> totalTrafficFuture = getOtherTraffic(Host.forOther().build(), filters);
-        return summaryFutures.thenCombine(totalTrafficFuture, (topK,total) -> {
-            long bytesInRemainder = total.getBytesIn();
-            long bytesOutRemainder = total.getBytesOut();
-            for (TrafficSummary<?> topEl : topK) {
-                bytesInRemainder -= topEl.getBytesIn();
-                bytesOutRemainder -= topEl.getBytesOut();
-            }
-
-            List<TrafficSummary<Host>> newTopK = new ArrayList<>(topK);
-            newTopK.add(TrafficSummary.<Host>builder()
-                    .withEntity(Host.forOther().build())
-                    .withBytesIn(Math.max(bytesInRemainder, 0L))
-                    .withBytesOut(Math.max(bytesOutRemainder, 0L))
-                    .build());
-            return newTopK;
-        });
+        return getTopNSummary(N, includeOther, filters, GroupedBy.EXPORTER_INTERFACE_HOST, "host_address",
+                (host) -> Host.from(host).build(), Host.forOther().build() );
     }
-
-    private static <T> ActionListener<T> toFuture(CompletableFuture<T> future) {
-        return new ActionListener<T>(){
-            @Override
-            public void onResponse(T result) {
-                future.complete(result);
-            }
-            @Override
-            public void onFailure(Exception e) {
-                future.completeExceptionally(e);
-            }
-        };
-    };
 
     @Override
     public CompletableFuture<List<TrafficSummary<String>>> getApplicationSummaries(Set<String> applications, boolean includeOther, List<Filter> filters) {
@@ -365,4 +188,126 @@ public class NGFlowRepository implements FlowRepository {
     public CompletableFuture<Table<Directional<Host>, Long, Double>> getTopNHostSeries(int N, long step, boolean includeOther, List<Filter> filters) {
         return null;
     }
+
+    private <T> CompletableFuture<List<TrafficSummary<T>>> getTopNSummary(int N, boolean includeOther, List<Filter> filters,
+                                                                         GroupedBy groupedBy, String key, Function<String,T> sumFunc, T otherEntity) {
+        CompletableFuture<List<TrafficSummary<T>>> summaryFutures;
+        if (N > 0) {
+            CompletableFuture<SearchResponse> future = new CompletableFuture<>();
+            SearchRequest searchRequest = new SearchRequest(getIndices(filters));
+            SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+            sourceBuilder.query(QueryBuilders.boolQuery()
+                    .must(termQuery("grouped_by", groupedBy))
+                    .must(termQuery("context", Context.TOPK)));
+            sourceBuilder.size(0); // We don't need the hits - only the aggregations
+            searchRequest.source(sourceBuilder);
+
+            TermsAggregationBuilder aggregation = AggregationBuilders.terms("by_key")
+                    .size(N)
+                    .order(BucketOrder.aggregation("bytes_total", false))
+                    .field(key);
+            // Track the total bytes for result ordering
+            aggregation.subAggregation(AggregationBuilders.sum("bytes_total")
+                    .field("bytes_total"));
+            aggregation.subAggregation(AggregationBuilders.sum("bytes_ingress")
+                    .field("bytes_ingress"));
+            aggregation.subAggregation(AggregationBuilders.sum("bytes_egress")
+                    .field("bytes_egress"));
+            sourceBuilder.aggregation(aggregation);
+
+            client.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
+            summaryFutures = future.thenApply(s -> {
+                List<TrafficSummary<T>> trafficSummaries = new ArrayList<>(N);
+                Aggregations aggregations = s.getAggregations();
+                Terms byApplicationAggregation = aggregations.get("by_key");
+                for (Terms.Bucket bucket : byApplicationAggregation.getBuckets()) {
+                    Aggregations sums = bucket.getAggregations();
+                    Sum ingress = sums.get("bytes_ingress");
+                    Sum egress = sums.get("bytes_egress");
+
+                    trafficSummaries.add(TrafficSummary.<T>builder()
+                            .withEntity(sumFunc.apply(bucket.getKeyAsString()))
+                            .withBytesIn(((Double)ingress.getValue()).longValue())
+                            .withBytesOut(((Double)egress.getValue()).longValue())
+                            .build());
+                }
+                return trafficSummaries;
+            });
+        } else {
+            summaryFutures = CompletableFuture.completedFuture(Collections.emptyList());
+        }
+
+        if (!includeOther) {
+            return summaryFutures;
+        }
+
+        CompletableFuture<TrafficSummary<T>> totalTrafficFuture = getOtherTraffic(otherEntity, filters);
+        return summaryFutures.thenCombine(totalTrafficFuture, (topK,total) -> {
+            long bytesInRemainder = total.getBytesIn();
+            long bytesOutRemainder = total.getBytesOut();
+            for (TrafficSummary<?> topEl : topK) {
+                bytesInRemainder -= topEl.getBytesIn();
+                bytesOutRemainder -= topEl.getBytesOut();
+            }
+
+            List<TrafficSummary<T>> newTopK = new ArrayList<>(topK);
+            newTopK.add(TrafficSummary.<T>builder()
+                    .withEntity(otherEntity)
+                    .withBytesIn(Math.max(bytesInRemainder, 0L))
+                    .withBytesOut(Math.max(bytesOutRemainder, 0L))
+                    .build());
+            return newTopK;
+        });
+    }
+
+
+    private <T> CompletableFuture<TrafficSummary<T>> getOtherTraffic(T entity, List<Filter> filters) {
+        CompletableFuture<SearchResponse> future = new CompletableFuture<>();
+        SearchRequest searchRequest = new SearchRequest(getIndices(filters));
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.query(QueryBuilders.boolQuery()
+                .must(termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE))
+                .must(termQuery("context", Context.TOTAL)));
+        sourceBuilder.size(0); // We don't need the hits - only the aggregations
+        searchRequest.source(sourceBuilder);
+
+        // Sum all ingress/egress
+        sourceBuilder.aggregation(AggregationBuilders.sum("bytes_ingress")
+                .field("bytes_ingress"));
+        sourceBuilder.aggregation(AggregationBuilders.sum("bytes_egress")
+                .field("bytes_egress"));
+
+        client.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
+        return future.thenApply(s -> {
+            Sum ingress = s.getAggregations().get("bytes_ingress");
+            Sum egress = s.getAggregations().get("bytes_egress");
+
+            return TrafficSummary.<T>builder()
+                    .withEntity(entity)
+                    .withBytesIn(((Double)ingress.getValue()).longValue())
+                    .withBytesOut(((Double)egress.getValue()).longValue())
+                    .build();
+        });
+    }
+
+
+
+    private String[] getIndices(List<Filter> filters) {
+        // FIXME: Do smart index limiting
+        return new String[]{NETFLOW_AGG_INDEX_PREFIX + "*"};
+    }
+
+    private static <T> ActionListener<T> toFuture(CompletableFuture<T> future) {
+        return new ActionListener<T>(){
+            @Override
+            public void onResponse(T result) {
+                future.complete(result);
+            }
+            @Override
+            public void onFailure(Exception e) {
+                future.completeExceptionally(e);
+            }
+        };
+    };
+
 }
