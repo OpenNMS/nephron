@@ -26,7 +26,7 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.netmgt.flows.elastic;
+package org.opennms.nephron.elastic;
 
 import java.io.StringWriter;
 import java.util.Objects;
@@ -59,7 +59,7 @@ public class ConversationKeyUtils {
                 (String)array[2], (String)array[3], (String)array[4]);
     }
 
-    public static String getConvoKeyAsJsonString(FlowDocument document) {
+    public static String getConvoKeyAsJsonString(FlowDocument.Builder document) {
         // Only generate the key if all of the required fields are set
         if (document.getLocation() != null
                 && document.getProtocol() != null

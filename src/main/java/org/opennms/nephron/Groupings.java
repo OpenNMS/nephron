@@ -42,8 +42,8 @@ import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.values.KV;
 import org.opennms.nephron.elastic.ExporterNode;
-import org.opennms.nephron.elastic.GroupedBy;
 import org.opennms.nephron.elastic.FlowSummary;
+import org.opennms.nephron.elastic.GroupedBy;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.opennms.netmgt.flows.persistence.model.NodeInfo;
@@ -51,6 +51,39 @@ import org.opennms.netmgt.flows.persistence.model.NodeInfo;
 import com.google.common.base.Strings;
 
 public class Groupings {
+
+
+    public static class KeyByExporterInterfaceConversation extends DoFn<FlowDocument, KV<CompoundKey, FlowDocument>> {
+        @ProcessElement
+        public void processElement(ProcessContext c) {
+            final FlowDocument flow = c.element();
+            if (!flow.hasExporterNode()) {
+                return;
+            }
+
+            final NodeRef nodeRef;
+            final NodeInfo exporterNode = flow.getExporterNode();
+            if (!Strings.isNullOrEmpty(exporterNode.getForeignSource())
+                    && !Strings.isNullOrEmpty(exporterNode.getForeginId())) {
+                nodeRef = NodeRef.of(exporterNode.getForeignSource(), exporterNode.getForeginId());
+            } else {
+                nodeRef = NodeRef.of(exporterNode.getNodeId());
+            }
+
+            final InterfaceRef interfaceRef;
+            if (Direction.INGRESS.equals(flow.getDirection())) {
+                interfaceRef = InterfaceRef.of(flow.getInputSnmpIfindex().getValue());
+            } else {
+                interfaceRef = InterfaceRef.of(flow.getOutputSnmpIfindex().getValue());
+            }
+
+            final ConversationRef conversationRef = ConversationRef.of(flow.getConvoKey());
+
+
+            c.output(KV.of(ExporterInterfaceConversationKey.of(nodeRef, interfaceRef, conversationRef), flow));
+        }
+    }
+
     static class KeyByExporterInterface extends DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> {
         @ProcessElement
         public void processElement(ProcessContext c) {
@@ -337,6 +370,44 @@ public class Groupings {
         }
     }
 
+    public static class ConversationRef {
+        private String convesrationKey;
+
+        public static ConversationRef of(String conversationKey) {
+            ConversationRef conversationRef = new ConversationRef();
+            conversationRef.setConvesrationKey(conversationKey);
+            return conversationRef;
+        }
+
+        public String getConvesrationKey() {
+            return convesrationKey;
+        }
+
+        public void setConvesrationKey(String convesrationKey) {
+            this.convesrationKey = convesrationKey;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ConversationRef that = (ConversationRef) o;
+            return Objects.equals(convesrationKey, that.convesrationKey);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(convesrationKey);
+        }
+
+        @Override
+        public String toString() {
+            return "ConversationRef{" +
+                    "convesrationKey='" + convesrationKey + '\'' +
+                    '}';
+        }
+    }
+
     @DefaultCoder(CompoundKeyCoder.class)
     public static class ExporterInterfaceApplicationKey extends CompoundKey {
         private NodeRef nodeRef;
@@ -546,6 +617,70 @@ public class Groupings {
     }
 
     @DefaultCoder(CompoundKeyCoder.class)
+    public static class ExporterInterfaceConversationKey extends CompoundKey {
+        private NodeRef nodeRef;
+        private InterfaceRef interfaceRef;
+        private ConversationRef conversationRef;
+
+        public static ExporterInterfaceConversationKey of(NodeRef nodeRef, InterfaceRef interfaceRef, ConversationRef conversationRef) {
+            ExporterInterfaceConversationKey key = new ExporterInterfaceConversationKey();
+            key.setNodeRef(Objects.requireNonNull(nodeRef));
+            key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
+            key.setConversationRef(Objects.requireNonNull(conversationRef));
+            return key;
+        }
+
+        public NodeRef getNodeRef() {
+            return nodeRef;
+        }
+
+        public void setNodeRef(NodeRef nodeRef) {
+            this.nodeRef = nodeRef;
+        }
+
+        public InterfaceRef getInterfaceRef() {
+            return interfaceRef;
+        }
+
+        public void setInterfaceRef(InterfaceRef interfaceRef) {
+            this.interfaceRef = interfaceRef;
+        }
+
+        public ConversationRef getConversationRef() {
+            return conversationRef;
+        }
+
+        public void setConversationRef(ConversationRef conversationRef) {
+            this.conversationRef = conversationRef;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ExporterInterfaceConversationKey that = (ExporterInterfaceConversationKey) o;
+            return Objects.equals(nodeRef, that.nodeRef) &&
+                    Objects.equals(interfaceRef, that.interfaceRef) &&
+                    Objects.equals(conversationRef, that.conversationRef);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(nodeRef, interfaceRef, conversationRef);
+        }
+
+        @Override
+        public void visit(Visitor visitor) {
+            visitor.visit(this);
+        }
+
+        @Override
+        public CompoundKey getOuterKey() {
+            return ExporterInterfaceKey.of(nodeRef, interfaceRef);
+        }
+    }
+
+    @DefaultCoder(CompoundKeyCoder.class)
     public static abstract class CompoundKey {
         public abstract void visit(Visitor visitor);
         public abstract CompoundKey getOuterKey();
@@ -555,6 +690,7 @@ public class Groupings {
         void visit(ExporterInterfaceKey key);
         void visit(ExporterInterfaceApplicationKey key);
         void visit(ExporterInterfaceHostKey key);
+        void visit(ExporterInterfaceConversationKey key);
     }
 
     public static class FlowPopulatingVisitor implements Visitor {
@@ -586,6 +722,14 @@ public class Groupings {
             flow.setIfIndex(key.interfaceRef.ifIndex);
             flow.setHostAddress(key.hostRef.address);
             flow.setHostName(key.hostRef.hostname);
+        }
+
+        @Override
+        public void visit(ExporterInterfaceConversationKey key) {
+            flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_CONVERSATION);
+            flow.setExporter(toExporterNode(key.nodeRef));
+            flow.setIfIndex(key.interfaceRef.ifIndex);
+            flow.setConversationKey(key.conversationRef.convesrationKey);
         }
 
         private static ExporterNode toExporterNode(NodeRef nodeRef) {
@@ -640,6 +784,18 @@ public class Groupings {
                         throw new RuntimeException(e);
                     }
                 }
+
+                @Override
+                public void visit(ExporterInterfaceConversationKey key) {
+                    try {
+                        INT_CODER.encode(4, os);
+                        NODE_REF_KEY_CODER.encode(key.nodeRef, os);
+                        INT_CODER.encode(key.interfaceRef.ifIndex, os);
+                        STRING_CODER.encode(key.conversationRef.convesrationKey, os);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
             });
         }
 
@@ -675,6 +831,17 @@ public class Groupings {
                 key.hostRef = new HostRef();
                 key.hostRef.address = STRING_CODER.decode(is);
                 key.hostRef.hostname = STRING_CODER.decode(is);
+                return key;
+            } else if (type == 4) {
+                ExporterInterfaceConversationKey key = new ExporterInterfaceConversationKey();
+
+                key.nodeRef = NODE_REF_KEY_CODER.decode(is);
+
+                key.interfaceRef = new InterfaceRef();
+                key.interfaceRef.ifIndex = INT_CODER.decode(is);
+
+                key.conversationRef = new ConversationRef();
+                key.conversationRef.convesrationKey = STRING_CODER.decode(is);
                 return key;
             }
             throw new RuntimeException("oops: " + type);

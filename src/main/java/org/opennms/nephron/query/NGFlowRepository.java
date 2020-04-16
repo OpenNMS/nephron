@@ -65,7 +65,7 @@ import org.opennms.netmgt.flows.api.FlowRepository;
 import org.opennms.netmgt.flows.api.FlowSource;
 import org.opennms.netmgt.flows.api.Host;
 import org.opennms.netmgt.flows.api.TrafficSummary;
-import org.opennms.netmgt.flows.elastic.ConversationKeyUtils;
+import org.opennms.nephron.elastic.ConversationKeyUtils;
 import org.opennms.netmgt.flows.filter.api.Filter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

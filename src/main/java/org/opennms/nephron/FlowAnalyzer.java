@@ -154,10 +154,14 @@ public class FlowAnalyzer {
             PCollection<FlowSummary> topKHostsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopHostsByExporterAndInterface",
                     new CalculateTopKGroups("CalculateTopHostsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceHost()));
 
+            PCollection<FlowSummary> topKConversationsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopConversationsByExporterAndInterface",
+                    new CalculateTopKGroups("CalculateTopConversationsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceConversation()));
+
             // Merge all the collections
             PCollectionList<FlowSummary> flowSummaries = PCollectionList.of(totalBytesByExporterAndInterface)
                     .and(topKAppsByExporterAndInterface)
-                    .and(topKHostsByExporterAndInterface);
+                    .and(topKHostsByExporterAndInterface)
+                    .and(topKConversationsByExporterAndInterface);
             return flowSummaries.apply(Flatten.pCollections());
         }
     }

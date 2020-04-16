@@ -80,6 +80,9 @@ public class FlowSummary {
     @JsonProperty("host_name")
     private String hostName;
 
+    @JsonProperty("conversation_key")
+    private String conversationKey;
+
     public long getTimestamp() {
         return timestamp;
     }
@@ -190,5 +193,13 @@ public class FlowSummary {
 
     public void setHostName(String hostName) {
         this.hostName = hostName;
+    }
+
+    public String getConversationKey() {
+        return conversationKey;
+    }
+
+    public void setConversationKey(String conversationKey) {
+        this.conversationKey = conversationKey;
     }
 }
