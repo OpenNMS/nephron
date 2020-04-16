@@ -56,7 +56,6 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
-import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
@@ -75,7 +74,6 @@ import org.joda.time.Instant;
 import org.opennms.nephron.elastic.Context;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.elastic.IndexStrategy;
-import org.opennms.nephron.query.NGFlowRepository;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -245,7 +243,9 @@ public class FlowAnalyzer {
                     .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, FlowSummary>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, IntervalWindow window) {
-                            c.output(toFlowSummary(Context.TOTAL, window, c.element()));
+                            FlowSummary flowSummary = toFlowSummary(Context.TOTAL, window, c.element());
+                            LOG.error("MIAU: {}", flowSummary);
+                            c.output(flowSummary);
                         }
                     }));
         }
