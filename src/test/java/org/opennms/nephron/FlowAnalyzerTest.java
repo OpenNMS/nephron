@@ -29,14 +29,24 @@
 package org.opennms.nephron;
 
 import static org.opennms.nephron.FlowGenerator.GIGABYTE;
+import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
+import org.apache.beam.sdk.testing.TestStream;
+import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
+import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.TimestampedValue;
 import org.junit.Before;
 import org.junit.Rule;
+import org.junit.Test;
+import org.opennms.nephron.elastic.Context;
+import org.opennms.nephron.elastic.ExporterNode;
+import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 public class FlowAnalyzerTest {
@@ -60,27 +70,45 @@ public class FlowAnalyzerTest {
             .withApplicationTrafficWeights(0.2d, 0.8d)
             .allFlows();
 
-    /*
     @Test
-    public void canCalculateTopKApplications() {
-        // Given this set of flows
-        PCollection<FlowDocument> input = p.apply(Create.of(FLOWS));
-        NephronOptions options = PipelineOptionsFactory.as(NephronOptions.class);
-        options.setFixedWindowSize("30s");
-        PCollection<TopKFlows> output = FlowAnalyzer.doTopKFlows(input, options);
+    public void canComputeTotalBytesInWindow() {
+        // Build a stream from the given set of flows
+        long timestampOffsetMillis = TimeUnit.MINUTES.toMillis(1);
+        TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowAnalyzer.FlowDocumentProtobufCoder());
+        for (FlowDocument flow : FLOWS) {
+            flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(flow,
+                    org.joda.time.Instant.ofEpochMilli(flow.getLastSwitched().getValue() + timestampOffsetMillis)));
+        }
+        TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
-        // We expect the top application to be "http" with in=10 & out=100
-        TopKFlows topKFlows = new TopKFlows();
-        topKFlows.setWindowMinMs(1546318819999L);
-        topKFlows.setWindowMaxMs(1546318829999L);
-        topKFlows.setContext("apps");
-        topKFlows.setFlows(ImmutableMap.<String, FlowBytes>builder()
-                .put("https", new FlowBytes(12884901885L,5153960754L))
-                .put("http", new FlowBytes(3221225469L,1288490184L))
-            .build());
-        PAssert.that(output).containsInAnyOrder(topKFlows);
+        // Build the pipeline
+        PCollection<FlowSummary> output = p.apply(flowStream)
+                .apply(new FlowAnalyzer.WindowedFlows("1m"))
+                .apply(new FlowAnalyzer.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
+
+        FlowSummary summary = new FlowSummary();
+        summary.setTimestamp(1546318860000L);
+        summary.setRangeStartMs(1546318800000L);
+        summary.setRangeEndMs(1546318860000L);
+        summary.setRanking(0);
+        summary.setGroupedBy(EXPORTER_INTERFACE);
+        summary.setContext(Context.TOTAL);
+        summary.setBytesIngress(16106127354L);
+        summary.setBytesEgress(6442450938L);
+        summary.setBytesTotal(22548578292L);
+        summary.setIfIndex(98);
+
+        ExporterNode exporterNode = new ExporterNode();
+        exporterNode.setForeignSource("SomeFs");
+        exporterNode.setForeignId("SomeFid");
+        summary.setExporter(exporterNode);
+
+        PAssert.that(output)
+                .inWindow(new IntervalWindow(org.joda.time.Instant.ofEpochMilli(1546318800000L),
+                        org.joda.time.Instant.ofEpochMilli(1546318800000L + TimeUnit.MINUTES.toMillis(1))))
+                .containsInAnyOrder(summary);
+
         p.run();
     }
-     */
 
 }

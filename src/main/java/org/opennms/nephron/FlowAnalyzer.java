@@ -141,8 +141,7 @@ public class FlowAnalyzer {
 
         @Override
         public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
-            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("attach_timestamp", attachTimestamps())
-                    .apply("to_windows", toWindow(fixedWindowSize));
+            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows", new WindowedFlows(fixedWindowSize));
 
             PCollection<FlowSummary> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
                     new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
@@ -162,6 +161,20 @@ public class FlowAnalyzer {
                     .and(topKHostsByExporterAndInterface)
                     .and(topKConversationsByExporterAndInterface);
             return flowSummaries.apply(Flatten.pCollections());
+        }
+    }
+
+    public static class WindowedFlows extends PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> {
+        private final String fixedWindowSize;
+
+        public WindowedFlows(String fixedWindowSize) {
+            this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
+        }
+
+        @Override
+        public PCollection<FlowDocument> expand(PCollection<FlowDocument> input) {
+            return input.apply("attach_timestamp", attachTimestamps())
+                    .apply("to_windows", toWindow(fixedWindowSize));
         }
     }
 

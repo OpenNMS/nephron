@@ -60,6 +60,7 @@ import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -83,8 +84,8 @@ public class ElasticModelIT {
     @Rule
     public TestPipeline p = TestPipeline.create();
 
-    @Rule
-    public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
+    @ClassRule
+    public static ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
 
     private HttpHost elasticHost;
 

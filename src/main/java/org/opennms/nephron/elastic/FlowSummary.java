@@ -28,6 +28,8 @@
 
 package org.opennms.nephron.elastic;
 
+import java.util.Objects;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class FlowSummary {
@@ -201,5 +203,54 @@ public class FlowSummary {
 
     public void setConversationKey(String conversationKey) {
         this.conversationKey = conversationKey;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof FlowSummary)) return false;
+        FlowSummary summary = (FlowSummary) o;
+        return timestamp == summary.timestamp &&
+                rangeStartMs == summary.rangeStartMs &&
+                rangeEndMs == summary.rangeEndMs &&
+                ranking == summary.ranking &&
+                groupedBy == summary.groupedBy &&
+                context == summary.context &&
+                Objects.equals(bytesIngress, summary.bytesIngress) &&
+                Objects.equals(bytesEgress, summary.bytesEgress) &&
+                Objects.equals(bytesTotal, summary.bytesTotal) &&
+                Objects.equals(exporter, summary.exporter) &&
+                Objects.equals(ifIndex, summary.ifIndex) &&
+                Objects.equals(application, summary.application) &&
+                Objects.equals(hostAddress, summary.hostAddress) &&
+                Objects.equals(hostName, summary.hostName) &&
+                Objects.equals(conversationKey, summary.conversationKey);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(timestamp, rangeStartMs, rangeEndMs, ranking, groupedBy, context, bytesIngress,
+                bytesEgress, bytesTotal, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
+    }
+
+    @Override
+    public String toString() {
+        return "FlowSummary{" +
+                "timestamp=" + timestamp +
+                ", rangeStartMs=" + rangeStartMs +
+                ", rangeEndMs=" + rangeEndMs +
+                ", ranking=" + ranking +
+                ", groupedBy=" + groupedBy +
+                ", context=" + context +
+                ", bytesIngress=" + bytesIngress +
+                ", bytesEgress=" + bytesEgress +
+                ", bytesTotal=" + bytesTotal +
+                ", exporter=" + exporter +
+                ", ifIndex=" + ifIndex +
+                ", application='" + application + '\'' +
+                ", hostAddress='" + hostAddress + '\'' +
+                ", hostName='" + hostName + '\'' +
+                ", conversationKey='" + conversationKey + '\'' +
+                '}';
     }
 }

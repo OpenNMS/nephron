@@ -65,6 +65,7 @@ import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.FlowSummary;
+import org.opennms.nephron.query.NGFlowRepository;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
@@ -85,6 +86,12 @@ public class FlowAnalyzerIT {
 
     @Test
     public void canStreamIt() throws InterruptedException, IOException {
+        NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
+                "--fixedWindowSize=5s",
+                "--flowDestTopic=opennms-flows-aggregated")
+                .as(NephronOptions.class);
+        options.setElasticUrl("http://" + elastic.getHttpHostAddress());
+
         Executor executor = Executors.newCachedThreadPool();
 
         Map<String, Object> producerProps = new HashMap<>();
@@ -105,7 +112,7 @@ public class FlowAnalyzerIT {
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         KafkaConsumer<String,String> consumer = new KafkaConsumer<>(consumerProps);
-        consumer.subscribe(Collections.singleton("flows_processed"));
+        consumer.subscribe(Collections.singleton(options.getFlowDestTopic()));
         executor.execute(new Runnable() {
             @Override
             public void run() {
@@ -123,10 +130,7 @@ public class FlowAnalyzerIT {
             }
         });
 
-        NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
-                "--fixedWindowSize=5s")
-                .as(NephronOptions.class);
-        options.setElasticUrl("http://" + elastic.getHttpHostAddress());
+
 
         // Fire up the pipeline
         final Pipeline pipeline = FlowAnalyzer.create(options);
@@ -153,19 +157,10 @@ public class FlowAnalyzerIT {
         t.join();
 
         // Wait for documents to be indexed in Elasticsearch
-        RestClientBuilder restClientBuilder = RestClient.builder(new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http"));
-        RestHighLevelClient client = new RestHighLevelClient(restClientBuilder);
+        NGFlowRepository flowRepository = new NGFlowRepository(new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http"));
         await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
                 .ignoreExceptions()
-                .until(() -> countAggregatedFlowDocuments(client), greaterThanOrEqualTo(1L));
-    }
-
-    private static long countAggregatedFlowDocuments(RestHighLevelClient client) throws IOException {
-        CountRequest countRequest = new CountRequest("aggregated-flows-*");
-        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
-        searchSourceBuilder.query(QueryBuilders.matchAllQuery());
-        countRequest.source(searchSourceBuilder);
-        return client.count(countRequest, RequestOptions.DEFAULT).getCount();
+                .until(() -> flowRepository.getFlowCount(Collections.emptyList()).get(), greaterThanOrEqualTo(1L));
     }
 
 }

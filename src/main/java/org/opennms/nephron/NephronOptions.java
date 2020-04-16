@@ -36,7 +36,6 @@ import org.apache.beam.sdk.options.Validation;
 public interface NephronOptions extends PipelineOptions {
 
     String DEFAULT_FLOW_SOURCE_TOPIC = "opennms-flows";
-    String DEFAULT_FLOW_DEST_TOPIC = "opennms-flows-agg";
 
     @Description("Kafka Bootstrap Servers")
     @Default.String("localhost:9092")
