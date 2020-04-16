@@ -57,6 +57,7 @@ import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
+import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.Repeatedly;
@@ -525,9 +526,9 @@ public class FlowAnalyzer {
     public static Window<FlowDocument> toWindow(String fixedWindowSize) {
         return Window.<FlowDocument>into(FixedWindows.of(DurationUtils.toDuration(fixedWindowSize)))
                 // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
-                .triggering(Repeatedly.forever(AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.standardMinutes(1))))
+                .triggering(Repeatedly.forever(AfterWatermark.pastEndOfWindow()))
                 .accumulatingFiredPanes()
-                .withAllowedLateness(Duration.standardMinutes(10));
+                .withAllowedLateness(Duration.standardMinutes(2));
     }
 
 }
