@@ -71,6 +71,7 @@ import org.opennms.netmgt.flows.filter.api.SnmpInterfaceIdFilter;
 import org.opennms.netmgt.flows.filter.api.TimeRangeFilter;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
+import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Lists;
@@ -81,8 +82,8 @@ public class ElasticModelIT {
     @Rule
     public TestPipeline p = TestPipeline.create();
 
-    //@Rule
-   // public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
+    @Rule
+    public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
 
     private HttpHost elasticHost;
 
@@ -91,8 +92,8 @@ public class ElasticModelIT {
 
     @Before
     public void setUp() throws IOException {
-        elasticHost = new HttpHost("maas-m1-demo.opennms.com", 9200, "http");
-       // elasticHost = new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http");
+      //  elasticHost = new HttpHost("maas-m1-demo.opennms.com", 9200, "http");
+        elasticHost = new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http");
         RestClientBuilder restClientBuilder = RestClient.builder(elasticHost);
         client = new RestHighLevelClient(restClientBuilder);
 

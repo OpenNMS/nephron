@@ -190,7 +190,19 @@ public class FlowAnalyzer {
                 })
                 .withoutMetadata()
         )
-                .apply(Values.create());
+                .apply(Values.create())
+                .apply("add_missing_DeltaSwitched", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
+                            @ProcessElement
+                            public void processElement(ProcessContext c) {
+                                FlowDocument flow = c.element();
+                                if (flow.hasDeltaSwitched()) {
+                                    c.output(flow);
+                                } else {
+                                    c.output(FlowDocument.newBuilder(c.element())
+                                            .setDeltaSwitched(flow.getFirstSwitched())
+                                            .build());
+                                }
+                        }}));
 
         PCollection<TopKFlow> topKFlows = streamOfFlows.apply(new CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()));
         topKFlows.apply(new FlowAnalyzer.WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex()));
