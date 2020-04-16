@@ -64,13 +64,13 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.TopKFlow;
 import org.opennms.nephron.query.NGFlowRepository;
+import org.opennms.netmgt.flows.api.Host;
 import org.opennms.netmgt.flows.api.TrafficSummary;
 import org.opennms.netmgt.flows.filter.api.Filter;
 import org.opennms.netmgt.flows.filter.api.SnmpInterfaceIdFilter;
 import org.opennms.netmgt.flows.filter.api.TimeRangeFilter;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
-import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Lists;
@@ -81,8 +81,8 @@ public class ElasticModelIT {
     @Rule
     public TestPipeline p = TestPipeline.create();
 
-    @Rule
-    public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
+    //@Rule
+   // public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
 
     private HttpHost elasticHost;
 
@@ -91,8 +91,8 @@ public class ElasticModelIT {
 
     @Before
     public void setUp() throws IOException {
-        //elasticHost = new HttpHost("maas-m1-demo.opennms.com", 9200, "http");
-        elasticHost = new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http");
+        elasticHost = new HttpHost("maas-m1-demo.opennms.com", 9200, "http");
+       // elasticHost = new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http");
         RestClientBuilder restClientBuilder = RestClient.builder(elasticHost);
         client = new RestHighLevelClient(restClientBuilder);
 
@@ -135,7 +135,7 @@ public class ElasticModelIT {
     }
 
     @Test
-    public void canIndexAndQuery() throws ExecutionException, InterruptedException {
+    public void canGetTopKApplications() throws ExecutionException, InterruptedException {
         // Take some flows
         final List<FlowDocument> flows = defaultFlows();
 
@@ -149,10 +149,10 @@ public class ElasticModelIT {
                 new TimeRangeFilter(0, System.currentTimeMillis()))).get(), greaterThanOrEqualTo(1L));
 
         // Retrieve the Top N applications over the entire time range
-        List<TrafficSummary<String>> appTrafficSummary = flowRepository.getTopNApplicationSummaries(10, false, getFilters()).get();
+        List<TrafficSummary<String>> appTrafficSummary = flowRepository.getTopNApplicationSummaries(10, true, getFilters()).get();
 
         // Expect all of the applications, with the sum of all the bytes from all the flows
-        assertThat(appTrafficSummary, hasSize(3));
+        assertThat(appTrafficSummary, hasSize(4));
         TrafficSummary<String> https = appTrafficSummary.get(0);
         assertThat(https.getEntity(), equalTo("https"));
         assertThat(https.getBytesIn(), equalTo(210L));
@@ -169,18 +169,96 @@ public class ElasticModelIT {
         assertThat(http.getBytesIn(), equalTo(10L));
         assertThat(http.getBytesOut(), equalTo(100L));
 
-        appTrafficSummary = flowRepository.getTopNApplicationSummaries(1, false, getFilters()).get();
+        TrafficSummary<String> other = appTrafficSummary.get(3);
+        assertThat(other.getEntity(), equalTo("Other"));
+        assertThat(other.getBytesIn(), equalTo(0L));
+        assertThat(other.getBytesOut(), equalTo(0L));
+
+        // Now decrease N, expect all of the counts to pool up in "Other"
+        appTrafficSummary = flowRepository.getTopNApplicationSummaries(1, true, getFilters()).get();
 
         // Expect all of the applications, with the sum of all the bytes from all the flows
-        assertThat(appTrafficSummary, hasSize(1));
+        assertThat(appTrafficSummary, hasSize(2));
         https = appTrafficSummary.get(0);
         assertThat(https.getEntity(), equalTo("https"));
         assertThat(https.getBytesIn(), equalTo(210L));
         assertThat(https.getBytesOut(), equalTo(2100L));
 
+        other = appTrafficSummary.get(1);
+        assertThat(other.getEntity(), equalTo("Other"));
+        assertThat(other.getBytesIn(), equalTo(210L));
+        assertThat(other.getBytesOut(), equalTo(200L));
+
         // Now set N to zero
         appTrafficSummary = flowRepository.getTopNApplicationSummaries(0, false, getFilters()).get();
         assertThat(appTrafficSummary, hasSize(0));
+
+        // N=0, but include other
+        appTrafficSummary = flowRepository.getTopNApplicationSummaries(0, true, getFilters()).get();
+        assertThat(appTrafficSummary, hasSize(1));
+
+        other = appTrafficSummary.get(0);
+        assertThat(other.getEntity(), equalTo("Other"));
+        assertThat(other.getBytesIn(), equalTo(420L));
+        assertThat(other.getBytesOut(), equalTo(2300L));
+    }
+
+
+    @Test
+    public void canGetTopKHosts() throws ExecutionException, InterruptedException {
+        // Take some flows
+        final List<FlowDocument> flows = defaultFlows();
+
+        // Pass those same flows through the pipeline and persist the aggregations
+        NephronOptions options = PipelineOptionsFactory.as(NephronOptions.class);
+        options.setFixedWindowSize("30s");
+        doPipeline(flows, options);
+
+        // Verify
+        await().atMost(1, TimeUnit.MINUTES).until(() -> flowRepository.getFlowCount(Collections.singletonList(
+                new TimeRangeFilter(0, System.currentTimeMillis()))).get(), greaterThanOrEqualTo(1L));
+
+        // Retrieve the Top N applications over the entire time range
+        List<TrafficSummary<Host>> hostTrafficSummary = flowRepository.getTopNHostSummaries(10, false, getFilters()).get();
+
+        // Expect all of the hosts, with the sum of all the bytes from all the flows
+        assertThat(hostTrafficSummary, hasSize(6));
+        TrafficSummary<Host> top = hostTrafficSummary.get(0);
+        assertThat(top.getEntity(), equalTo(new Host("10.1.1.12")));
+        assertThat(top.getBytesIn(), equalTo(210L));
+        assertThat(top.getBytesOut(), equalTo(2100L));
+
+        TrafficSummary<Host> bottom = hostTrafficSummary.get(5);
+        assertThat(bottom.getEntity(), equalTo(new Host("10.1.1.11")));
+        assertThat(bottom.getBytesIn(), equalTo(10L));
+        assertThat(bottom.getBytesOut(), equalTo(100L));
+
+        // Now decrease N, expect all of the counts to pool up in "Other"
+        hostTrafficSummary = flowRepository.getTopNHostSummaries(1, true, getFilters()).get();
+
+        // Expect two summaries
+        assertThat(hostTrafficSummary, hasSize(2));
+        top = hostTrafficSummary.get(0);
+        assertThat(top.getEntity(), equalTo(new Host("10.1.1.12")));
+        assertThat(top.getBytesIn(), equalTo(210L));
+        assertThat(top.getBytesOut(), equalTo(2100L));
+
+        TrafficSummary<Host> other = hostTrafficSummary.get(1);
+        assertThat(other.getEntity(), equalTo(new Host("Other")));
+        assertThat(other.getBytesIn(), equalTo(210L));
+        assertThat(other.getBytesOut(), equalTo(200L));
+
+        // Now set N to zero
+        hostTrafficSummary = flowRepository.getTopNHostSummaries(0, false, getFilters()).get();
+        assertThat(hostTrafficSummary, hasSize(0));
+
+        // N=0, but include other
+        hostTrafficSummary = flowRepository.getTopNHostSummaries(0, true, getFilters()).get();
+        assertThat(hostTrafficSummary, hasSize(1));
+        other = hostTrafficSummary.get(0);
+        assertThat(other.getEntity(), equalTo(new Host("Other")));
+        assertThat(other.getBytesIn(), equalTo(420L));
+        assertThat(other.getBytesOut(), equalTo(2300L));
     }
 
     private void doPipeline(List<FlowDocument> flows, NephronOptions options) {

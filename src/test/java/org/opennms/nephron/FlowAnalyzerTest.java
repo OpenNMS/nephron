@@ -34,16 +34,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
-import org.apache.beam.sdk.transforms.Create;
-import org.apache.beam.sdk.values.PCollection;
 import org.junit.Before;
 import org.junit.Rule;
-import org.junit.Test;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
-import org.testcontainers.shaded.com.google.common.collect.ImmutableMap;
 
 public class FlowAnalyzerTest {
 
@@ -66,6 +60,7 @@ public class FlowAnalyzerTest {
             .withApplicationTrafficWeights(0.2d, 0.8d)
             .allFlows();
 
+    /*
     @Test
     public void canCalculateTopKApplications() {
         // Given this set of flows
@@ -86,5 +81,6 @@ public class FlowAnalyzerTest {
         PAssert.that(output).containsInAnyOrder(topKFlows);
         p.run();
     }
+     */
 
 }

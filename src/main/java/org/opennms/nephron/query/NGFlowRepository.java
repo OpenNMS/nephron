@@ -55,6 +55,7 @@ import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilde
 import org.elasticsearch.search.aggregations.metrics.Sum;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.opennms.nephron.NephronOptions;
+import org.opennms.nephron.elastic.GroupedBy;
 import org.opennms.nephron.elastic.TopKFlow;
 import org.opennms.netmgt.flows.api.Conversation;
 import org.opennms.netmgt.flows.api.Directional;
@@ -114,19 +115,15 @@ public class NGFlowRepository implements FlowRepository {
 
     @Override
     public CompletableFuture<List<TrafficSummary<String>>> getTopNApplicationSummaries(int N, boolean includeOther, List<Filter> filters) {
-        if (includeOther) {
-            throw new UnsupportedOperationException("Not supported yet - need custom accumulator - Top K + remainder");
-        }
-
         CompletableFuture<SearchResponse> future = new CompletableFuture<>();
         SearchRequest searchRequest = new SearchRequest(getIndices(filters));
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.query(QueryBuilders.termQuery("grouped_by.application", true));
+        sourceBuilder.query(QueryBuilders.termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE_APPLICATION));
         sourceBuilder.size(0); // We don't need the hits - only the aggregations
         searchRequest.source(sourceBuilder);
 
         TermsAggregationBuilder aggregation = AggregationBuilders.terms("by_application")
-                .size(NephronOptions.MAX_K + 3)
+                .size(NephronOptions.MAX_K + 1) // Add 1 to account for the "Other" bucket
                 .order(BucketOrder.aggregation("bytes_total", false))
                 .field("application");
         // Track the total bytes for result ordering
@@ -170,22 +167,45 @@ public class NGFlowRepository implements FlowRepository {
                 return Collections.emptyList();
             }
 
-            // Remove the "other" bucket if we're not supposed to include it
-            if (!includeOther) {
-                trafficSummaryByApplication.remove(TopKFlow.OTHER_APPLICATION_NAME_KEY);
+            TrafficSummary<String> otherTrafficSummary = trafficSummaryByApplication.remove(TopKFlow.OTHER_APPLICATION_NAME_KEY);
+            if (otherTrafficSummary == null) {
+                otherTrafficSummary = TrafficSummary.<String>builder()
+                        .withEntity(TopKFlow.OTHER_APPLICATION_NAME_DISPLAY)
+                        .withBytesIn(0)
+                        .withBytesOut(0)
+                        .build();
             }
 
             List<TrafficSummary<String>> apps = new ArrayList<>(trafficSummaryByApplication.values());
 
-            int targetSize = N;
-            targetSize += includeOther ? 0 : 1;
-            if (trafficSummaryByApplication.size() > targetSize) {
-                // TODO: We need to further reduce the results
-                apps = apps.subList(0, Math.min(N, apps.size()));
+            // Tally up apps to trim
+            long bytesIn = 0;
+            long bytesOut = 0;
+            for (int i = Math.min(N, apps.size()); i < apps.size(); i++) {
+                bytesIn += apps.get(i).getBytesIn();
+                bytesOut += apps.get(i).getBytesOut();
+            }
+            // Trim
+            apps = apps.subList(0, Math.min(N, apps.size()));
+
+            // Add to other
+            otherTrafficSummary = TrafficSummary.<String>builder()
+                    .withEntity(TopKFlow.OTHER_APPLICATION_NAME_DISPLAY)
+                    .withBytesIn(otherTrafficSummary.getBytesIn() + bytesIn)
+                    .withBytesOut(otherTrafficSummary.getBytesOut() + bytesOut)
+                    .build();
+
+            if (includeOther) {
+                apps.add(otherTrafficSummary);
             }
 
             return apps;
         });
+    }
+
+    @Override
+    public CompletableFuture<List<TrafficSummary<Host>>> getTopNHostSummaries(int N, boolean includeOther, List<Filter> filters) {
+        return CompletableFuture.completedFuture(Collections.emptyList());
     }
 
     private static <T> ActionListener<T> toFuture(CompletableFuture<T> future) {
@@ -246,10 +266,7 @@ public class NGFlowRepository implements FlowRepository {
         return null;
     }
 
-    @Override
-    public CompletableFuture<List<TrafficSummary<Host>>> getTopNHostSummaries(int N, boolean includeOther, List<Filter> filters) {
-        return null;
-    }
+
 
     @Override
     public CompletableFuture<List<TrafficSummary<Host>>> getHostSummaries(Set<String> hosts, boolean includeOther, List<Filter> filters) {

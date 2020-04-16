@@ -26,8 +26,33 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.nephron.elastic;
+package org.opennms.nephron;
 
-public enum GroupedBy {
-    EXPORTER_INTERFACE_APPLICATION;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+
+import org.apache.avro.Schema;
+import org.apache.beam.sdk.coders.AvroCoder;
+import org.junit.Test;
+
+public class AvroCoderTest {
+
+    @Test
+    public void doIt() throws IOException {
+        Schema keySchema = AvroCoder.of(Groupings.ExporterInterfaceApplicationKey.class).getSchema();
+        AvroCoder<Groupings.ExporterInterfaceApplicationKey> coder = AvroCoder.of(Groupings.ExporterInterfaceApplicationKey.class);
+
+        Groupings.ExporterInterfaceApplicationKey key = new Groupings.ExporterInterfaceApplicationKey();
+        //key.setNodeRef(Groupings.NodeRef.of(1));
+        key.setNodeRef(Groupings.NodeRef.of("asdf", "asdfsdf"));
+
+        key.setInterfaceRef(Groupings.InterfaceRef.of(1));
+        key.setApplicationRef(Groupings.ApplicationRef.of("1"));
+
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        coder.encode(key, bos);
+
+        coder.decode(new ByteArrayInputStream(bos.toByteArray()));
+    }
 }

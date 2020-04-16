@@ -22,13 +22,8 @@
       },
 
       "grouped_by": {
-        "dynamic": true,
-        "type": "object",
-        "properties": {
-          "application": {
-            "type": "boolean"
-          }
-        }
+        "type": "keyword",
+        "norms": false
       },
 
       "ranking": {
@@ -58,7 +53,7 @@
           }
         }
       },
-      "ifindex": {
+      "if_index": {
         "type": "integer"
       },
       "application": {

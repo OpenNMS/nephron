@@ -51,19 +51,22 @@ public class TopKFlow {
     private int ranking;
 
     @JsonProperty("grouped_by")
-    private GroupedBy grouped_by;
+    private GroupedBy groupedBy;
 
     @JsonProperty("bytes_ingress")
-    private Long bytes_ingress;
+    private Long bytesIngress;
 
     @JsonProperty("bytes_egress")
-    private Long bytes_egress;
+    private Long bytesEgress;
 
     @JsonProperty("bytes_total")
-    private Long bytes_total;
+    private Long bytesTotal;
 
     @JsonProperty("exporter")
     private ExporterNode exporter;
+
+    @JsonProperty("if_index")
+    private Integer ifIndex;
 
     @JsonProperty("application")
     private String application;
@@ -93,14 +96,6 @@ public class TopKFlow {
         this.rangeEndMs = rangeEndMs;
     }
 
-    public GroupedBy getGroupedBy() {
-        return grouped_by;
-    }
-
-    public void setGroupedBy(GroupedBy grouped_by) {
-        this.grouped_by = grouped_by;
-    }
-
     public int getRanking() {
         return ranking;
     }
@@ -109,28 +104,44 @@ public class TopKFlow {
         this.ranking = ranking;
     }
 
-    public Long getBytesIngress() {
-        return bytes_ingress;
+    public GroupedBy getGroupedBy() {
+        return groupedBy;
     }
 
-    public void setBytesIngress(Long bytes_ingress) {
-        this.bytes_ingress = bytes_ingress;
+    public void setGroupedBy(GroupedBy groupedBy) {
+        this.groupedBy = groupedBy;
+    }
+
+    public Long getBytesIngress() {
+        return bytesIngress;
+    }
+
+    public void setBytesIngress(Long bytesIngress) {
+        this.bytesIngress = bytesIngress;
     }
 
     public Long getBytesEgress() {
-        return bytes_egress;
+        return bytesEgress;
     }
 
-    public void setBytesEgress(Long bytes_egress) {
-        this.bytes_egress = bytes_egress;
+    public void setBytesEgress(Long bytesEgress) {
+        this.bytesEgress = bytesEgress;
     }
 
     public Long getBytesTotal() {
-        return bytes_total;
+        return bytesTotal;
     }
 
-    public void setBytesTotal(Long bytes_total) {
-        this.bytes_total = bytes_total;
+    public void setBytesTotal(Long bytesTotal) {
+        this.bytesTotal = bytesTotal;
+    }
+
+    public Integer getIfIndex() {
+        return ifIndex;
+    }
+
+    public void setIfIndex(Integer ifIndex) {
+        this.ifIndex = ifIndex;
     }
 
     public ExporterNode getExporter() {

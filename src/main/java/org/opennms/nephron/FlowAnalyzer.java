@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -39,6 +40,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiFunction;
 
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
@@ -52,10 +54,8 @@ import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
-import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.Repeatedly;
@@ -68,7 +68,6 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
-import org.opennms.nephron.elastic.GroupedBy;
 import org.opennms.nephron.elastic.TopKFlow;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
@@ -158,35 +157,12 @@ public class FlowAnalyzer {
                 .withAllowedLateness(Duration.standardMinutes(10));
     }
 
-    public static PCollection<TopKFlows> doTopKFlows(PCollection<FlowDocument> input, NephronOptions options) {
-        PCollection<FlowDocument> windowedStreamOfFlows = input.apply("attach_timestamp", attachTimestamps())
-                .apply("to_windows", toWindow(options));
-
-        PCollection<TopKFlows> topKAppsFlows = windowedStreamOfFlows.apply("key_by_app", ParDo.of(new ExtractApplicationName()))
-                .apply("compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
-                .apply("sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                .apply("top_k_per_key", Top.of(options.getTopK(), new ByteValueComparator()).withoutDefaults())
-                .apply("top_k_summary_for_window", ParDo.of(new DoFn<List<KV<String, FlowBytes>>, TopKFlows>() {
-                    @ProcessElement
-                    public void processElement(ProcessContext c, BoundedWindow boundedWindow) {
-                        final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
-
-                        final TopKFlows topK = new TopKFlows();
-                        topK.setContext("apps");
-                        topK.setWindowMaxMs(boundedWindow.maxTimestamp().getMillis());
-                        topK.setWindowMinMs(topK.getWindowMaxMs() - windowSizeMs);
-                        topK.setFlows(toMap(c.element()));
-                        c.output(topK);
-                    }
-                }));
-
-        return topKAppsFlows;
-    }
-
     public static void registerCoders(Pipeline p) {
         p.getCoderRegistry().registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
-        p.getCoderRegistry().registerCoderForClass(TopKFlows.class, new JacksonJsonCoder(TopKFlows.class));
-        p.getCoderRegistry().registerCoderForClass(TopKFlow.class, new JacksonJsonCoder(TopKFlow.class));
+        p.getCoderRegistry().registerCoderForClass(TopKFlows.class, new JacksonJsonCoder<>(TopKFlows.class));
+        p.getCoderRegistry().registerCoderForClass(TopKFlow.class, new JacksonJsonCoder<>(TopKFlow.class));
+        p.getCoderRegistry().registerCoderForClass(Groupings.ExporterInterfaceApplicationKey.class, new Groupings.CompoundKeyCoder());
+        p.getCoderRegistry().registerCoderForClass(Groupings.CompoundKey.class, new Groupings.CompoundKeyCoder());
     }
 
     public static Pipeline create(NephronOptions options) {
@@ -199,7 +175,7 @@ public class FlowAnalyzer {
         kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true);
         // kafkaConsumerConfig.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // For testing only :)
 
-        PCollection<FlowDocument> windowedStreamOfFlows = p.apply(KafkaIO.<String, FlowDocument>read()
+        PCollection<FlowDocument> streamOfFlows = p.apply(KafkaIO.<String, FlowDocument>read()
                 .withBootstrapServers(options.getBootstrapServers())
                 .withTopic(options.getFlowSourceTopic())
                 .withKeyDeserializer(StringDeserializer.class)
@@ -212,60 +188,39 @@ public class FlowAnalyzer {
                 })
                 .withoutMetadata()
         )
-                .apply(Values.create())
-                .apply(attachTimestamps())
-                .apply(toWindow(options));
+                .apply(Values.create());
 
-        PCollection<TopKFlows> topKAppsFlows = windowedStreamOfFlows.apply(ParDo.of(new ExtractApplicationName()))
-                .apply(ParDo.of(new ToWindowedBytes()))
-                .apply(Combine.perKey(new SumBytes()))
-                .apply(Top.of(options.getTopK(), new ByteValueComparator()).withoutDefaults())
-                .apply(ParDo.of(new DoFn<List<KV<String, FlowBytes>>, TopKFlows>() {
-                    @ProcessElement
-                    public void processElement(ProcessContext c, BoundedWindow boundedWindow) {
-                        final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
-
-                        final TopKFlows topK = new TopKFlows();
-                        topK.setContext("apps");
-                        topK.setWindowMaxMs(boundedWindow.maxTimestamp().getMillis());
-                        topK.setWindowMinMs(topK.getWindowMaxMs() - windowSizeMs);
-                        topK.setFlows(toMap(c.element()));
-                        c.output(topK);
-                    }
-                }));
-        pushToKafka(options, topKAppsFlows);
-
-        PCollection<TopKFlows> topKSrcFlows = windowedStreamOfFlows.apply(ParDo.of(new ExtractSrcAddr()))
-                .apply(ParDo.of(new ToWindowedBytes()))
-                .apply(Combine.perKey(new SumBytes()))
-                .apply(Top.of(options.getTopK(), new ByteValueComparator()).withoutDefaults())
-                .apply(ParDo.of(new DoFn<List<KV<String, FlowBytes>>, TopKFlows>() {
-                    @ProcessElement
-                    public void processElement(ProcessContext c, BoundedWindow boundedWindow) {
-                        final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
-
-                        final TopKFlows topK = new TopKFlows();
-                        topK.setContext("src-addr");
-                        topK.setWindowMaxMs(boundedWindow.maxTimestamp().getMillis());
-                        topK.setWindowMinMs(topK.getWindowMaxMs() - windowSizeMs);
-                        topK.setFlows(toMap(c.element()));
-                        c.output(topK);
-                    }
-                }));
-        pushToKafka(options, topKSrcFlows);
-
-        topKSrcFlows.apply(toJson())
-                .apply(ElasticsearchIO.write().withConnectionConfiguration(
-                ElasticsearchIO.ConnectionConfiguration.create(
-                        new String[]{options.getElasticUrl()}, options.getElasticIndex(), "_doc"))
-                        .withIndexFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
-                            @Override
-                            public String apply(JsonNode input) {
-                                return "aggregated-flows-2020";
-                            }
-                        }));
-
+        PCollection<TopKFlow> topKFlows = streamOfFlows.apply(new CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()));
+        topKFlows.apply(new FlowAnalyzer.WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex()));
+        pushToKafka(options, topKFlows);
         return p;
+    }
+
+    private static class BinaryFlowBytesCombiner implements BiFunction<KV<Groupings.CompoundKey, FlowBytes>, KV<Groupings.CompoundKey, FlowBytes>,KV<Groupings.CompoundKey, FlowBytes>>, Serializable {
+        @Override
+        public KV<Groupings.CompoundKey, FlowBytes> apply(KV<Groupings.CompoundKey, FlowBytes> left, KV<Groupings.CompoundKey, FlowBytes> right) {
+            long bytesIn = 0;
+            long bytesOut = 0;
+
+
+            Groupings.CompoundKey key = null;
+            for (KV<Groupings.CompoundKey, FlowBytes> val : Arrays.asList(left, right)) {
+                if (val == null) continue;
+                bytesIn += val.getValue().bytesIn;
+                bytesOut += val.getValue().bytesOut;
+                key = val.getKey();
+            }
+
+            // FIXME: Hacks!
+            if (!(key instanceof Groupings.ExporterInterfaceApplicationKey)) {
+                throw new IllegalStateException("oops");
+            }
+            Groupings.ExporterInterfaceApplicationKey keyCast = (Groupings.ExporterInterfaceApplicationKey)key;
+            Groupings.ExporterInterfaceApplicationKey newKey = Groupings.ExporterInterfaceApplicationKey.of(keyCast.getNodeRef(),
+                    keyCast.getInterfaceRef(),
+                    Groupings.ApplicationRef.of(TopKFlow.OTHER_APPLICATION_NAME_KEY));
+            return KV.of(newKey, new FlowBytes(bytesIn, bytesOut));
+        }
     }
 
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<TopKFlow>> {
@@ -282,44 +237,31 @@ public class FlowAnalyzer {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("attach_timestamp", attachTimestamps())
                     .apply("to_windows", toWindow(fixedWindowSize));
 
-            PCollection<TopKFlow> topKAppsFlows = windowedStreamOfFlows.apply("key_by_app", ParDo.of(new ExtractApplicationName()))
+            PCollection<TopKFlow> topKAppsFlows = windowedStreamOfFlows
+                    .apply("key_by_exporter_interface_app", ParDo.of(new Groupings.KeyByExporterInterfaceApplication()))
                     .apply("compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
                     .apply("sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply("top_k_per_key", Top.of(topK, new ByteValueComparator()).withoutDefaults())
-                    .apply("top_k_summary_for_window", ParDo.of(new DoFn<List<KV<String, FlowBytes>>, TopKFlows>() {
+                    .apply("top_k_per_key", Combine.globally(new MyTop.TopCombineFn<>(topK, new ByteValueComparator(), new BinaryFlowBytesCombiner())).withoutDefaults())
+                    .apply("top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, FlowBytes>>, TopKFlow>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, IntervalWindow window) {
-                            final TopKFlows topK = new TopKFlows();
-                            topK.setContext("apps");
-                            topK.setWindowMaxMs(window.end().getMillis());
-                            topK.setWindowMinMs(window.start().getMillis());
-                            topK.setFlows(toMap(c.element()));
-                            c.output(topK);
-                        }
-                    }))
-                    .apply("top_k_flatten", ParDo.of(new DoFn<TopKFlows, TopKFlow>() {
-                        @ProcessElement
-                        public void processElement(ProcessContext c, BoundedWindow boundedWindow) {
-                            final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
-
-                            final TopKFlows topK = c.element();
                             int ranking = 1;
-                            for (Map.Entry<String, FlowBytes> entry : topK.getFlows().entrySet()) {
+                            for (KV<Groupings.CompoundKey, FlowBytes> topEl : c.element()) {
+                                Groupings.CompoundKey key = topEl.getKey();
+                                if (key == null) {
+                                    continue;
+                                }
                                 TopKFlow topKFlow = new TopKFlow();
+                                key.visit(new Groupings.FlowPopulatingVisitor(topKFlow));
 
-                                topKFlow.setRangeStartMs(topK.getWindowMinMs());
-                                topKFlow.setRangeEndMs(topK.getWindowMaxMs());
-                                // Use the midpoint as the timestamp
-                                topKFlow.setTimestamp(Math.floorDiv(topKFlow.getRangeStartMs() + topKFlow.getRangeEndMs(), 2));
+                                topKFlow.setRangeStartMs(window.start().getMillis());
+                                topKFlow.setRangeEndMs(window.end().getMillis());
+                                // Use the range end as the timestamp
+                                topKFlow.setTimestamp(topKFlow.getRangeEndMs());
                                 topKFlow.setRanking(ranking++);
 
-                                GroupedBy groupedBy = new GroupedBy();
-                                groupedBy.setApplication(true);
-                                topKFlow.setGroupedBy(groupedBy);
-
-                                topKFlow.setApplication(entry.getKey());
-                                topKFlow.setBytesEgress(entry.getValue().bytesOut);
-                                topKFlow.setBytesIngress(entry.getValue().bytesIn);
+                                topKFlow.setBytesEgress(topEl.getValue().bytesOut);
+                                topKFlow.setBytesIngress(topEl.getValue().bytesIn);
                                 topKFlow.setBytesTotal(topKFlow.getBytesIngress() + topKFlow.getBytesEgress());
 
                                 c.output(topKFlow);
@@ -365,8 +307,8 @@ public class FlowAnalyzer {
         });
     }
 
-    private static ParDo.SingleOutput<TopKFlows, String> toJson() {
-        return ParDo.of(new DoFn<TopKFlows, String>() {
+    private static ParDo.SingleOutput<TopKFlow, String> toJson() {
+        return ParDo.of(new DoFn<TopKFlow, String>() {
             @ProcessElement
             public void processElement(ProcessContext c) throws JsonProcessingException {
                 final ObjectMapper mapper = new ObjectMapper();
@@ -375,7 +317,7 @@ public class FlowAnalyzer {
         });
     }
 
-    private static void pushToKafka(NephronOptions options, PCollection<TopKFlows> topKFlowStream) {
+    private static void pushToKafka(NephronOptions options, PCollection<TopKFlow> topKFlowStream) {
         topKFlowStream
                 .apply(toJson())
                 .apply(KafkaIO.<Void, String>write()
@@ -386,7 +328,7 @@ public class FlowAnalyzer {
         );
     }
 
-    private static Map<String, FlowBytes> toMap(List<KV<String, FlowBytes>> topKFlows) {
+    private static Map<? extends Groupings.CompoundKey, FlowBytes> toMap(List<KV<? extends Groupings.CompoundKey, FlowBytes>> topKFlows) {
         return topKFlows
                 .stream()
                 .collect(
@@ -423,10 +365,10 @@ public class FlowAnalyzer {
         }
     }
 
-    static class ToWindowedBytes extends DoFn<KV<String, FlowDocument>, KV<String, FlowBytes>> {
+
+    static class ToWindowedBytesDead extends DoFn<KV<String, FlowDocument>, KV<String, FlowBytes>> {
         @ProcessElement
         public void processElement(ProcessContext c, IntervalWindow window) {
-            final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
             final KV<String, FlowDocument> keyedFlow = c.element();
             final FlowDocument flow = keyedFlow.getValue();
 
@@ -452,9 +394,37 @@ public class FlowAnalyzer {
         }
     }
 
-    static class ByteValueComparator implements Comparator<KV<String, FlowBytes>>, Serializable {
+    static class ToWindowedBytes extends DoFn<KV<Groupings.CompoundKey, FlowDocument>, KV<Groupings.CompoundKey, FlowBytes>> {
+        @ProcessElement
+        public void processElement(ProcessContext c, IntervalWindow window) {
+            final KV<? extends Groupings.CompoundKey, FlowDocument> keyedFlow = c.element();
+            final FlowDocument flow = keyedFlow.getValue();
+
+            // The flow duration ranges [delta_switched, last_switched]
+            long flowDurationMs = flow.getLastSwitched().getValue() - flow.getDeltaSwitched().getValue();
+            if (flowDurationMs <= 0) {
+                // 0 or negative duration, pass
+                return;
+            }
+
+            // Determine the avg. rate of bytes per ms for the duration of the flow
+            double bytesPerMs = flow.getNumBytes().getValue() / (double) flowDurationMs;
+
+            // Now determine how many milliseconds the flow overlaps with the window bounds
+            long flowWindowOverlapMs = Math.min(flow.getLastSwitched().getValue(), window.end().getMillis()) - Math.max(flow.getDeltaSwitched().getValue(), window.start().getMillis());
+            if (flowWindowOverlapMs < 0) {
+                // flow should not be in this windows! pass
+                return;
+            }
+
+            double multiplier = flowWindowOverlapMs / (double) flowDurationMs;
+            c.output(KV.of(keyedFlow.getKey(), new FlowBytes(keyedFlow.getValue(), multiplier)));
+        }
+    }
+
+    static class ByteValueComparator implements Comparator<KV<Groupings.CompoundKey, FlowBytes>>, Serializable {
         @Override
-        public int compare(KV<String, FlowBytes> a, KV<String, FlowBytes> b) {
+        public int compare(KV<Groupings.CompoundKey, FlowBytes> a, KV<Groupings.CompoundKey, FlowBytes> b) {
             return a.getValue().compareTo(b.getValue());
         }
     }
