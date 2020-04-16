@@ -40,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -64,6 +65,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.query.NGFlowRepository;
+import org.opennms.netmgt.flows.api.Conversation;
 import org.opennms.netmgt.flows.api.Host;
 import org.opennms.netmgt.flows.api.TrafficSummary;
 import org.opennms.netmgt.flows.filter.api.Filter;
@@ -258,6 +260,60 @@ public class ElasticModelIT {
         assertThat(other.getEntity(), equalTo(new Host("Other")));
         assertThat(other.getBytesIn(), equalTo(420L));
         assertThat(other.getBytesOut(), equalTo(2300L));
+    }
+
+    @Test
+    public void canGetTopNConversationSummaries() throws Exception {
+        // Take some flows
+        final List<FlowDocument> flows = defaultFlows();
+
+        // Pass those same flows through the pipeline and persist the aggregations
+        NephronOptions options = PipelineOptionsFactory.as(NephronOptions.class);
+        options.setFixedWindowSize("30s");
+        doPipeline(flows, options);
+
+        // Verify
+        await().atMost(1, TimeUnit.MINUTES).until(() -> flowRepository.getFlowCount(Collections.singletonList(
+                new TimeRangeFilter(0, System.currentTimeMillis()))).get(), greaterThanOrEqualTo(1L));
+
+        // Retrieve the Top N conversation over the entire time range
+        List<TrafficSummary<Conversation>> convoTrafficSummary = flowRepository.getTopNConversationSummaries(2, false, getFilters()).get();
+        assertThat(convoTrafficSummary, hasSize(2));
+
+        // Expect the conversations, with the sum of all the bytes from all the flows
+        TrafficSummary<Conversation> convo = convoTrafficSummary.get(0);
+        assertThat(convo.getEntity().getLowerIp(), equalTo("10.1.1.12"));
+        assertThat(convo.getEntity().getUpperIp(), equalTo("192.168.1.101"));
+        assertThat(convo.getEntity().getLowerHostname(), equalTo(Optional.of("la.le.lu")));
+        assertThat(convo.getEntity().getUpperHostname(), equalTo(Optional.of("ingress.only")));
+        assertThat(convo.getEntity().getApplication(), equalTo("https"));
+        assertThat(convo.getBytesIn(), equalTo(110L));
+        assertThat(convo.getBytesOut(), equalTo(1100L));
+
+        convo = convoTrafficSummary.get(1);
+        assertThat(convo.getEntity().getLowerIp(), equalTo("10.1.1.12"));
+        assertThat(convo.getEntity().getUpperIp(), equalTo("192.168.1.100"));
+        assertThat(convo.getEntity().getLowerHostname(), equalTo(Optional.of("la.le.lu")));
+        assertThat(convo.getEntity().getUpperHostname(), equalTo(Optional.empty()));
+        assertThat(convo.getEntity().getApplication(), equalTo("https"));
+        assertThat(convo.getBytesIn(), equalTo(100L));
+        assertThat(convo.getBytesOut(), equalTo(1000L));
+
+        // Get the top 1 plus others
+        convoTrafficSummary = flowRepository.getTopNConversationSummaries(1, true, getFilters()).get();
+        assertThat(convoTrafficSummary, hasSize(2));
+
+        convo = convoTrafficSummary.get(0);
+        assertThat(convo.getEntity().getLowerIp(), equalTo("10.1.1.12"));
+        assertThat(convo.getEntity().getUpperIp(), equalTo("192.168.1.101"));
+        assertThat(convo.getEntity().getApplication(), equalTo("https"));
+        assertThat(convo.getBytesIn(), equalTo(110L));
+        assertThat(convo.getBytesOut(), equalTo(1100L));
+
+        convo = convoTrafficSummary.get(1);
+        assertThat(convo.getEntity(), equalTo(Conversation.forOther().build()));
+        assertThat(convo.getBytesIn(), equalTo(310L));
+        assertThat(convo.getBytesOut(), equalTo(1200L));
     }
 
     private void doPipeline(List<FlowDocument> flows, NephronOptions options) {

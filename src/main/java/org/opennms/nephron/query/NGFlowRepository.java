@@ -65,6 +65,7 @@ import org.opennms.netmgt.flows.api.FlowRepository;
 import org.opennms.netmgt.flows.api.FlowSource;
 import org.opennms.netmgt.flows.api.Host;
 import org.opennms.netmgt.flows.api.TrafficSummary;
+import org.opennms.netmgt.flows.elastic.ConversationKeyUtils;
 import org.opennms.netmgt.flows.filter.api.Filter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -121,10 +122,17 @@ public class NGFlowRepository implements FlowRepository {
             return effectiveApplicationName;
         }, FlowSummary.OTHER_APPLICATION_NAME_DISPLAY );
     }
+
     @Override
     public CompletableFuture<List<TrafficSummary<Host>>> getTopNHostSummaries(int N, boolean includeOther, List<Filter> filters) {
         return getTopNSummary(N, includeOther, filters, GroupedBy.EXPORTER_INTERFACE_HOST, "host_address",
-                (host) -> Host.from(host).build(), Host.forOther().build() );
+                (host) -> Host.from(host).build(), Host.forOther().build());
+    }
+
+    @Override
+    public CompletableFuture<List<TrafficSummary<Conversation>>> getTopNConversationSummaries(int N, boolean includeOther, List<Filter> filters) {
+        return getTopNSummary(N, includeOther, filters, GroupedBy.EXPORTER_INTERFACE_CONVERSATION, "conversation_key",
+                (conversationKey) -> Conversation.from(ConversationKeyUtils.fromJsonString(conversationKey)).build(), Conversation.forOther().build() );
     }
 
     @Override
@@ -144,11 +152,6 @@ public class NGFlowRepository implements FlowRepository {
 
     @Override
     public CompletableFuture<List<String>> getConversations(String locationPattern, String protocolPattern, String lowerIPPattern, String upperIPPattern, String applicationPattern, long limit, List<Filter> filters) {
-        return null;
-    }
-
-    @Override
-    public CompletableFuture<List<TrafficSummary<Conversation>>> getTopNConversationSummaries(int N, boolean includeOther, List<Filter> filters) {
         return null;
     }
 
