@@ -55,6 +55,7 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
@@ -251,11 +252,45 @@ public class FlowAnalyzer {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("attach_timestamp", attachTimestamps())
                     .apply("to_windows", toWindow(fixedWindowSize));
 
+            String namePrefix = "flows_grouped_by_exporter_interface__";
+            PCollection<TopKFlow> totalBytesFlows = windowedStreamOfFlows
+                    .apply(namePrefix + "key_by_exporter_interface", ParDo.of(new Groupings.KeyByExporterInterfaceApplication()))
+                    .apply(namePrefix + "compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
+                    .apply(namePrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
+                    .apply(namePrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, TopKFlow>() {
+                        @ProcessElement
+                        public void processElement(ProcessContext c, IntervalWindow window) {
+                            KV<Groupings.CompoundKey, FlowBytes> el = c.element();
+
+                            TopKFlow topKFlow = new TopKFlow();
+                            el.getKey().visit(new Groupings.FlowPopulatingVisitor(topKFlow));
+
+                            topKFlow.setRangeStartMs(window.start().getMillis());
+                            topKFlow.setRangeEndMs(window.end().getMillis());
+                            // Use the range end as the timestamp
+                            topKFlow.setTimestamp(topKFlow.getRangeEndMs());
+
+                            topKFlow.setBytesEgress(el.getValue().bytesOut);
+                            topKFlow.setBytesIngress(el.getValue().bytesIn);
+                            topKFlow.setBytesTotal(topKFlow.getBytesIngress() + topKFlow.getBytesEgress());
+
+                            c.output(topKFlow);
+                        }
+                    }));
+
             PCollection<TopKFlow> topKAppsFlows = windowedStreamOfFlows
                     .apply("key_by_exporter_interface_app", ParDo.of(new Groupings.KeyByExporterInterfaceApplication()))
                     .apply("compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
                     .apply("sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply("top_k_per_key", Combine.globally(new MyTop.TopCombineFn<>(topK, new ByteValueComparator(), new BinaryFlowBytesCombiner())).withoutDefaults())
+                    .apply("group_by_exporter_interface", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, FlowBytes>>>() {
+                        @ProcessElement
+                        public void processElement(ProcessContext c, IntervalWindow window) {
+                            KV<Groupings.CompoundKey, FlowBytes> el = c.element();
+                            c.output(KV.of(el.getKey().getOuterKey(), el));
+                        }
+                    }))
+                    .apply("top_k_per_key", Top.perKey(topK, new ByteValueComparator()))
+                    .apply("flatten", Values.create())
                     .apply("top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, FlowBytes>>, TopKFlow>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, IntervalWindow window) {
@@ -284,12 +319,20 @@ public class FlowAnalyzer {
                     }));
 
 
-            String namePrefix = "flows_grouped_by_exporter_interface_host__";
+            namePrefix = "flows_grouped_by_exporter_interface_host__";
             PCollection<TopKFlow> topKHostsFlows = windowedStreamOfFlows
                     .apply(namePrefix + "host_key_by_exporter_interface_host", ParDo.of(new Groupings.KeyByExporterInterfaceHost()))
                     .apply(namePrefix +"compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
                     .apply(namePrefix +"sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply(namePrefix +"top_k_per_key", Combine.globally(new MyTop.TopCombineFn<>(topK, new ByteValueComparator(), new BinaryFlowBytesCombiner())).withoutDefaults())
+                    .apply(namePrefix +"group_by_exporter_interface", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, FlowBytes>>>() {
+                        @ProcessElement
+                        public void processElement(ProcessContext c, IntervalWindow window) {
+                            KV<Groupings.CompoundKey, FlowBytes> el = c.element();
+                            c.output(KV.of(el.getKey().getOuterKey(), el));
+                        }
+                    }))
+                    .apply(namePrefix +"top_k_per_key", Top.perKey(topK, new ByteValueComparator()))
+                    .apply(namePrefix +"flatten", Values.create())
                     .apply(namePrefix +"top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, FlowBytes>>, TopKFlow>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, IntervalWindow window) {

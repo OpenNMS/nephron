@@ -29,6 +29,7 @@
 package org.opennms.nephron.elastic;
 
 public enum GroupedBy {
+    EXPORTER_INTERFACE,
     EXPORTER_INTERFACE_APPLICATION,
     EXPORTER_INTERFACE_HOST;
 }

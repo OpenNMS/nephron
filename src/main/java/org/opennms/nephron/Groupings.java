@@ -52,6 +52,34 @@ import com.google.common.base.Strings;
 
 public class Groupings {
 
+    static class KeyByExporterInterface extends DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> {
+        @ProcessElement
+        public void processElement(ProcessContext c) {
+            final FlowDocument flow = c.element();
+            if (!flow.hasExporterNode()) {
+                return;
+            }
+
+            final NodeRef nodeRef;
+            final NodeInfo exporterNode = flow.getExporterNode();
+            if (!Strings.isNullOrEmpty(exporterNode.getForeignSource())
+                    && !Strings.isNullOrEmpty(exporterNode.getForeginId())) {
+                nodeRef = NodeRef.of(exporterNode.getForeignSource(), exporterNode.getForeginId());
+            } else {
+                nodeRef = NodeRef.of(exporterNode.getNodeId());
+            }
+
+            final InterfaceRef interfaceRef;
+            if (Direction.INGRESS.equals(flow.getDirection())) {
+                interfaceRef = InterfaceRef.of(flow.getInputSnmpIfindex().getValue());
+            } else {
+                interfaceRef = InterfaceRef.of(flow.getOutputSnmpIfindex().getValue());
+            }
+
+            c.output(KV.of(ExporterInterfaceKey.of(nodeRef, interfaceRef), flow));
+        }
+    }
+
     static class KeyByExporterInterfaceApplication extends DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> {
         @ProcessElement
         public void processElement(ProcessContext c) {
@@ -318,9 +346,9 @@ public class Groupings {
 
         public static ExporterInterfaceApplicationKey of(NodeRef nodeRef, InterfaceRef interfaceRef, ApplicationRef applicationRef) {
             ExporterInterfaceApplicationKey key = new ExporterInterfaceApplicationKey();
-            key.setNodeRef(nodeRef);
-            key.setInterfaceRef(interfaceRef);
-            key.setApplicationRef(applicationRef);
+            key.setNodeRef(Objects.requireNonNull(nodeRef));
+            key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
+            key.setApplicationRef(Objects.requireNonNull(applicationRef));
             return key;
         }
 
@@ -376,6 +404,72 @@ public class Groupings {
         public void visit(Visitor visitor) {
             visitor.visit(this);
         }
+
+        @Override
+        public CompoundKey getOuterKey() {
+            return ExporterInterfaceKey.of(nodeRef, interfaceRef);
+        }
+    }
+
+    @DefaultCoder(CompoundKeyCoder.class)
+    public static class ExporterInterfaceKey extends CompoundKey {
+        private NodeRef nodeRef;
+        private InterfaceRef interfaceRef;
+
+        public static ExporterInterfaceKey of(NodeRef nodeRef, InterfaceRef interfaceRef) {
+            ExporterInterfaceKey key = new ExporterInterfaceKey();
+            key.setNodeRef(Objects.requireNonNull(nodeRef));
+            key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
+            return key;
+        }
+
+        public NodeRef getNodeRef() {
+            return nodeRef;
+        }
+
+        public void setNodeRef(NodeRef nodeRef) {
+            this.nodeRef = nodeRef;
+        }
+
+        public InterfaceRef getInterfaceRef() {
+            return interfaceRef;
+        }
+
+        public void setInterfaceRef(InterfaceRef interfaceRef) {
+            this.interfaceRef = interfaceRef;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ExporterInterfaceKey that = (ExporterInterfaceKey) o;
+            return Objects.equals(nodeRef, that.nodeRef) &&
+                    Objects.equals(interfaceRef, that.interfaceRef);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(nodeRef, interfaceRef);
+        }
+
+        @Override
+        public String toString() {
+            return "ExporterInterfaceKey{" +
+                    "nodeRef=" + nodeRef +
+                    ", interfaceRef=" + interfaceRef +
+                    '}';
+        }
+
+        @Override
+        public void visit(Visitor visitor) {
+            visitor.visit(this);
+        }
+
+        @Override
+        public CompoundKey getOuterKey() {
+            throw new UnsupportedOperationException("No export key yet.");
+        }
     }
 
 
@@ -387,9 +481,9 @@ public class Groupings {
 
         public static ExporterInterfaceHostKey of(NodeRef nodeRef, InterfaceRef interfaceRef, HostRef hostRef) {
             ExporterInterfaceHostKey key = new ExporterInterfaceHostKey();
-            key.setNodeRef(nodeRef);
-            key.setInterfaceRef(interfaceRef);
-            key.setHostRef(hostRef);
+            key.setNodeRef(Objects.requireNonNull(nodeRef));
+            key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
+            key.setHostRef(Objects.requireNonNull(hostRef));
             return key;
         }
 
@@ -445,14 +539,21 @@ public class Groupings {
         public void visit(Visitor visitor) {
             visitor.visit(this);
         }
+
+        @Override
+        public CompoundKey getOuterKey() {
+            return ExporterInterfaceKey.of(nodeRef, interfaceRef);
+        }
     }
 
     @DefaultCoder(CompoundKeyCoder.class)
     public static abstract class CompoundKey {
         public abstract void visit(Visitor visitor);
+        public abstract CompoundKey getOuterKey();
     }
 
     public interface Visitor {
+        void visit(ExporterInterfaceKey key);
         void visit(ExporterInterfaceApplicationKey key);
         void visit(ExporterInterfaceHostKey key);
     }
@@ -465,13 +566,16 @@ public class Groupings {
         }
 
         @Override
+        public void visit(ExporterInterfaceKey key) {
+            flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE);
+            flow.setExporter(toExporterNode(key.nodeRef));
+            flow.setIfIndex(key.interfaceRef.ifIndex);
+        }
+
+        @Override
         public void visit(ExporterInterfaceApplicationKey key) {
             flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_APPLICATION);
-            ExporterNode exporterNode = new ExporterNode();
-            exporterNode.setForeignSource(key.nodeRef.foreignSource);
-            exporterNode.setForeignId(key.nodeRef.foreignId);
-            exporterNode.setNodeId(key.nodeRef.nodeId);
-            flow.setExporter(exporterNode);
+            flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);
             flow.setApplication(key.applicationRef.application);
         }
@@ -479,14 +583,18 @@ public class Groupings {
         @Override
         public void visit(ExporterInterfaceHostKey key) {
             flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_HOST);
-            ExporterNode exporterNode = new ExporterNode();
-            exporterNode.setForeignSource(key.nodeRef.foreignSource);
-            exporterNode.setForeignId(key.nodeRef.foreignId);
-            exporterNode.setNodeId(key.nodeRef.nodeId);
-            flow.setExporter(exporterNode);
+            flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);
             flow.setHostAddress(key.hostRef.address);
             flow.setHostName(key.hostRef.hostname);
+        }
+
+        private static ExporterNode toExporterNode(NodeRef nodeRef) {
+            ExporterNode exporterNode = new ExporterNode();
+            exporterNode.setForeignSource(nodeRef.foreignSource);
+            exporterNode.setForeignId(nodeRef.foreignId);
+            exporterNode.setNodeId(nodeRef.nodeId);
+            return exporterNode;
         }
     }
 
@@ -499,9 +607,20 @@ public class Groupings {
         public void encode(CompoundKey value, OutputStream os) throws IOException {
             value.visit(new Visitor() {
                 @Override
-                public void visit(ExporterInterfaceApplicationKey key) {
+                public void visit(ExporterInterfaceKey key) {
                     try {
                         INT_CODER.encode(1, os);
+                        NODE_REF_KEY_CODER.encode(key.nodeRef, os);
+                        INT_CODER.encode(key.interfaceRef.ifIndex, os);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+
+                @Override
+                public void visit(ExporterInterfaceApplicationKey key) {
+                    try {
+                        INT_CODER.encode(2, os);
                         NODE_REF_KEY_CODER.encode(key.nodeRef, os);
                         INT_CODER.encode(key.interfaceRef.ifIndex, os);
                         STRING_CODER.encode(key.applicationRef.application, os);
@@ -513,7 +632,7 @@ public class Groupings {
                 @Override
                 public void visit(ExporterInterfaceHostKey key) {
                     try {
-                        INT_CODER.encode(2, os);
+                        INT_CODER.encode(3, os);
                         NODE_REF_KEY_CODER.encode(key.nodeRef, os);
                         INT_CODER.encode(key.interfaceRef.ifIndex, os);
                         STRING_CODER.encode(key.hostRef.address, os);
@@ -529,6 +648,14 @@ public class Groupings {
         public CompoundKey decode(InputStream is) throws IOException {
             int type = INT_CODER.decode(is);
             if (type == 1) {
+                ExporterInterfaceKey key = new ExporterInterfaceKey();
+
+                key.nodeRef = NODE_REF_KEY_CODER.decode(is);
+                key.interfaceRef = new InterfaceRef();
+                key.interfaceRef.ifIndex = INT_CODER.decode(is);
+
+                return key;
+            } else if (type == 2) {
                 ExporterInterfaceApplicationKey key = new ExporterInterfaceApplicationKey();
 
                 key.nodeRef = NODE_REF_KEY_CODER.decode(is);
@@ -538,7 +665,7 @@ public class Groupings {
                 key.applicationRef = new ApplicationRef();
                 key.applicationRef.application = STRING_CODER.decode(is);
                 return key;
-            } else if (type == 2) {
+            } else if (type == 3) {
                 ExporterInterfaceHostKey key = new ExporterInterfaceHostKey();
 
                 key.nodeRef = NODE_REF_KEY_CODER.decode(is);
