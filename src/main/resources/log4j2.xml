@@ -6,9 +6,11 @@
         </Console>
     </Appenders>
     <Loggers>
-        <Logger name="org.apache.beam.sdk.util.WindowTracing" level="INFO">
+        <!--
+        <Logger name="org.apache.beam.sdk.util.WindowTracing" level="DEBUG">
             <AppenderRef ref="Console"/>
         </Logger>
+        -->
         <Logger name="org.apache.kafka.clients" level="INFO">
             <AppenderRef ref="Console"/>
         </Logger>
