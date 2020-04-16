@@ -125,7 +125,6 @@ public class FlowAnalyzer {
     public static void registerCoders(Pipeline p) {
         final CoderRegistry coderRegistry = p.getCoderRegistry();
         coderRegistry.registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
-        coderRegistry.registerCoderForClass(TopKFlows.class, new JacksonJsonCoder<>(TopKFlows.class));
         coderRegistry.registerCoderForClass(FlowSummary.class, new JacksonJsonCoder<>(FlowSummary.class));
         coderRegistry.registerCoderForClass(Groupings.ExporterInterfaceApplicationKey.class, new Groupings.CompoundKeyCoder());
         coderRegistry.registerCoderForClass(Groupings.CompoundKey.class, new Groupings.CompoundKeyCoder());

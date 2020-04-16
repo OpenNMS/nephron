@@ -64,6 +64,7 @@ import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.junit.Rule;
 import org.junit.Test;
+import org.opennms.nephron.elastic.FlowSummary;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
@@ -96,7 +97,7 @@ public class FlowAnalyzerIT {
         OldFlowGenerator flowGenerator = new OldFlowGenerator(producer);
         executor.execute(flowGenerator);
 
-        List<TopKFlows> allRecords = new LinkedList<>();
+        List<FlowSummary> allRecords = new LinkedList<>();
 
         Map<String, Object> consumerProps = new HashMap<>();
         consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
@@ -113,7 +114,7 @@ public class FlowAnalyzerIT {
                     for (final ConsumerRecord<String, String> record : records) {
                         System.out.println("Got record: " + record);
                         try {
-                            allRecords.add(objectMapper.readValue(record.value(), TopKFlows.class));
+                            allRecords.add(objectMapper.readValue(record.value(), FlowSummary.class));
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
