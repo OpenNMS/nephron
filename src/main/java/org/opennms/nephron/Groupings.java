@@ -43,7 +43,7 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.values.KV;
 import org.opennms.nephron.elastic.ExporterNode;
 import org.opennms.nephron.elastic.GroupedBy;
-import org.opennms.nephron.elastic.TopKFlow;
+import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.opennms.netmgt.flows.persistence.model.NodeInfo;
@@ -105,7 +105,7 @@ public class Groupings {
 
             final ApplicationRef applicationRef;
             if (Strings.isNullOrEmpty(flow.getApplication())) {
-                applicationRef = ApplicationRef.of(TopKFlow.UNKNOWN_APPLICATION_NAME_KEY);
+                applicationRef = ApplicationRef.of(FlowSummary.UNKNOWN_APPLICATION_NAME_KEY);
             } else {
                 applicationRef = ApplicationRef.of(flow.getApplication());
             }
@@ -558,9 +558,9 @@ public class Groupings {
     }
 
     public static class FlowPopulatingVisitor implements Visitor {
-        private final TopKFlow flow;
+        private final FlowSummary flow;
 
-        public FlowPopulatingVisitor(TopKFlow flow) {
+        public FlowPopulatingVisitor(FlowSummary flow) {
             this.flow = Objects.requireNonNull(flow);
         }
 

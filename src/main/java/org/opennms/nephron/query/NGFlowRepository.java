@@ -56,7 +56,7 @@ import org.elasticsearch.search.aggregations.metrics.Sum;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.opennms.nephron.elastic.Context;
 import org.opennms.nephron.elastic.GroupedBy;
-import org.opennms.nephron.elastic.TopKFlow;
+import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.netmgt.flows.api.Conversation;
 import org.opennms.netmgt.flows.api.Directional;
 import org.opennms.netmgt.flows.api.Flow;
@@ -72,6 +72,8 @@ import com.google.common.collect.Table;
 
 public class NGFlowRepository implements FlowRepository {
     private static final Logger LOG = LoggerFactory.getLogger(NGFlowRepository.class);
+
+    public static final String NETFLOW_AGG_INDEX_PREFIX = "netflow_agg-";
 
     private final RestHighLevelClient client;
 
@@ -90,7 +92,7 @@ public class NGFlowRepository implements FlowRepository {
 
     private String[] getIndices(List<Filter> filters) {
         // FIXME: Do smart index limiting
-        return new String[]{"aggregated-flows-*"};
+        return new String[]{NETFLOW_AGG_INDEX_PREFIX + "*"};
     }
 
     @Override
@@ -150,8 +152,8 @@ public class NGFlowRepository implements FlowRepository {
                     Sum egress = sums.get("bytes_egress");
 
                     String effectiveApplicationName = bucket.getKeyAsString();
-                    if (TopKFlow.UNKNOWN_APPLICATION_NAME_KEY.equals(effectiveApplicationName)) {
-                        effectiveApplicationName = TopKFlow.UNKNOWN_APPLICATION_NAME_DISPLAY;
+                    if (FlowSummary.UNKNOWN_APPLICATION_NAME_KEY.equals(effectiveApplicationName)) {
+                        effectiveApplicationName = FlowSummary.UNKNOWN_APPLICATION_NAME_DISPLAY;
                     }
 
                     trafficSummaries.add(TrafficSummary.<String>builder()
@@ -170,7 +172,7 @@ public class NGFlowRepository implements FlowRepository {
             return summaryFutures;
         }
 
-        CompletableFuture<TrafficSummary<String>> totalTrafficFuture = getOtherTraffic(TopKFlow.OTHER_APPLICATION_NAME_DISPLAY, filters);
+        CompletableFuture<TrafficSummary<String>> totalTrafficFuture = getOtherTraffic(FlowSummary.OTHER_APPLICATION_NAME_DISPLAY, filters);
         return summaryFutures.thenCombine(totalTrafficFuture, (topK,total) -> {
             long bytesInRemainder = total.getBytesIn();
             long bytesOutRemainder = total.getBytesOut();
@@ -181,7 +183,7 @@ public class NGFlowRepository implements FlowRepository {
 
             List<TrafficSummary<String>> newTopK = new ArrayList<>(topK);
             newTopK.add(TrafficSummary.<String>builder()
-                    .withEntity(TopKFlow.OTHER_APPLICATION_NAME_DISPLAY)
+                    .withEntity(FlowSummary.OTHER_APPLICATION_NAME_DISPLAY)
                     .withBytesIn(Math.max(bytesInRemainder, 0L))
                     .withBytesOut(Math.max(bytesOutRemainder, 0L))
                     .build());

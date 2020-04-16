@@ -30,7 +30,7 @@ package org.opennms.nephron.elastic;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-public class TopKFlow {
+public class FlowSummary {
 
     public static final String UNKNOWN_APPLICATION_NAME_KEY = "__unknown";
     public static final String UNKNOWN_APPLICATION_NAME_DISPLAY = "Unknown";

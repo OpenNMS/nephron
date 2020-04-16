@@ -32,7 +32,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -40,7 +39,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.BiFunction;
 
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
@@ -72,7 +70,8 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.nephron.elastic.Context;
-import org.opennms.nephron.elastic.TopKFlow;
+import org.opennms.nephron.elastic.FlowSummary;
+import org.opennms.nephron.query.NGFlowRepository;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -164,7 +163,7 @@ public class FlowAnalyzer {
     public static void registerCoders(Pipeline p) {
         p.getCoderRegistry().registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
         p.getCoderRegistry().registerCoderForClass(TopKFlows.class, new JacksonJsonCoder<>(TopKFlows.class));
-        p.getCoderRegistry().registerCoderForClass(TopKFlow.class, new JacksonJsonCoder<>(TopKFlow.class));
+        p.getCoderRegistry().registerCoderForClass(FlowSummary.class, new JacksonJsonCoder<>(FlowSummary.class));
         p.getCoderRegistry().registerCoderForClass(Groupings.ExporterInterfaceApplicationKey.class, new Groupings.CompoundKeyCoder());
         p.getCoderRegistry().registerCoderForClass(Groupings.CompoundKey.class, new Groupings.CompoundKeyCoder());
     }
@@ -206,40 +205,13 @@ public class FlowAnalyzer {
                                 }
                         }}));
 
-        PCollection<TopKFlow> topKFlows = streamOfFlows.apply(new CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()));
+        PCollection<FlowSummary> topKFlows = streamOfFlows.apply(new CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()));
         topKFlows.apply(new FlowAnalyzer.WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex()));
         pushToKafka(options, topKFlows);
         return p;
     }
 
-    private static class BinaryFlowBytesCombiner implements BiFunction<KV<Groupings.CompoundKey, FlowBytes>, KV<Groupings.CompoundKey, FlowBytes>,KV<Groupings.CompoundKey, FlowBytes>>, Serializable {
-        @Override
-        public KV<Groupings.CompoundKey, FlowBytes> apply(KV<Groupings.CompoundKey, FlowBytes> left, KV<Groupings.CompoundKey, FlowBytes> right) {
-            long bytesIn = 0;
-            long bytesOut = 0;
-
-
-            Groupings.CompoundKey key = null;
-            for (KV<Groupings.CompoundKey, FlowBytes> val : Arrays.asList(left, right)) {
-                if (val == null) continue;
-                bytesIn += val.getValue().bytesIn;
-                bytesOut += val.getValue().bytesOut;
-                key = val.getKey();
-            }
-
-            // FIXME: Hacks!
-            if (!(key instanceof Groupings.ExporterInterfaceApplicationKey)) {
-                throw new IllegalStateException("oops");
-            }
-            Groupings.ExporterInterfaceApplicationKey keyCast = (Groupings.ExporterInterfaceApplicationKey)key;
-            Groupings.ExporterInterfaceApplicationKey newKey = Groupings.ExporterInterfaceApplicationKey.of(keyCast.getNodeRef(),
-                    keyCast.getInterfaceRef(),
-                    Groupings.ApplicationRef.of(TopKFlow.OTHER_APPLICATION_NAME_KEY));
-            return KV.of(newKey, new FlowBytes(bytesIn, bytesOut));
-        }
-    }
-
-    public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<TopKFlow>> {
+    public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
         private final String fixedWindowSize;
         private final int topK;
 
@@ -249,131 +221,98 @@ public class FlowAnalyzer {
         }
 
         @Override
-        public PCollection<TopKFlow> expand(PCollection<FlowDocument> input) {
+        public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("attach_timestamp", attachTimestamps())
                     .apply("to_windows", toWindow(fixedWindowSize));
 
-            String namePrefix = "flows_grouped_by_exporter_interface__";
-            PCollection<TopKFlow> totalBytesFlows = windowedStreamOfFlows
-                    .apply(namePrefix + "key_by_exporter_interface", ParDo.of(new Groupings.KeyByExporterInterface()))
-                    .apply(namePrefix + "compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
-                    .apply(namePrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply(namePrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, TopKFlow>() {
-                        @ProcessElement
-                        public void processElement(ProcessContext c, IntervalWindow window) {
-                            KV<Groupings.CompoundKey, FlowBytes> el = c.element();
+            PCollection<FlowSummary> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
+                    new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
-                            TopKFlow topKFlow = new TopKFlow();
-                            el.getKey().visit(new Groupings.FlowPopulatingVisitor(topKFlow));
-                            topKFlow.setContext(Context.TOTAL);
+            PCollection<FlowSummary> topKAppsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopAppsByExporterAndInterface",
+                    new CalculateTopKGroups("CalculateTopAppsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceApplication()));
 
-                            topKFlow.setRangeStartMs(window.start().getMillis());
-                            topKFlow.setRangeEndMs(window.end().getMillis());
-                            // Use the range end as the timestamp
-                            topKFlow.setTimestamp(topKFlow.getRangeEndMs());
+            PCollection<FlowSummary> topKHostsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopHostsByExporterAndInterface",
+                    new CalculateTopKGroups("CalculateTopHostsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceHost()));
 
-
-                            topKFlow.setBytesEgress(el.getValue().bytesOut);
-                            topKFlow.setBytesIngress(el.getValue().bytesIn);
-                            topKFlow.setBytesTotal(topKFlow.getBytesIngress() + topKFlow.getBytesEgress());
-
-                            c.output(topKFlow);
-                        }
-                    }));
-
-            PCollection<TopKFlow> topKAppsFlows = windowedStreamOfFlows
-                    .apply("key_by_exporter_interface_app", ParDo.of(new Groupings.KeyByExporterInterfaceApplication()))
-                    .apply("compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
-                    .apply("sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply("group_by_exporter_interface", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, FlowBytes>>>() {
-                        @ProcessElement
-                        public void processElement(ProcessContext c, IntervalWindow window) {
-                            KV<Groupings.CompoundKey, FlowBytes> el = c.element();
-                            c.output(KV.of(el.getKey().getOuterKey(), el));
-                        }
-                    }))
-                    .apply("top_k_per_key", Top.perKey(topK, new ByteValueComparator()))
-                    .apply("flatten", Values.create())
-                    .apply("top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, FlowBytes>>, TopKFlow>() {
-                        @ProcessElement
-                        public void processElement(ProcessContext c, IntervalWindow window) {
-                            int ranking = 1;
-                            for (KV<Groupings.CompoundKey, FlowBytes> topEl : c.element()) {
-                                Groupings.CompoundKey key = topEl.getKey();
-                                if (key == null) {
-                                    continue;
-                                }
-                                TopKFlow topKFlow = new TopKFlow();
-                                key.visit(new Groupings.FlowPopulatingVisitor(topKFlow));
-                                topKFlow.setContext(Context.TOPK);
-
-                                topKFlow.setRangeStartMs(window.start().getMillis());
-                                topKFlow.setRangeEndMs(window.end().getMillis());
-                                // Use the range end as the timestamp
-                                topKFlow.setTimestamp(topKFlow.getRangeEndMs());
-                                topKFlow.setRanking(ranking++);
-
-                                topKFlow.setBytesEgress(topEl.getValue().bytesOut);
-                                topKFlow.setBytesIngress(topEl.getValue().bytesIn);
-                                topKFlow.setBytesTotal(topKFlow.getBytesIngress() + topKFlow.getBytesEgress());
-
-                                c.output(topKFlow);
-                            }
-                        }
-                    }));
-
-
-            namePrefix = "flows_grouped_by_exporter_interface_host__";
-            PCollection<TopKFlow> topKHostsFlows = windowedStreamOfFlows
-                    .apply(namePrefix + "host_key_by_exporter_interface_host", ParDo.of(new Groupings.KeyByExporterInterfaceHost()))
-                    .apply(namePrefix +"compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
-                    .apply(namePrefix +"sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply(namePrefix +"group_by_exporter_interface", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, FlowBytes>>>() {
-                        @ProcessElement
-                        public void processElement(ProcessContext c, IntervalWindow window) {
-                            KV<Groupings.CompoundKey, FlowBytes> el = c.element();
-                            c.output(KV.of(el.getKey().getOuterKey(), el));
-                        }
-                    }))
-                    .apply(namePrefix +"top_k_per_key", Top.perKey(topK, new ByteValueComparator()))
-                    .apply(namePrefix +"flatten", Values.create())
-                    .apply(namePrefix +"top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, FlowBytes>>, TopKFlow>() {
-                        @ProcessElement
-                        public void processElement(ProcessContext c, IntervalWindow window) {
-                            int ranking = 1;
-                            for (KV<Groupings.CompoundKey, FlowBytes> topEl : c.element()) {
-                                Groupings.CompoundKey key = topEl.getKey();
-                                if (key == null) {
-                                    continue;
-                                }
-                                TopKFlow topKFlow = new TopKFlow();
-                                key.visit(new Groupings.FlowPopulatingVisitor(topKFlow));
-                                topKFlow.setContext(Context.TOPK);
-
-                                topKFlow.setRangeStartMs(window.start().getMillis());
-                                topKFlow.setRangeEndMs(window.end().getMillis());
-                                // Use the range end as the timestamp
-                                topKFlow.setTimestamp(topKFlow.getRangeEndMs());
-                                topKFlow.setRanking(ranking++);
-
-                                topKFlow.setBytesEgress(topEl.getValue().bytesOut);
-                                topKFlow.setBytesIngress(topEl.getValue().bytesIn);
-                                topKFlow.setBytesTotal(topKFlow.getBytesIngress() + topKFlow.getBytesEgress());
-
-                                c.output(topKFlow);
-                            }
-                        }
-                    }));
-
-            // Merge all the Top K collections
-            PCollectionList<TopKFlow> topKFlowsCollections = PCollectionList.of(totalBytesFlows)
-                    .and(topKAppsFlows)
-                    .and(topKHostsFlows);
-            return topKFlowsCollections.apply(Flatten.pCollections());
+            // Merge all the collections
+            PCollectionList<FlowSummary> flowSummaries = PCollectionList.of(totalBytesByExporterAndInterface)
+                    .and(topKAppsByExporterAndInterface)
+                    .and(topKHostsByExporterAndInterface);
+            return flowSummaries.apply(Flatten.pCollections());
         }
     }
 
-    public static class WriteToElasticsearch extends PTransform<PCollection<TopKFlow>, PDone> {
+    /**
+     * Used to calculate the top K groups using the given grouping function.
+     * Assumes that the input stream is windowed.
+     */
+    public static class CalculateTopKGroups extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
+        private final String transformPrefix;
+        private final int topK;
+        private final DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> groupingBy;
+
+        public CalculateTopKGroups(String transformPrefix, int topK, DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> groupingBy) {
+            this.transformPrefix = Objects.requireNonNull(transformPrefix);
+            this.topK = topK;
+            this.groupingBy = Objects.requireNonNull(groupingBy);
+        }
+
+        @Override
+        public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
+            return input.apply(transformPrefix + "group_by_key", ParDo.of(groupingBy))
+                    .apply(transformPrefix + "compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
+                    .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
+                    .apply(transformPrefix + "group_by_outer_key", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, FlowBytes>>>() {
+                        @ProcessElement
+                        public void processElement(ProcessContext c, IntervalWindow window) {
+                            KV<Groupings.CompoundKey, FlowBytes> el = c.element();
+                            c.output(KV.of(el.getKey().getOuterKey(), el));
+                        }
+                    }))
+                    .apply(transformPrefix + "top_k_per_key", Top.perKey(topK, new ByteValueComparator()))
+                    .apply(transformPrefix + "flatten", Values.create())
+                    .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, FlowBytes>>, FlowSummary>() {
+                        @ProcessElement
+                        public void processElement(ProcessContext c, IntervalWindow window) {
+                            int ranking = 1;
+                            for (KV<Groupings.CompoundKey, FlowBytes> el : c.element()) {
+                                FlowSummary flowSummary =  toFlowSummary(Context.TOPK, window, el);
+                                flowSummary.setRanking(ranking++);
+                                c.output(flowSummary);
+                            }
+                        }
+                    }));
+        }
+    }
+
+    /**
+     * Used to calculate the total bytes derived from flows for the given grouping.
+     * Assumes that the input stream is windowed.
+     */
+    public static class CalculateTotalBytes extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
+        private final String transformPrefix;
+        private final DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> groupingBy;
+
+        public CalculateTotalBytes(String transformPrefix, DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> groupingBy) {
+            this.transformPrefix = Objects.requireNonNull(transformPrefix);
+            this.groupingBy = Objects.requireNonNull(groupingBy);
+        }
+
+        @Override
+        public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
+            return input.apply(transformPrefix + "group_by_key", ParDo.of(groupingBy))
+                    .apply(transformPrefix + "compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
+                    .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
+                    .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, FlowSummary>() {
+                        @ProcessElement
+                        public void processElement(ProcessContext c, IntervalWindow window) {
+                            c.output(toFlowSummary(Context.TOTAL, window, c.element()));
+                        }
+                    }));
+        }
+    }
+
+    public static class WriteToElasticsearch extends PTransform<PCollection<FlowSummary>, PDone> {
         private final String elasticUrl;
         private final String elasticIndex;
 
@@ -383,7 +322,7 @@ public class FlowAnalyzer {
         }
 
         @Override
-        public PDone expand(PCollection<TopKFlow> input) {
+        public PDone expand(PCollection<FlowSummary> input) {
             return input.apply("SerializeToJson", toTopKFlowJson())
                     .apply("WriteToElasticsearch", ElasticsearchIO.write().withConnectionConfiguration(
                             ElasticsearchIO.ConnectionConfiguration.create(
@@ -391,14 +330,14 @@ public class FlowAnalyzer {
                             .withIndexFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
                                 @Override
                                 public String apply(JsonNode input) {
-                                    return "aggregated-flows-2020";
+                                    return NGFlowRepository.NETFLOW_AGG_INDEX_PREFIX + "2020";
                                 }
                             }));
         }
     }
 
-    private static ParDo.SingleOutput<TopKFlow, String> toTopKFlowJson() {
-        return ParDo.of(new DoFn<TopKFlow, String>() {
+    private static ParDo.SingleOutput<FlowSummary, String> toTopKFlowJson() {
+        return ParDo.of(new DoFn<FlowSummary, String>() {
             @ProcessElement
             public void processElement(ProcessContext c) throws JsonProcessingException {
                 final ObjectMapper mapper = new ObjectMapper();
@@ -407,8 +346,8 @@ public class FlowAnalyzer {
         });
     }
 
-    private static ParDo.SingleOutput<TopKFlow, String> toJson() {
-        return ParDo.of(new DoFn<TopKFlow, String>() {
+    private static ParDo.SingleOutput<FlowSummary, String> toJson() {
+        return ParDo.of(new DoFn<FlowSummary, String>() {
             @ProcessElement
             public void processElement(ProcessContext c) throws JsonProcessingException {
                 final ObjectMapper mapper = new ObjectMapper();
@@ -417,7 +356,7 @@ public class FlowAnalyzer {
         });
     }
 
-    private static void pushToKafka(NephronOptions options, PCollection<TopKFlow> topKFlowStream) {
+    private static void pushToKafka(NephronOptions options, PCollection<FlowSummary> topKFlowStream) {
         topKFlowStream
                 .apply(toJson())
                 .apply(KafkaIO.<Void, String>write()
@@ -451,7 +390,7 @@ public class FlowAnalyzer {
             final FlowDocument flow = c.element();
             String applicationName = flow.getApplication();
             if (Strings.isNullOrEmpty(applicationName)) {
-                applicationName = TopKFlow.UNKNOWN_APPLICATION_NAME_KEY;
+                applicationName = FlowSummary.UNKNOWN_APPLICATION_NAME_KEY;
             }
             c.output(KV.of(applicationName, flow));
         }
@@ -586,4 +525,19 @@ public class FlowAnalyzer {
         }
     }
 
+    public static FlowSummary toFlowSummary(Context ctx, IntervalWindow window, KV<Groupings.CompoundKey, FlowBytes> el) {
+        FlowSummary flowSummary = new FlowSummary();
+        el.getKey().visit(new Groupings.FlowPopulatingVisitor(flowSummary));
+        flowSummary.setContext(ctx);
+
+        flowSummary.setRangeStartMs(window.start().getMillis());
+        flowSummary.setRangeEndMs(window.end().getMillis());
+        // Use the range end as the timestamp
+        flowSummary.setTimestamp(flowSummary.getRangeEndMs());
+
+        flowSummary.setBytesEgress(el.getValue().bytesOut);
+        flowSummary.setBytesIngress(el.getValue().bytesIn);
+        flowSummary.setBytesTotal(flowSummary.getBytesIngress() + flowSummary.getBytesEgress());
+        return flowSummary;
+    }
 }

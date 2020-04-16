@@ -62,7 +62,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.opennms.nephron.elastic.TopKFlow;
+import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.query.NGFlowRepository;
 import org.opennms.netmgt.flows.api.Host;
 import org.opennms.netmgt.flows.api.TrafficSummary;
@@ -111,7 +111,7 @@ public class ElasticModelIT {
     }
 
     private void insertIndexMapping() throws IOException {
-        Request request = new Request("PUT", "_template/aggregated-flows");
+        Request request = new Request("PUT", "_template/netflow_agg");
         request.setJsonEntity(Resources.toString(Resources.getResource("aggregated-flows-template.json"), StandardCharsets.UTF_8));
         Response response = client.getLowLevelClient().performRequest(request);
         assertThat(response.getWarnings(), hasSize(0));
@@ -119,17 +119,17 @@ public class ElasticModelIT {
 
     private void deleteExistingIndices() throws IOException {
         DeleteIndexRequest deleteIndexRequest = new DeleteIndexRequest();
-        deleteIndexRequest.indices("aggregated-flows-*");
+        deleteIndexRequest.indices(NGFlowRepository.NETFLOW_AGG_INDEX_PREFIX + "*");
         client.indices().delete(deleteIndexRequest, RequestOptions.DEFAULT);
     }
 
     @Test
     public void canIndexDocument() throws IOException {
         ObjectMapper mapper = new ObjectMapper();
-        TopKFlow topKFlow = new TopKFlow();
+        FlowSummary flowSummary = new FlowSummary();
 
         IndexRequest request = new IndexRequest("aggregated-flows-2020");
-        request.source(mapper.writeValueAsString(topKFlow), XContentType.JSON);
+        request.source(mapper.writeValueAsString(flowSummary), XContentType.JSON);
         IndexResponse response = client.index(request, RequestOptions.DEFAULT);
         assertThat(response.getId(), notNullValue());
     }

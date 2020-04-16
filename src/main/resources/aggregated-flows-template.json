@@ -1,5 +1,5 @@
 {
-  "index_patterns": ["aggregated-flows-*"],
+  "index_patterns": ["netflow_agg-*"],
   "settings": {
     "number_of_shards": 1
   },
