@@ -61,8 +61,8 @@ public interface NephronOptions extends PipelineOptions {
 
     void setFlowDestTopic(String value);
 
-    @Description("Size of the window i.e. 30s")
-    @Default.String("10s")
+    @Description("Size of the window i.e. 1m")
+    @Default.String("1m")
     @Validation.Required
     String getFixedWindowSize();
 
