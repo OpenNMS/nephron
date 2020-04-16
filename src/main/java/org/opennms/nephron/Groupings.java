@@ -491,6 +491,7 @@ public class Groupings {
     }
 
     public static class CompoundKeyCoder extends AtomicCoder<CompoundKey> {
+        private static final NodeRefKeyCoder NODE_REF_KEY_CODER = NodeRefKeyCoder.of();
         private Coder<String> STRING_CODER = NullableCoder.of(StringUtf8Coder.of());
         private Coder<Integer> INT_CODER = NullableCoder.of(VarIntCoder.of());
 
@@ -501,9 +502,7 @@ public class Groupings {
                 public void visit(ExporterInterfaceApplicationKey key) {
                     try {
                         INT_CODER.encode(1, os);
-                        STRING_CODER.encode(key.nodeRef.foreignSource, os);
-                        STRING_CODER.encode(key.nodeRef.foreignId, os);
-                        INT_CODER.encode(key.nodeRef.nodeId, os);
+                        NODE_REF_KEY_CODER.encode(key.nodeRef, os);
                         INT_CODER.encode(key.interfaceRef.ifIndex, os);
                         STRING_CODER.encode(key.applicationRef.application, os);
                     } catch (IOException e) {
@@ -515,9 +514,7 @@ public class Groupings {
                 public void visit(ExporterInterfaceHostKey key) {
                     try {
                         INT_CODER.encode(2, os);
-                        STRING_CODER.encode(key.nodeRef.foreignSource, os);
-                        STRING_CODER.encode(key.nodeRef.foreignId, os);
-                        INT_CODER.encode(key.nodeRef.nodeId, os);
+                        NODE_REF_KEY_CODER.encode(key.nodeRef, os);
                         INT_CODER.encode(key.interfaceRef.ifIndex, os);
                         STRING_CODER.encode(key.hostRef.address, os);
                         STRING_CODER.encode(key.hostRef.hostname, os);
@@ -534,11 +531,7 @@ public class Groupings {
             if (type == 1) {
                 ExporterInterfaceApplicationKey key = new ExporterInterfaceApplicationKey();
 
-                key.nodeRef = new NodeRef();
-                key.nodeRef.foreignSource = STRING_CODER.decode(is);
-                key.nodeRef.foreignId = STRING_CODER.decode(is);
-                key.nodeRef.nodeId = INT_CODER.decode(is);
-
+                key.nodeRef = NODE_REF_KEY_CODER.decode(is);
                 key.interfaceRef = new InterfaceRef();
                 key.interfaceRef.ifIndex = INT_CODER.decode(is);
 
@@ -548,10 +541,7 @@ public class Groupings {
             } else if (type == 2) {
                 ExporterInterfaceHostKey key = new ExporterInterfaceHostKey();
 
-                key.nodeRef = new NodeRef();
-                key.nodeRef.foreignSource = STRING_CODER.decode(is);
-                key.nodeRef.foreignId = STRING_CODER.decode(is);
-                key.nodeRef.nodeId = INT_CODER.decode(is);
+                key.nodeRef = NODE_REF_KEY_CODER.decode(is);
 
                 key.interfaceRef = new InterfaceRef();
                 key.interfaceRef.ifIndex = INT_CODER.decode(is);
@@ -562,6 +552,40 @@ public class Groupings {
                 return key;
             }
             throw new RuntimeException("oops: " + type);
+        }
+
+        @Override
+        public boolean consistentWithEquals() {
+            return true;
+        }
+    }
+
+    public static class NodeRefKeyCoder extends AtomicCoder<NodeRef> {
+        public static NodeRefKeyCoder of() {
+            return INSTANCE;
+        }
+
+        private static final NodeRefKeyCoder INSTANCE = new NodeRefKeyCoder();
+
+        private NodeRefKeyCoder() {}
+
+        private final static Coder<String> STRING_CODER = NullableCoder.of(StringUtf8Coder.of());
+        private final static  Coder<Integer> INT_CODER = NullableCoder.of(VarIntCoder.of());
+
+        @Override
+        public void encode(NodeRef nodeRef, OutputStream os) throws IOException {
+            STRING_CODER.encode(nodeRef.foreignSource, os);
+            STRING_CODER.encode(nodeRef.foreignId, os);
+            INT_CODER.encode(nodeRef.nodeId, os);
+        }
+
+        @Override
+        public NodeRef decode(InputStream is) throws IOException {
+            NodeRef nodeRef = new NodeRef();
+            nodeRef.foreignSource = STRING_CODER.decode(is);
+            nodeRef.foreignId = STRING_CODER.decode(is);
+            nodeRef.nodeId = INT_CODER.decode(is);
+            return nodeRef;
         }
 
         @Override
