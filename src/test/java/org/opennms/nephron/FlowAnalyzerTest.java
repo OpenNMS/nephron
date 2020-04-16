@@ -93,9 +93,9 @@ public class FlowAnalyzerTest {
         summary.setRanking(0);
         summary.setGroupedBy(EXPORTER_INTERFACE);
         summary.setContext(Context.TOTAL);
-        summary.setBytesIngress(16106127354L);
-        summary.setBytesEgress(6442450938L);
-        summary.setBytesTotal(22548578292L);
+        summary.setBytesIngress(5368709118L);
+        summary.setBytesEgress(2147483646L);
+        summary.setBytesTotal(7516192764L);
         summary.setIfIndex(98);
 
         ExporterNode exporterNode = new ExporterNode();

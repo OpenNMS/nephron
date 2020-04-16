@@ -47,6 +47,7 @@ import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
 import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
+import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -289,18 +290,15 @@ public class FlowAnalyzer {
 
         @Override
         public PCollection<FlowDocument> expand(PBegin input) {
-
             return input.apply(KafkaIO.<String, FlowDocument>read()
                         .withBootstrapServers(bootstrapServers)
                         .withTopic(topic)
                         .withKeyDeserializer(StringDeserializer.class)
                         .withValueDeserializer(FlowDocumentDeserializer.class)
                         .withConsumerConfigUpdates(kafkaConsumerConfig)
-                        .withTimestampPolicyFactory((TimestampPolicyFactory<String, FlowDocument>) (tp, previousWatermark) -> {
-                            // TODO: FIXME: Use delta-switched here instead?!
-                            return new CustomTimestampPolicyWithLimitedDelay<>((rec) -> Instant.ofEpochMilli(rec.getKV().getValue().getFirstSwitched().getValue()),
-                                    Duration.standardMinutes(5), previousWatermark);
-                        })
+                        .withTimestampPolicyFactory((TimestampPolicyFactory<String, FlowDocument>)
+                                (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<>(
+                                        ReadFromKafka::getRecordTimestamp, Duration.standardMinutes(2), previousWatermark))
                         .withoutMetadata()
                     ).apply(Values.create())
                     .apply("add_missing_DeltaSwitched", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
@@ -315,6 +313,15 @@ public class FlowAnalyzer {
                                         .build());
                             }
                         }}));
+        }
+
+        private static Instant getRecordTimestamp(KafkaRecord<String, FlowDocument> record) {
+            final FlowDocument doc = record.getKV().getValue();
+            if (doc.hasDeltaSwitched()) {
+                return Instant.ofEpochMilli(doc.getDeltaSwitched().getValue());
+            } else {
+                return Instant.ofEpochMilli(doc.getFirstSwitched().getValue());
+            }
         }
     }
 
@@ -465,13 +472,7 @@ public class FlowAnalyzer {
                 // We want to dispatch the flow to all the windows it may be a part of
                 // The flow ranges from [delta_switched, last_switched]
 
-                long flowStart;
-                if (flow.hasDeltaSwitched()) {
-                    // FIXME: Delta-switch should always be populated, but it is not currently
-                    flowStart = flow.getDeltaSwitched().getValue();
-                } else {
-                    flowStart = flow.getFirstSwitched().getValue();
-                }
+                long flowStart = flow.getDeltaSwitched().getValue();
                 long timestamp = flowStart - windowSizeMs;
 
                 // If we're exactly on the window boundary, then don't go back
@@ -479,7 +480,7 @@ public class FlowAnalyzer {
                     timestamp += windowSizeMs;
                 }
                 while (timestamp <= flow.getLastSwitched().getValue()) {
-                    if (timestamp <= c.timestamp().minus(Duration.standardMinutes(30)).getMillis()) {
+                    if (timestamp <= c.timestamp().minus(Duration.standardMinutes(15)).getMillis()) {
                         // Caused by: java.lang.IllegalArgumentException: Cannot output with timestamp 1970-01-01T00:00:00.000Z. Output timestamps must be no earlier than the timestamp of the current input (2020-
                         //                            04-14T15:33:11.302Z) minus the allowed skew (30 minutes). See the DoFn#getAllowedTimestampSkew() Javadoc for details on changing the allowed skew.
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
@@ -499,7 +500,7 @@ public class FlowAnalyzer {
             @Override
             public Duration getAllowedTimestampSkew() {
                 // Max flow duration
-                return Duration.standardMinutes(30);
+                return Duration.standardMinutes(15);
             }
         });
     }

@@ -132,7 +132,6 @@ public class FlowGenerator {
                     throw new IllegalArgumentException("number of weights must match number of applications");
                 }
             } else {
-                //
                 applicationTrafficWeights = IntStream.range(0, applications.size())
                         .mapToDouble(i -> 1 / (double)applications.size())
                         .boxed()
