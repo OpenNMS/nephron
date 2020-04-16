@@ -71,6 +71,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
+import org.opennms.nephron.elastic.Context;
 import org.opennms.nephron.elastic.TopKFlow;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
@@ -254,7 +255,7 @@ public class FlowAnalyzer {
 
             String namePrefix = "flows_grouped_by_exporter_interface__";
             PCollection<TopKFlow> totalBytesFlows = windowedStreamOfFlows
-                    .apply(namePrefix + "key_by_exporter_interface", ParDo.of(new Groupings.KeyByExporterInterfaceApplication()))
+                    .apply(namePrefix + "key_by_exporter_interface", ParDo.of(new Groupings.KeyByExporterInterface()))
                     .apply(namePrefix + "compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
                     .apply(namePrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
                     .apply(namePrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, TopKFlow>() {
@@ -264,11 +265,13 @@ public class FlowAnalyzer {
 
                             TopKFlow topKFlow = new TopKFlow();
                             el.getKey().visit(new Groupings.FlowPopulatingVisitor(topKFlow));
+                            topKFlow.setContext(Context.TOTAL);
 
                             topKFlow.setRangeStartMs(window.start().getMillis());
                             topKFlow.setRangeEndMs(window.end().getMillis());
                             // Use the range end as the timestamp
                             topKFlow.setTimestamp(topKFlow.getRangeEndMs());
+
 
                             topKFlow.setBytesEgress(el.getValue().bytesOut);
                             topKFlow.setBytesIngress(el.getValue().bytesIn);
@@ -302,6 +305,7 @@ public class FlowAnalyzer {
                                 }
                                 TopKFlow topKFlow = new TopKFlow();
                                 key.visit(new Groupings.FlowPopulatingVisitor(topKFlow));
+                                topKFlow.setContext(Context.TOPK);
 
                                 topKFlow.setRangeStartMs(window.start().getMillis());
                                 topKFlow.setRangeEndMs(window.end().getMillis());
@@ -344,6 +348,7 @@ public class FlowAnalyzer {
                                 }
                                 TopKFlow topKFlow = new TopKFlow();
                                 key.visit(new Groupings.FlowPopulatingVisitor(topKFlow));
+                                topKFlow.setContext(Context.TOPK);
 
                                 topKFlow.setRangeStartMs(window.start().getMillis());
                                 topKFlow.setRangeEndMs(window.end().getMillis());
@@ -361,9 +366,10 @@ public class FlowAnalyzer {
                     }));
 
             // Merge all the Top K collections
-            PCollectionList<TopKFlow> topKFlowsCollections = PCollectionList.of(topKAppsFlows).and(topKHostsFlows);
-            PCollection<TopKFlow> topKFlows = topKFlowsCollections.apply(Flatten.<TopKFlow>pCollections());
-            return topKFlows;
+            PCollectionList<TopKFlow> topKFlowsCollections = PCollectionList.of(totalBytesFlows)
+                    .and(topKAppsFlows)
+                    .and(topKHostsFlows);
+            return topKFlowsCollections.apply(Flatten.pCollections());
         }
     }
 

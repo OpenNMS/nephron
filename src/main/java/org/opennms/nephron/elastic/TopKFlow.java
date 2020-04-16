@@ -53,6 +53,9 @@ public class TopKFlow {
     @JsonProperty("grouped_by")
     private GroupedBy groupedBy;
 
+    @JsonProperty("context")
+    private Context context;
+
     @JsonProperty("bytes_ingress")
     private Long bytesIngress;
 
@@ -115,6 +118,14 @@ public class TopKFlow {
 
     public void setGroupedBy(GroupedBy groupedBy) {
         this.groupedBy = groupedBy;
+    }
+
+    public Context getContext() {
+        return context;
+    }
+
+    public void setContext(Context context) {
+        this.context = context;
     }
 
     public Long getBytesIngress() {

@@ -28,13 +28,13 @@
 
 package org.opennms.nephron.query;
 
+import static org.elasticsearch.index.query.QueryBuilders.termQuery;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -54,7 +54,7 @@ import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.elasticsearch.search.aggregations.metrics.Sum;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
-import org.opennms.nephron.NephronOptions;
+import org.opennms.nephron.elastic.Context;
 import org.opennms.nephron.elastic.GroupedBy;
 import org.opennms.nephron.elastic.TopKFlow;
 import org.opennms.netmgt.flows.api.Conversation;
@@ -115,176 +115,177 @@ public class NGFlowRepository implements FlowRepository {
 
     @Override
     public CompletableFuture<List<TrafficSummary<String>>> getTopNApplicationSummaries(int N, boolean includeOther, List<Filter> filters) {
+        CompletableFuture<List<TrafficSummary<String>>> summaryFutures;
+        if (N > 0) {
+            CompletableFuture<SearchResponse> future = new CompletableFuture<>();
+            SearchRequest searchRequest = new SearchRequest(getIndices(filters));
+            SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+            sourceBuilder.query(QueryBuilders.boolQuery()
+                    .must(termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE_APPLICATION))
+                    .must(termQuery("context", Context.TOPK)));
+            sourceBuilder.size(0); // We don't need the hits - only the aggregations
+            searchRequest.source(sourceBuilder);
+
+            TermsAggregationBuilder aggregation = AggregationBuilders.terms("by_application")
+                    .size(N)
+                    .order(BucketOrder.aggregation("bytes_total", false))
+                    .field("application");
+            // Track the total bytes for result ordering
+            aggregation.subAggregation(AggregationBuilders.sum("bytes_total")
+                    .field("bytes_total"));
+            aggregation.subAggregation(AggregationBuilders.sum("bytes_ingress")
+                    .field("bytes_ingress"));
+            aggregation.subAggregation(AggregationBuilders.sum("bytes_egress")
+                    .field("bytes_egress"));
+            sourceBuilder.aggregation(aggregation);
+
+            client.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
+            summaryFutures = future.thenApply(s -> {
+                List<TrafficSummary<String>> trafficSummaries = new ArrayList<>(N);
+                Aggregations aggregations = s.getAggregations();
+                Terms byApplicationAggregation = aggregations.get("by_application");
+                for (Terms.Bucket bucket : byApplicationAggregation.getBuckets()) {
+                    Aggregations sums = bucket.getAggregations();
+                    Sum ingress = sums.get("bytes_ingress");
+                    Sum egress = sums.get("bytes_egress");
+
+                    String effectiveApplicationName = bucket.getKeyAsString();
+                    if (TopKFlow.UNKNOWN_APPLICATION_NAME_KEY.equals(effectiveApplicationName)) {
+                        effectiveApplicationName = TopKFlow.UNKNOWN_APPLICATION_NAME_DISPLAY;
+                    }
+
+                    trafficSummaries.add(TrafficSummary.<String>builder()
+                            .withEntity(effectiveApplicationName)
+                            .withBytesIn(((Double)ingress.getValue()).longValue())
+                            .withBytesOut(((Double)egress.getValue()).longValue())
+                            .build());
+                }
+                return trafficSummaries;
+            });
+        } else {
+            summaryFutures = CompletableFuture.completedFuture(Collections.emptyList());
+        }
+
+        if (!includeOther) {
+            return summaryFutures;
+        }
+
+        CompletableFuture<TrafficSummary<String>> totalTrafficFuture = getOtherTraffic(TopKFlow.OTHER_APPLICATION_NAME_DISPLAY, filters);
+        return summaryFutures.thenCombine(totalTrafficFuture, (topK,total) -> {
+            long bytesInRemainder = total.getBytesIn();
+            long bytesOutRemainder = total.getBytesOut();
+            for (TrafficSummary<?> topEl : topK) {
+                bytesInRemainder -= topEl.getBytesIn();
+                bytesOutRemainder -= topEl.getBytesOut();
+            }
+
+            List<TrafficSummary<String>> newTopK = new ArrayList<>(topK);
+            newTopK.add(TrafficSummary.<String>builder()
+                    .withEntity(TopKFlow.OTHER_APPLICATION_NAME_DISPLAY)
+                    .withBytesIn(Math.max(bytesInRemainder, 0L))
+                    .withBytesOut(Math.max(bytesOutRemainder, 0L))
+                    .build());
+            return newTopK;
+        });
+    }
+
+    private <T> CompletableFuture<TrafficSummary<T>> getOtherTraffic(T entity, List<Filter> filters) {
         CompletableFuture<SearchResponse> future = new CompletableFuture<>();
         SearchRequest searchRequest = new SearchRequest(getIndices(filters));
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.query(QueryBuilders.termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE_APPLICATION));
+        sourceBuilder.query(QueryBuilders.boolQuery()
+                .must(termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE))
+                .must(termQuery("context", Context.TOTAL)));
         sourceBuilder.size(0); // We don't need the hits - only the aggregations
         searchRequest.source(sourceBuilder);
 
-        TermsAggregationBuilder aggregation = AggregationBuilders.terms("by_application")
-                .size(NephronOptions.MAX_K + 1) // Add 1 to account for the "Other" bucket
-                .order(BucketOrder.aggregation("bytes_total", false))
-                .field("application");
-        // Track the total bytes for result ordering
-        aggregation.subAggregation(AggregationBuilders.sum("bytes_total")
-                .field("bytes_total"));
-        aggregation.subAggregation(AggregationBuilders.sum("bytes_ingress")
+        // Sum all ingress/egress
+        sourceBuilder.aggregation(AggregationBuilders.sum("bytes_ingress")
                 .field("bytes_ingress"));
-        aggregation.subAggregation(AggregationBuilders.sum("bytes_egress")
+        sourceBuilder.aggregation(AggregationBuilders.sum("bytes_egress")
                 .field("bytes_egress"));
-        sourceBuilder.aggregation(aggregation);
 
         client.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
         return future.thenApply(s -> {
-            // Extract the aggregations and build a map of traffic summaries
-            Map<String, TrafficSummary<String>> trafficSummaryByApplication = new LinkedHashMap<>();
-            Aggregations aggregations = s.getAggregations();
-            Terms byApplicationAggregation = aggregations.get("by_application");
-            for (Terms.Bucket bucket : byApplicationAggregation.getBuckets()) {
-                Aggregations sums = bucket.getAggregations();
-                Sum ingress = sums.get("bytes_ingress");
-                Sum egress = sums.get("bytes_egress");
+            Sum ingress = s.getAggregations().get("bytes_ingress");
+            Sum egress = s.getAggregations().get("bytes_egress");
 
-                String effectiveApplicationName = bucket.getKeyAsString();
-                if (TopKFlow.UNKNOWN_APPLICATION_NAME_KEY.equals(effectiveApplicationName)) {
-                    effectiveApplicationName = TopKFlow.UNKNOWN_APPLICATION_NAME_DISPLAY;
-                } else if (TopKFlow.OTHER_APPLICATION_NAME_KEY.equals(effectiveApplicationName)) {
-                    effectiveApplicationName = TopKFlow.OTHER_APPLICATION_NAME_DISPLAY;
-                }
-
-                TrafficSummary<String> trafficSummary = TrafficSummary.<String>builder()
-                        .withEntity(effectiveApplicationName)
-                        .withBytesIn(((Double)ingress.getValue()).longValue())
-                        .withBytesOut(((Double)egress.getValue()).longValue())
-                        .build();
-
-                trafficSummaryByApplication.put(trafficSummary.getEntity(), trafficSummary);
-            }
-
-            // Nothing to do
-            if (trafficSummaryByApplication.isEmpty()) {
-                return Collections.emptyList();
-            }
-
-            TrafficSummary<String> otherTrafficSummary = trafficSummaryByApplication.remove(TopKFlow.OTHER_APPLICATION_NAME_KEY);
-            if (otherTrafficSummary == null) {
-                otherTrafficSummary = TrafficSummary.<String>builder()
-                        .withEntity(TopKFlow.OTHER_APPLICATION_NAME_DISPLAY)
-                        .withBytesIn(0)
-                        .withBytesOut(0)
-                        .build();
-            }
-
-            List<TrafficSummary<String>> apps = new ArrayList<>(trafficSummaryByApplication.values());
-
-            // Tally up apps to trim
-            long bytesIn = 0;
-            long bytesOut = 0;
-            for (int i = Math.min(N, apps.size()); i < apps.size(); i++) {
-                bytesIn += apps.get(i).getBytesIn();
-                bytesOut += apps.get(i).getBytesOut();
-            }
-            // Trim
-            apps = apps.subList(0, Math.min(N, apps.size()));
-
-            // Add to other
-            otherTrafficSummary = TrafficSummary.<String>builder()
-                    .withEntity(TopKFlow.OTHER_APPLICATION_NAME_DISPLAY)
-                    .withBytesIn(otherTrafficSummary.getBytesIn() + bytesIn)
-                    .withBytesOut(otherTrafficSummary.getBytesOut() + bytesOut)
+            return TrafficSummary.<T>builder()
+                    .withEntity(entity)
+                    .withBytesIn(((Double)ingress.getValue()).longValue())
+                    .withBytesOut(((Double)egress.getValue()).longValue())
                     .build();
-
-            if (includeOther) {
-                apps.add(otherTrafficSummary);
-            }
-
-            return apps;
         });
     }
 
     @Override
     public CompletableFuture<List<TrafficSummary<Host>>> getTopNHostSummaries(int N, boolean includeOther, List<Filter> filters) {
-        CompletableFuture<SearchResponse> future = new CompletableFuture<>();
-        SearchRequest searchRequest = new SearchRequest(getIndices(filters));
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.query(QueryBuilders.termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE_HOST));
-        sourceBuilder.size(0); // We don't need the hits - only the aggregations
-        searchRequest.source(sourceBuilder);
+        CompletableFuture<List<TrafficSummary<Host>>> summaryFutures;
+        if (N > 0) {
+            CompletableFuture<SearchResponse> future = new CompletableFuture<>();
+            SearchRequest searchRequest = new SearchRequest(getIndices(filters));
+            SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+            sourceBuilder.query(QueryBuilders.boolQuery()
+                    .must(termQuery("grouped_by", GroupedBy.EXPORTER_INTERFACE_HOST))
+                    .must(termQuery("context", Context.TOPK)));
+            sourceBuilder.size(0); // We don't need the hits - only the aggregations
+            searchRequest.source(sourceBuilder);
 
-        TermsAggregationBuilder aggregation = AggregationBuilders.terms("by_host")
-                .size(NephronOptions.MAX_K + 1) // Add 1 to account for the "Other" bucket
-                .order(BucketOrder.aggregation("bytes_total", false))
-                .field("host_address");
-        // Track the total bytes for result ordering
-        aggregation.subAggregation(AggregationBuilders.sum("bytes_total")
-                .field("bytes_total"));
-        aggregation.subAggregation(AggregationBuilders.sum("bytes_ingress")
-                .field("bytes_ingress"));
-        aggregation.subAggregation(AggregationBuilders.sum("bytes_egress")
-                .field("bytes_egress"));
-        sourceBuilder.aggregation(aggregation);
+            TermsAggregationBuilder aggregation = AggregationBuilders.terms("by_host")
+                    .size(N)
+                    .order(BucketOrder.aggregation("bytes_total", false))
+                    .field("host_address");
+            // Track the total bytes for result ordering
+            aggregation.subAggregation(AggregationBuilders.sum("bytes_total")
+                    .field("bytes_total"));
+            aggregation.subAggregation(AggregationBuilders.sum("bytes_ingress")
+                    .field("bytes_ingress"));
+            aggregation.subAggregation(AggregationBuilders.sum("bytes_egress")
+                    .field("bytes_egress"));
+            sourceBuilder.aggregation(aggregation);
 
-        client.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
-        return future.thenApply(s -> {
-            // Extract the aggregations and build a map of traffic summaries
-            Map<Host, TrafficSummary<Host>> trafficSummaryByHost = new LinkedHashMap<>();
-            Aggregations aggregations = s.getAggregations();
-            Terms byApplicationAggregation = aggregations.get("by_host");
-            for (Terms.Bucket bucket : byApplicationAggregation.getBuckets()) {
-                Aggregations sums = bucket.getAggregations();
-                Sum ingress = sums.get("bytes_ingress");
-                Sum egress = sums.get("bytes_egress");
+            client.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
+            summaryFutures = future.thenApply(s -> {
+                List<TrafficSummary<Host>> trafficSummaries = new ArrayList<>(N);
+                Aggregations aggregations = s.getAggregations();
+                Terms byHostAggregation = aggregations.get("by_host");
+                for (Terms.Bucket bucket : byHostAggregation.getBuckets()) {
+                    Aggregations sums = bucket.getAggregations();
+                    Sum ingress = sums.get("bytes_ingress");
+                    Sum egress = sums.get("bytes_egress");
 
-                Host host = new Host(bucket.getKeyAsString());
+                    trafficSummaries.add(TrafficSummary.<Host>builder()
+                            .withEntity(Host.from(bucket.getKeyAsString()).build())
+                            .withBytesIn(((Double)ingress.getValue()).longValue())
+                            .withBytesOut(((Double)egress.getValue()).longValue())
+                            .build());
+                }
+                return trafficSummaries;
+            });
+        } else {
+            summaryFutures = CompletableFuture.completedFuture(Collections.emptyList());
+        }
 
-                TrafficSummary<Host> trafficSummary = TrafficSummary.<Host>builder()
-                        .withEntity(host)
-                        .withBytesIn(((Double)ingress.getValue()).longValue())
-                        .withBytesOut(((Double)egress.getValue()).longValue())
-                        .build();
+        if (!includeOther) {
+            return summaryFutures;
+        }
 
-                trafficSummaryByHost.put(trafficSummary.getEntity(), trafficSummary);
+        CompletableFuture<TrafficSummary<Host>> totalTrafficFuture = getOtherTraffic(Host.forOther().build(), filters);
+        return summaryFutures.thenCombine(totalTrafficFuture, (topK,total) -> {
+            long bytesInRemainder = total.getBytesIn();
+            long bytesOutRemainder = total.getBytesOut();
+            for (TrafficSummary<?> topEl : topK) {
+                bytesInRemainder -= topEl.getBytesIn();
+                bytesOutRemainder -= topEl.getBytesOut();
             }
 
-            // Nothing to do
-            if (trafficSummaryByHost.isEmpty()) {
-                return Collections.emptyList();
-            }
-
-            TrafficSummary<Host> otherTrafficSummary = trafficSummaryByHost.remove(Host.forOther().build());
-            if (otherTrafficSummary == null) {
-                otherTrafficSummary = TrafficSummary.<Host>builder()
-                        .withEntity(Host.forOther().build())
-                        .withBytesIn(0)
-                        .withBytesOut(0)
-                        .build();
-            }
-
-            List<TrafficSummary<Host>> hosts = new ArrayList<>(trafficSummaryByHost.values());
-
-            // Tally up apps to trim
-            long bytesIn = 0;
-            long bytesOut = 0;
-            for (int i = Math.min(N, hosts.size()); i < hosts.size(); i++) {
-                bytesIn += hosts.get(i).getBytesIn();
-                bytesOut += hosts.get(i).getBytesOut();
-            }
-            // Trim
-            hosts = hosts.subList(0, Math.min(N, hosts.size()));
-
-            // Add to other
-            otherTrafficSummary = TrafficSummary.<Host>builder()
+            List<TrafficSummary<Host>> newTopK = new ArrayList<>(topK);
+            newTopK.add(TrafficSummary.<Host>builder()
                     .withEntity(Host.forOther().build())
-                    .withBytesIn(otherTrafficSummary.getBytesIn() + bytesIn)
-                    .withBytesOut(otherTrafficSummary.getBytesOut() + bytesOut)
-                    .build();
-
-            if (includeOther) {
-                hosts.add(otherTrafficSummary);
-            }
-
-            return hosts;
+                    .withBytesIn(Math.max(bytesInRemainder, 0L))
+                    .withBytesOut(Math.max(bytesOutRemainder, 0L))
+                    .build());
+            return newTopK;
         });
     }
 

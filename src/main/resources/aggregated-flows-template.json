@@ -25,6 +25,10 @@
         "type": "keyword",
         "norms": false
       },
+      "context": {
+        "type": "keyword",
+        "norms": false
+      },
 
       "ranking": {
         "type": "integer"

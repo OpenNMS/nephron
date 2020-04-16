@@ -51,7 +51,6 @@ import org.opennms.netmgt.flows.persistence.model.NodeInfo;
 import com.google.common.base.Strings;
 
 public class Groupings {
-
     static class KeyByExporterInterface extends DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> {
         @ProcessElement
         public void processElement(ProcessContext c) {
@@ -720,4 +719,5 @@ public class Groupings {
             return true;
         }
     }
+
 }
