@@ -297,9 +297,9 @@ public class FlowAnalyzer {
                         .withKeyDeserializer(StringDeserializer.class)
                         .withValueDeserializer(FlowDocumentDeserializer.class)
                         .withConsumerConfigUpdates(kafkaConsumerConfig)
-                        .withTimestampPolicyFactory((TimestampPolicyFactory<String, FlowDocument>)
-                                (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<>(
-                                        ReadFromKafka::getRecordTimestamp, Duration.standardMinutes(2), previousWatermark))
+//                        .withTimestampPolicyFactory((TimestampPolicyFactory<String, FlowDocument>)
+//                                (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<>(
+//                                        ReadFromKafka::getRecordTimestamp, Duration.standardMinutes(2), previousWatermark))
                         .withoutMetadata()
                     ).apply(Values.create())
                     .apply("add_missing_DeltaSwitched", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
@@ -493,6 +493,7 @@ public class FlowAnalyzer {
                         timestamp += windowSizeMs;
                         continue;
                     }
+
                     c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
                     timestamp += windowSizeMs;
                 }
