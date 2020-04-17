@@ -349,9 +349,8 @@ public class FlowAnalyzer {
         return ParDo.of(new DoFn<FlowSummary, String>() {
             @ProcessElement
             public void processElement(ProcessContext c) throws JsonProcessingException {
+                // FIXME: Re-use mapper
                 final ObjectMapper mapper = new ObjectMapper();
-                final String json = mapper.writeValueAsString(c.element());
-                LOG.error("MIAU: FlowSummary: {}. JSON: {}", c.element(), json);
                 c.output(mapper.writeValueAsString(c.element()));
             }
         });
