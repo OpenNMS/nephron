@@ -38,6 +38,7 @@ import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.opennms.netmgt.flows.persistence.model.NodeInfo;
 
+import com.google.protobuf.DoubleValue;
 import com.google.protobuf.UInt32Value;
 import com.google.protobuf.UInt64Value;
 
@@ -122,7 +123,7 @@ public class SyntheticFlowBuilder {
         builder.setDirection(direction);
 
         builder.setConvoKey(ConversationKeyUtils.getConvoKeyAsJsonString(builder));
-
+        builder.setSamplingInterval(DoubleValue.of(1.0d));
 
         flows.add(builder.build());
         return this;

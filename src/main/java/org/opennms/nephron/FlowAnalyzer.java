@@ -382,7 +382,7 @@ public class FlowAnalyzer {
                 if (flow.getDeltaSwitched().getValue() >= window.start().getMillis()
                         && flow.getLastSwitched().getValue() <= window.end().getMillis()) {
                     // Use the entirety of the flow bytes
-                    c.output(KV.of(keyedFlow.getKey(), new FlowBytes(keyedFlow.getValue())));
+                    c.output(KV.of(keyedFlow.getKey(), new FlowBytes(flow)));
                 }
                 return;
             }

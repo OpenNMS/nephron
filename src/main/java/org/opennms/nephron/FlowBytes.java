@@ -48,12 +48,13 @@ public class FlowBytes implements Serializable, Comparable<FlowBytes> {
     }
 
     public FlowBytes(FlowDocument flow, double multiplier) {
+        // TODO: FIXME: Add test for sampling interval
         if (Direction.INGRESS.equals(flow.getDirection())) {
-            bytesIn =  (long)(flow.getNumBytes().getValue() * multiplier);
+            bytesIn =  (long)(flow.getNumBytes().getValue() * flow.getSamplingInterval().getValue() * multiplier);
             bytesOut = 0;
         } else {
             bytesIn = 0;
-            bytesOut = (long)(flow.getNumBytes().getValue() * multiplier);
+            bytesOut = (long)(flow.getNumBytes().getValue() * flow.getSamplingInterval().getValue() * multiplier);
         }
     }
 
