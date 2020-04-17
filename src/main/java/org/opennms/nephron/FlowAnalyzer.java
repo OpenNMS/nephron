@@ -352,6 +352,7 @@ public class FlowAnalyzer {
             @ProcessElement
             public void processElement(ProcessContext c) throws JsonProcessingException {
                 final ObjectMapper mapper = new ObjectMapper();
+                LOG.error("MIAU: FlowSummary: {}", c.element());
                 c.output(mapper.writeValueAsString(c.element()));
             }
         });
