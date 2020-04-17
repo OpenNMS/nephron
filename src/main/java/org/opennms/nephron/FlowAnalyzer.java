@@ -345,14 +345,13 @@ public class FlowAnalyzer {
         }
     }
 
-
-
     private static ParDo.SingleOutput<FlowSummary, String> toJson() {
         return ParDo.of(new DoFn<FlowSummary, String>() {
             @ProcessElement
             public void processElement(ProcessContext c) throws JsonProcessingException {
                 final ObjectMapper mapper = new ObjectMapper();
-                LOG.error("MIAU: FlowSummary: {}", c.element());
+                final String json = mapper.writeValueAsString(c.element());
+                LOG.error("MIAU: FlowSummary: {}. JSON: {}", c.element(), json);
                 c.output(mapper.writeValueAsString(c.element()));
             }
         });
