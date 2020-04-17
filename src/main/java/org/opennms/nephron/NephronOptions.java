@@ -80,6 +80,16 @@ public interface NephronOptions extends PipelineOptions {
 
     void setElasticUrl(String value);
 
+    @Description("Elasticsearch Username")
+    String getElasticUser();
+
+    void setElasticUser(String value);
+
+    @Description("Elasticsearch Password")
+    String getElasticPassword();
+
+    void setElasticPassword(String value);
+
     @Description("Elasticsearch Index")
     @Default.String(NGFlowRepository.NETFLOW_AGG_INDEX_PREFIX)
     String getElasticIndex();

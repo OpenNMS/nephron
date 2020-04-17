@@ -45,10 +45,8 @@ import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
-import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.io.kafka.KafkaRecord;
-import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Flatten;
@@ -81,6 +79,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.Strings;
 import com.swrve.ratelimitedlogger.RateLimitedLog;
 
 public class FlowAnalyzer {
@@ -113,7 +112,7 @@ public class FlowAnalyzer {
         PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()));
 
         // Write the results out to Elasticsearch
-        flowSummaries.apply(new WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex(), IndexStrategy.DAILY));
+        flowSummaries.apply(new WriteToElasticsearch(options, IndexStrategy.DAILY));
 
         // Optionally write out to Kafka as well
         if (options.getFlowDestTopic() != null) {
@@ -250,23 +249,31 @@ public class FlowAnalyzer {
     }
 
     public static class WriteToElasticsearch extends PTransform<PCollection<FlowSummary>, PDone> {
-        private final String elasticUrl;
         private final String elasticIndex;
         private final IndexStrategy indexStrategy;
+        private final ElasticsearchIO.ConnectionConfiguration esConfig;
 
-        public WriteToElasticsearch(String elasticUrl, String elasticIndex, IndexStrategy indexStrategy) {
-            this.elasticUrl = Objects.requireNonNull(elasticUrl);
+        public WriteToElasticsearch(String elasticUrl, String elasticUser, String elasticPassword, String elasticIndex, IndexStrategy indexStrategy) {
+            Objects.requireNonNull(elasticUrl);
             this.elasticIndex = Objects.requireNonNull(elasticIndex);
             this.indexStrategy = Objects.requireNonNull(indexStrategy);
 
+            ElasticsearchIO.ConnectionConfiguration thisEsConfig = ElasticsearchIO.ConnectionConfiguration.create(
+                    new String[]{elasticUrl}, elasticIndex, "_doc");
+            if (!Strings.isNullOrEmpty(elasticUser) && !Strings.isNullOrEmpty(elasticPassword)) {
+                thisEsConfig = thisEsConfig.withUsername(elasticUser).withPassword(elasticPassword);
+            }
+            this.esConfig = thisEsConfig;
+        }
+
+        public WriteToElasticsearch(NephronOptions options, IndexStrategy indexStrategy) {
+            this(options.getElasticUrl(), options.getElasticUser(), options.getElasticPassword(), options.getElasticIndex(), indexStrategy);
         }
 
         @Override
         public PDone expand(PCollection<FlowSummary> input) {
             return input.apply("SerializeToJson", toJson())
-                    .apply("WriteToElasticsearch", ElasticsearchIO.write().withConnectionConfiguration(
-                            ElasticsearchIO.ConnectionConfiguration.create(
-                                    new String[]{elasticUrl}, elasticIndex, "_doc"))
+                    .apply("WriteToElasticsearch", ElasticsearchIO.write().withConnectionConfiguration(esConfig)
                             .withIndexFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
                                 @Override
                                 public String apply(JsonNode input) {

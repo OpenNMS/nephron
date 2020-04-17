@@ -332,7 +332,7 @@ public class ElasticModelIT {
         options.setElasticUrl(elasticHost.toURI());
         p.apply(flowStream)
                 .apply(new FlowAnalyzer.CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()))
-                .apply(new FlowAnalyzer.WriteToElasticsearch(options.getElasticUrl(), options.getElasticIndex(), IndexStrategy.DAILY));
+                .apply(new FlowAnalyzer.WriteToElasticsearch(options, IndexStrategy.DAILY));
 
         // Run the pipeline until completion
         p.run().waitUntilFinish();
