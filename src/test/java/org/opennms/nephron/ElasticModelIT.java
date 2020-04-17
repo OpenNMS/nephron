@@ -149,8 +149,8 @@ public class ElasticModelIT {
         doPipeline(flows, options);
 
         // Verify
-        await().atMost(1, TimeUnit.MINUTES).until(() -> flowRepository.getFlowCount(Collections.singletonList(
-                new TimeRangeFilter(0, System.currentTimeMillis()))).get(), greaterThanOrEqualTo(1L));
+        await().atMost(1, TimeUnit.MINUTES).until(() ->
+                flowRepository.getTopNApplicationSummaries(10, true, getFilters()).get(), hasSize(4));
 
         // Retrieve the Top N applications over the entire time range
         List<TrafficSummary<String>> appTrafficSummary = flowRepository.getTopNApplicationSummaries(10, true, getFilters()).get();
@@ -218,8 +218,7 @@ public class ElasticModelIT {
         doPipeline(flows, options);
 
         // Verify
-        await().atMost(1, TimeUnit.MINUTES).until(() -> flowRepository.getFlowCount(Collections.singletonList(
-                new TimeRangeFilter(0, System.currentTimeMillis()))).get(), greaterThanOrEqualTo(1L));
+        await().atMost(1, TimeUnit.MINUTES).until(() -> flowRepository.getTopNHostSummaries(10, false, getFilters()).get(), hasSize(6));
 
         // Retrieve the Top N applications over the entire time range
         List<TrafficSummary<Host>> hostTrafficSummary = flowRepository.getTopNHostSummaries(10, false, getFilters()).get();
@@ -275,8 +274,7 @@ public class ElasticModelIT {
         doPipeline(flows, options);
 
         // Verify
-        await().atMost(1, TimeUnit.MINUTES).until(() -> flowRepository.getFlowCount(Collections.singletonList(
-                new TimeRangeFilter(0, System.currentTimeMillis()))).get(), greaterThanOrEqualTo(1L));
+        await().atMost(1, TimeUnit.MINUTES).until(() -> flowRepository.getTopNConversationSummaries(2, false, getFilters()).get(), hasSize(2));
 
         // Retrieve the Top N conversation over the entire time range
         List<TrafficSummary<Conversation>> convoTrafficSummary = flowRepository.getTopNConversationSummaries(2, false, getFilters()).get();
