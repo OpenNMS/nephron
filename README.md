@@ -6,7 +6,7 @@ Streaming analytics for telemetry & flows.
 
 Sentinel -> Kafka -> Nephron / Beam / Flink -> Elasticsearch
 
-## Setup
+## Run directly
 
 Build & run:
 ```
@@ -14,7 +14,7 @@ mvn package
 java -jar target/nephron-bundled-1.0.0-SNAPSHOT.jar
 ```
 
-## Flink
+## Run on Flink
 
 >  We require Flink 1.9.x since no release of Apache Beam is compatible with Flink 1.10.x yet.
 
@@ -28,10 +28,31 @@ Run on Flink
 bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/target/nephron-bundled-1.0.0-SNAPSHOT.jar --runner=FlinkRunner --checkpointingInterval=60000
 ```
 
-Stop the job:
+### Upgradine the code
+
+Stopping the job with a savepoint hangs currently, so we need to cancel the job and re-run a new one.
+
+#### Using savepoints
+
+Here's what the procedure *should* be when applying patches.
+
+Rebuild the artifact in place.
+
+Find the job id:
 ```
 ./bin/flink list
+```
+
+Stop the job with a savepoint:
+```
 ./bin/flink stop 99d87bc4d3a271a72f3f89dfe5a904d7 -p /tmp/state
+```
+
+> TODO: This hangs.
+
+Now restart the job with:
+```
+???
 ```
 
 ## Elasticsearch
