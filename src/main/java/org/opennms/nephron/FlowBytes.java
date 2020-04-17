@@ -57,6 +57,10 @@ public class FlowBytes implements Serializable, Comparable<FlowBytes> {
         }
     }
 
+    public FlowBytes(FlowDocument flow) {
+        this(flow, 1.0d);
+    }
+
     public static FlowBytes sum(FlowBytes a, FlowBytes b) {
         return new FlowBytes(a.bytesIn + b.bytesIn, a.bytesOut + b.bytesOut);
     }

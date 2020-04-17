@@ -243,9 +243,7 @@ public class FlowAnalyzer {
                     .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, FlowSummary>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, IntervalWindow window) {
-                            FlowSummary flowSummary = toFlowSummary(Context.TOTAL, window, c.element());
-                            LOG.error("MIAU: {}", flowSummary);
-                            c.output(flowSummary);
+                            c.output(toFlowSummary(Context.TOTAL, window, c.element()));
                         }
                     }));
         }
@@ -374,21 +372,29 @@ public class FlowAnalyzer {
 
             // The flow duration ranges [delta_switched, last_switched]
             long flowDurationMs = flow.getLastSwitched().getValue() - flow.getDeltaSwitched().getValue();
-            if (flowDurationMs <= 0) {
-                // 0 or negative duration, pass
+            if (flowDurationMs < 0) {
+                // Negative duration, pass
+                LOG.warn("Ignoring flow with negative duration: {}. Flow: {}", flowDurationMs, flow);
                 return;
             }
 
-            // Determine the avg. rate of bytes per ms for the duration of the flow
-            double bytesPerMs = flow.getNumBytes().getValue() / (double) flowDurationMs;
+            if (flowDurationMs == 0) {
+                // Double check that the flow is in fact in this window
+                if (flow.getDeltaSwitched().getValue() >= window.start().getMillis()
+                        && flow.getLastSwitched().getValue() <= window.end().getMillis()) {
+                    // Use the entirety of the flow bytes
+                    c.output(KV.of(keyedFlow.getKey(), new FlowBytes(keyedFlow.getValue())));
+                }
+                return;
+            }
 
             // Now determine how many milliseconds the flow overlaps with the window bounds
-            long flowWindowOverlapMs = Math.min(flow.getLastSwitched().getValue(), window.end().getMillis()) - Math.max(flow.getDeltaSwitched().getValue(), window.start().getMillis());
+            long flowWindowOverlapMs = Math.min(flow.getLastSwitched().getValue(), window.end().getMillis())
+                    - Math.max(flow.getDeltaSwitched().getValue(), window.start().getMillis());
             if (flowWindowOverlapMs < 0) {
-                // flow should not be in this windows! pass
+                // Flow should not be in this windows! pass
                 return;
             }
-
             double multiplier = flowWindowOverlapMs / (double) flowDurationMs;
             c.output(KV.of(keyedFlow.getKey(), new FlowBytes(keyedFlow.getValue(), multiplier)));
         }
@@ -469,10 +475,9 @@ public class FlowAnalyzer {
             public void processElement(ProcessContext c) {
                 final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
 
-                final FlowDocument flow = c.element();
                 // We want to dispatch the flow to all the windows it may be a part of
                 // The flow ranges from [delta_switched, last_switched]
-
+                final FlowDocument flow = c.element();
                 long flowStart = flow.getDeltaSwitched().getValue();
                 long timestamp = flowStart - windowSizeMs;
 
@@ -481,7 +486,7 @@ public class FlowAnalyzer {
                     timestamp += windowSizeMs;
                 }
                 while (timestamp <= flow.getLastSwitched().getValue()) {
-                    if (timestamp <= c.timestamp().getMillis()) {
+                    if (timestamp <= c.timestamp().minus(Duration.standardMinutes(15)).getMillis()) {
                         // Caused by: java.lang.IllegalArgumentException: Cannot output with timestamp 1970-01-01T00:00:00.000Z. Output timestamps must be no earlier than the timestamp of the current input (2020-
                         //                            04-14T15:33:11.302Z) minus the allowed skew (30 minutes). See the DoFn#getAllowedTimestampSkew() Javadoc for details on changing the allowed skew.
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
@@ -497,6 +502,12 @@ public class FlowAnalyzer {
                     c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
                     timestamp += windowSizeMs;
                 }
+            }
+
+            @Override
+            public Duration getAllowedTimestampSkew() {
+                // Max flow duration
+                return Duration.standardMinutes(15);
             }
         });
     }
@@ -516,7 +527,6 @@ public class FlowAnalyzer {
         flowSummary.setBytesTotal(flowSummary.getBytesIngress() + flowSummary.getBytesEgress());
         return flowSummary;
     }
-
 
     public static Window<FlowDocument> toWindow(String fixedWindowSize) {
         return Window.<FlowDocument>into(FixedWindows.of(DurationUtils.toDuration(fixedWindowSize)))

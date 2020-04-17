@@ -38,6 +38,8 @@ import java.util.concurrent.TimeUnit;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
+import org.apache.beam.sdk.transforms.Create;
+import org.apache.beam.sdk.transforms.DoFnTester;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
@@ -107,6 +109,19 @@ public class FlowAnalyzerTest {
                 .inWindow(new IntervalWindow(org.joda.time.Instant.ofEpochMilli(1546318800000L),
                         org.joda.time.Instant.ofEpochMilli(1546318800000L + TimeUnit.MINUTES.toMillis(1))))
                 .containsInAnyOrder(summary);
+
+        p.run();
+    }
+
+    @Test
+    public void flowWindowingTest() {
+        FlowDocument flowDocument = FlowDocument.newBuilder()
+                .build();
+        PCollection<FlowDocument> output = p.apply(Create.of(flowDocument))
+                .apply(FlowAnalyzer.attachTimestamps())
+                .apply(FlowAnalyzer.toWindow("1m"));
+        PAssert.that(output)
+                .containsInAnyOrder(flowDocument);
 
         p.run();
     }
