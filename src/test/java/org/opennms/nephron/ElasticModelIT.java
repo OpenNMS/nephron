@@ -332,6 +332,7 @@ public class ElasticModelIT {
         options.setElasticUrl(elasticHost.toURI());
         p.apply(flowStream)
                 .apply(new FlowAnalyzer.CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()))
+                // TODO: Make index strategy configurable
                 .apply(new FlowAnalyzer.WriteToElasticsearch(options, IndexStrategy.DAILY));
 
         // Run the pipeline until completion

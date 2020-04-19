@@ -17,6 +17,10 @@
         <Logger name="org.apache.kafka.clients" level="INFO">
             <AppenderRef ref="Console"/>
         </Logger>
+        <!-- Keep this one at INFO for metrics -->
+        <Logger name="org.opennms.nephron.flows" level="INFO">
+            <AppenderRef ref="Console"/>
+        </Logger>
         <Root level="INFO">
             <AppenderRef ref="Console"/>
         </Root>

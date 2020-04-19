@@ -38,6 +38,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
@@ -76,6 +77,10 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.codahale.metrics.Histogram;
+import com.codahale.metrics.Meter;
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Slf4jReporter;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -90,6 +95,22 @@ public class FlowAnalyzer {
             .withRateLimit(LOG)
             .maxRate(5).every(java.time.Duration.ofSeconds(10))
             .build();
+
+    // TODO: Can we store these with the pipeline instead of statically?
+    private static final MetricRegistry METRICS = new MetricRegistry();
+    private static final Meter FLOWS_FROM_KAFKA = METRICS.meter("flows_from_kafka");
+    private static final Histogram FLOWS_FROM_KAFKA_DRIFT = METRICS.histogram("flows_from_kafka_drift");
+    private static final Meter FLOWS_IN_WINDOWS = METRICS.meter("flows_in_windows");
+    private static final Meter FLOWS_TO_ES = METRICS.meter("flows_to_es");
+    private static final Histogram FLOWS_TO_ES_DRITFT = METRICS.histogram("flows_to_es_drift");
+    {
+        final Slf4jReporter reporter = Slf4jReporter.forRegistry(METRICS)
+                .outputTo(LoggerFactory.getLogger("org.opennms.nephron.flows"))
+                .convertRatesTo(TimeUnit.SECONDS)
+                .convertDurationsTo(TimeUnit.MILLISECONDS)
+                .build();
+        reporter.start(15, TimeUnit.SECONDS);
+    }
 
     /**
      * Creates a new pipeline from the given set of runtime options.
@@ -277,7 +298,18 @@ public class FlowAnalyzer {
                             .withIndexFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
                                 @Override
                                 public String apply(JsonNode input) {
-                                    return indexStrategy.getIndex(elasticIndex, java.time.Instant.ofEpochMilli(input.get("@timestamp").asLong()));
+                                    // We need to derive the timestamp from the document in order to be able to calculate
+                                    // the correct index.
+                                    java.time.Instant flowTimestamp = java.time.Instant.ofEpochMilli(input.get("@timestamp").asLong());
+
+                                    // Derive the index
+                                    String indexName = indexStrategy.getIndex(elasticIndex, flowTimestamp);
+
+                                    // Metrics
+                                    FLOWS_TO_ES.mark();
+                                    FLOWS_TO_ES_DRITFT.update(System.currentTimeMillis() - flowTimestamp.toEpochMilli());
+
+                                    return indexName;
                                 }
                             }));
         }
@@ -307,17 +339,21 @@ public class FlowAnalyzer {
 //                                        ReadFromKafka::getRecordTimestamp, Duration.standardMinutes(2), previousWatermark))
                         .withoutMetadata()
                     ).apply(Values.create())
-                    .apply("add_missing_DeltaSwitched", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
+                    .apply("init", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
                         @ProcessElement
                         public void processElement(ProcessContext c) {
+                            // Add deltaSwitched if missing, was observed a few times
                             FlowDocument flow = c.element();
-                            if (flow.hasDeltaSwitched()) {
-                                c.output(flow);
-                            } else {
-                                c.output(FlowDocument.newBuilder(c.element())
+                            if (!flow.hasDeltaSwitched()) {
+                                flow = FlowDocument.newBuilder(c.element())
                                         .setDeltaSwitched(flow.getFirstSwitched())
-                                        .build());
+                                        .build();
                             }
+                            c.output(flow);
+
+                            // Metrics
+                            FLOWS_FROM_KAFKA.mark();
+                            FLOWS_FROM_KAFKA_DRIFT.update(System.currentTimeMillis() - flow.getTimestamp());
                         }}));
         }
 
@@ -401,6 +437,11 @@ public class FlowAnalyzer {
                 // Flow should not be in this windows! pass
                 return;
             }
+
+            // Track
+            FLOWS_IN_WINDOWS.mark();
+
+            // Output value proportional to the overlap with the window
             double multiplier = flowWindowOverlapMs / (double) flowDurationMs;
             c.output(KV.of(keyedFlow.getKey(), new FlowBytes(keyedFlow.getValue(), multiplier)));
         }
