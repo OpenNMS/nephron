@@ -48,6 +48,9 @@ import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.io.kafka.KafkaRecord;
+import org.apache.beam.sdk.metrics.Counter;
+import org.apache.beam.sdk.metrics.Distribution;
+import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Flatten;
@@ -77,10 +80,6 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.codahale.metrics.Histogram;
-import com.codahale.metrics.Meter;
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Slf4jReporter;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -95,22 +94,6 @@ public class FlowAnalyzer {
             .withRateLimit(LOG)
             .maxRate(5).every(java.time.Duration.ofSeconds(10))
             .build();
-
-    // TODO: Can we store these with the pipeline instead of statically?
-    private static final MetricRegistry METRICS = new MetricRegistry();
-    private static final Meter FLOWS_FROM_KAFKA = METRICS.meter("flows_from_kafka");
-    private static final Histogram FLOWS_FROM_KAFKA_DRIFT = METRICS.histogram("flows_from_kafka_drift");
-    private static final Meter FLOWS_IN_WINDOWS = METRICS.meter("flows_in_windows");
-    private static final Meter FLOWS_TO_ES = METRICS.meter("flows_to_es");
-    private static final Histogram FLOWS_TO_ES_DRITFT = METRICS.histogram("flows_to_es_drift");
-    {
-        final Slf4jReporter reporter = Slf4jReporter.forRegistry(METRICS)
-                .outputTo(LoggerFactory.getLogger("org.opennms.nephron.flows"))
-                .convertRatesTo(TimeUnit.SECONDS)
-                .convertDurationsTo(TimeUnit.MILLISECONDS)
-                .build();
-        reporter.start(15, TimeUnit.SECONDS);
-    }
 
     /**
      * Creates a new pipeline from the given set of runtime options.
@@ -274,6 +257,9 @@ public class FlowAnalyzer {
         private final IndexStrategy indexStrategy;
         private final ElasticsearchIO.ConnectionConfiguration esConfig;
 
+        private final Counter flowsToEs = Metrics.counter("flows", "to_es");
+        private final Distribution flowsToEsDrift = Metrics.distribution("flows", "to_es_drift");
+
         public WriteToElasticsearch(String elasticUrl, String elasticUser, String elasticPassword, String elasticIndex, IndexStrategy indexStrategy) {
             Objects.requireNonNull(elasticUrl);
             this.elasticIndex = Objects.requireNonNull(elasticIndex);
@@ -306,8 +292,8 @@ public class FlowAnalyzer {
                                     String indexName = indexStrategy.getIndex(elasticIndex, flowTimestamp);
 
                                     // Metrics
-                                    FLOWS_TO_ES.mark();
-                                    FLOWS_TO_ES_DRITFT.update(System.currentTimeMillis() - flowTimestamp.toEpochMilli());
+                                    flowsToEs.inc();
+                                    flowsToEsDrift.update(System.currentTimeMillis() - flowTimestamp.toEpochMilli());
 
                                     return indexName;
                                 }
@@ -319,6 +305,9 @@ public class FlowAnalyzer {
         private final String bootstrapServers;
         private final String topic;
         private final Map<String, Object> kafkaConsumerConfig;
+
+        private final Counter flowsFromKafka = Metrics.counter("flows","from_kafka");
+        private final Distribution flowsFromKafkaDrift = Metrics.distribution("flows","from_kafka_drift");
 
         public ReadFromKafka(String bootstrapServers, String topic, Map<String, Object> kafkaConsumerConfig) {
             this.bootstrapServers = Objects.requireNonNull(bootstrapServers);
@@ -352,8 +341,8 @@ public class FlowAnalyzer {
                             c.output(flow);
 
                             // Metrics
-                            FLOWS_FROM_KAFKA.mark();
-                            FLOWS_FROM_KAFKA_DRIFT.update(System.currentTimeMillis() - flow.getTimestamp());
+                            flowsFromKafka.inc();
+                            flowsFromKafkaDrift.update(System.currentTimeMillis() - flow.getTimestamp());
                         }}));
         }
 
@@ -407,6 +396,9 @@ public class FlowAnalyzer {
     }
 
     static class ToWindowedBytes extends DoFn<KV<Groupings.CompoundKey, FlowDocument>, KV<Groupings.CompoundKey, FlowBytes>> {
+
+        private final Counter flowsInWindow = Metrics.counter("flows", "in_window");
+
         @ProcessElement
         public void processElement(ProcessContext c, IntervalWindow window) {
             final KV<? extends Groupings.CompoundKey, FlowDocument> keyedFlow = c.element();
@@ -439,7 +431,7 @@ public class FlowAnalyzer {
             }
 
             // Track
-            FLOWS_IN_WINDOWS.mark();
+            flowsInWindow.inc();
 
             // Output value proportional to the overlap with the window
             double multiplier = flowWindowOverlapMs / (double) flowDurationMs;

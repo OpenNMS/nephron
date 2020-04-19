@@ -20,12 +20,12 @@ java -jar target/nephron-bundled-1.0.0-SNAPSHOT.jar
 
 Build for Flink
 ```
-mvn clean package -Pflink-runner -P '!direct-runner'
+mvn clean package -Pflink-runner
 ```
 
 Run on Flink
 ```
-bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/target/nephron-bundled-1.0.0-SNAPSHOT.jar --runner=FlinkRunner --checkpointingInterval=60000
+./bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/target/nephron-bundled-1.0.0-SNAPSHOT.jar --runner=FlinkRunner --checkpointingInterval=60000
 ```
 
 ### Upgradine the code

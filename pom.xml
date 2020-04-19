@@ -19,7 +19,6 @@
         <junit.version>4.13</junit.version>
         <kafka.version>2.4.1</kafka.version>
         <log4j.version>2.13.1</log4j.version>
-        <metrics.version>4.1.6</metrics.version>
         <opennms.version>26.0.0</opennms.version>
         <protobuf.version>3.11.4</protobuf.version>
         <slf4j.version>1.7.28</slf4j.version>
@@ -226,12 +225,6 @@
                 </exclusion>
             </exclusions>
         </dependency>
-        <dependency>
-            <groupId>io.dropwizard.metrics</groupId>
-            <artifactId>metrics-core</artifactId>
-            <version>${metrics.version}</version>
-        </dependency>
-
 
         <!-- Test dependencies -->
         <dependency>
