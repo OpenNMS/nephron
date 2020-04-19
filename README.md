@@ -20,7 +20,7 @@ java -jar target/nephron-bundled-1.0.0-SNAPSHOT.jar
 
 Build for Flink
 ```
-mvn clean package -DskipTests -Pflink-runner -P '!direct-runner'
+mvn clean package -Pflink-runner -P '!direct-runner'
 ```
 
 Run on Flink

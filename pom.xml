@@ -9,6 +9,7 @@
     <url>https://github.com/OpenNMS/nephron</url>
 
     <properties>
+        <skipITs>true</skipITs>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <beam.version>2.19.0</beam.version>
@@ -25,15 +26,15 @@
     </properties>
 
     <build>
-      <!--
-        <extensions>
-            <extension>
-                <groupId>kr.motd.maven</groupId>
-                <artifactId>os-maven-plugin</artifactId>
-                <version>1.6.2</version>
-            </extension>
-        </extensions>
-      -->
+        <!--
+          <extensions>
+              <extension>
+                  <groupId>kr.motd.maven</groupId>
+                  <artifactId>os-maven-plugin</artifactId>
+                  <version>1.6.2</version>
+              </extension>
+          </extensions>
+        -->
         <pluginManagement>
             <plugins>
                 <plugin>
@@ -56,33 +57,6 @@
                         <source>${java.version}</source>
                         <target>${java.version}</target>
                     </configuration>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-surefire-plugin</artifactId>
-                    <version>2.22.1</version>
-                    <configuration>
-                        <excludes>
-                            <exclude>**/*IT.java</exclude>
-                        </excludes>
-                    </configuration>
-                    <executions>
-                        <execution>
-                            <id>integration-test</id>
-                            <goals>
-                                <goal>test</goal>
-                            </goals>
-                            <phase>integration-test</phase>
-                            <configuration>
-                                <excludes>
-                                    <exclude>none</exclude>
-                                </excludes>
-                                <includes>
-                                    <include>**/*IT.java</include>
-                                </includes>
-                            </configuration>
-                        </execution>
-                    </executions>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -135,7 +109,22 @@
                     </execution>
                 </executions>
             </plugin>
-
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.0.0-M4</version>
+                <configuration>
+                    <skipITs>${skipITs}</skipITs>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- Uncomment to generate Java classes from protobuf
               <plugin>
                   <groupId>org.xolstice.maven.plugins</groupId>
