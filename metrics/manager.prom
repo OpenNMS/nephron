@@ -1,0 +1,114 @@
+# HELP flink_jobmanager_Status_JVM_Memory_Mapped_Count Count (scope: jobmanager_Status_JVM_Memory_Mapped)
+# TYPE flink_jobmanager_Status_JVM_Memory_Mapped_Count gauge
+flink_jobmanager_Status_JVM_Memory_Mapped_Count{host="localhost",} 0.0
+# HELP flink_jobmanager_Status_JVM_Threads_Count Count (scope: jobmanager_Status_JVM_Threads)
+# TYPE flink_jobmanager_Status_JVM_Threads_Count gauge
+flink_jobmanager_Status_JVM_Threads_Count{host="localhost",} 67.0
+# HELP flink_jobmanager_Status_JVM_Memory_Heap_Max Max (scope: jobmanager_Status_JVM_Memory_Heap)
+# TYPE flink_jobmanager_Status_JVM_Memory_Heap_Max gauge
+flink_jobmanager_Status_JVM_Memory_Heap_Max{host="localhost",} 1.029177344E9
+# HELP flink_jobmanager_numRegisteredTaskManagers numRegisteredTaskManagers (scope: jobmanager)
+# TYPE flink_jobmanager_numRegisteredTaskManagers gauge
+flink_jobmanager_numRegisteredTaskManagers{host="localhost",} 1.0
+# HELP flink_jobmanager_job_totalNumberOfCheckpoints totalNumberOfCheckpoints (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_totalNumberOfCheckpoints gauge
+flink_jobmanager_job_totalNumberOfCheckpoints{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 2.0
+# HELP flink_jobmanager_job_lastCheckpointRestoreTimestamp lastCheckpointRestoreTimestamp (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_lastCheckpointRestoreTimestamp gauge
+flink_jobmanager_job_lastCheckpointRestoreTimestamp{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} -1.0
+# HELP flink_jobmanager_job_numberOfInProgressCheckpoints numberOfInProgressCheckpoints (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_numberOfInProgressCheckpoints gauge
+flink_jobmanager_job_numberOfInProgressCheckpoints{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 0.0
+# HELP flink_jobmanager_job_downtime downtime (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_downtime gauge
+flink_jobmanager_job_downtime{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 0.0
+# HELP flink_jobmanager_Status_JVM_GarbageCollector_PS_MarkSweep_Count Count (scope: jobmanager_Status_JVM_GarbageCollector_PS_MarkSweep)
+# TYPE flink_jobmanager_Status_JVM_GarbageCollector_PS_MarkSweep_Count gauge
+flink_jobmanager_Status_JVM_GarbageCollector_PS_MarkSweep_Count{host="localhost",} 2.0
+# HELP flink_jobmanager_Status_JVM_Memory_NonHeap_Committed Committed (scope: jobmanager_Status_JVM_Memory_NonHeap)
+# TYPE flink_jobmanager_Status_JVM_Memory_NonHeap_Committed gauge
+flink_jobmanager_Status_JVM_Memory_NonHeap_Committed{host="localhost",} 6.7108864E7
+# HELP flink_jobmanager_job_lastCheckpointDuration lastCheckpointDuration (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_lastCheckpointDuration gauge
+flink_jobmanager_job_lastCheckpointDuration{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 111.0
+# HELP flink_jobmanager_Status_JVM_Memory_NonHeap_Used Used (scope: jobmanager_Status_JVM_Memory_NonHeap)
+# TYPE flink_jobmanager_Status_JVM_Memory_NonHeap_Used gauge
+flink_jobmanager_Status_JVM_Memory_NonHeap_Used{host="localhost",} 6.37116E7
+# HELP flink_jobmanager_job_fullRestarts fullRestarts (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_fullRestarts gauge
+flink_jobmanager_job_fullRestarts{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 0.0
+# HELP flink_jobmanager_Status_JVM_Memory_Heap_Committed Committed (scope: jobmanager_Status_JVM_Memory_Heap)
+# TYPE flink_jobmanager_Status_JVM_Memory_Heap_Committed gauge
+flink_jobmanager_Status_JVM_Memory_Heap_Committed{host="localhost",} 1.029177344E9
+# HELP flink_jobmanager_Status_JVM_Memory_Mapped_MemoryUsed MemoryUsed (scope: jobmanager_Status_JVM_Memory_Mapped)
+# TYPE flink_jobmanager_Status_JVM_Memory_Mapped_MemoryUsed gauge
+flink_jobmanager_Status_JVM_Memory_Mapped_MemoryUsed{host="localhost",} 0.0
+# HELP flink_jobmanager_Status_JVM_GarbageCollector_PS_Scavenge_Count Count (scope: jobmanager_Status_JVM_GarbageCollector_PS_Scavenge)
+# TYPE flink_jobmanager_Status_JVM_GarbageCollector_PS_Scavenge_Count gauge
+flink_jobmanager_Status_JVM_GarbageCollector_PS_Scavenge_Count{host="localhost",} 3.0
+# HELP flink_jobmanager_Status_JVM_GarbageCollector_PS_MarkSweep_Time Time (scope: jobmanager_Status_JVM_GarbageCollector_PS_MarkSweep)
+# TYPE flink_jobmanager_Status_JVM_GarbageCollector_PS_MarkSweep_Time gauge
+flink_jobmanager_Status_JVM_GarbageCollector_PS_MarkSweep_Time{host="localhost",} 63.0
+# HELP flink_jobmanager_Status_JVM_Memory_NonHeap_Max Max (scope: jobmanager_Status_JVM_Memory_NonHeap)
+# TYPE flink_jobmanager_Status_JVM_Memory_NonHeap_Max gauge
+flink_jobmanager_Status_JVM_Memory_NonHeap_Max{host="localhost",} -1.0
+# HELP flink_jobmanager_Status_JVM_Memory_Direct_TotalCapacity TotalCapacity (scope: jobmanager_Status_JVM_Memory_Direct)
+# TYPE flink_jobmanager_Status_JVM_Memory_Direct_TotalCapacity gauge
+flink_jobmanager_Status_JVM_Memory_Direct_TotalCapacity{host="localhost",} 995318.0
+# HELP flink_jobmanager_Status_JVM_CPU_Time Time (scope: jobmanager_Status_JVM_CPU)
+# TYPE flink_jobmanager_Status_JVM_CPU_Time gauge
+flink_jobmanager_Status_JVM_CPU_Time{host="localhost",} 1.672E10
+# HELP flink_jobmanager_Status_JVM_CPU_Load Load (scope: jobmanager_Status_JVM_CPU)
+# TYPE flink_jobmanager_Status_JVM_CPU_Load gauge
+flink_jobmanager_Status_JVM_CPU_Load{host="localhost",} 0.03112473473237444
+# HELP flink_jobmanager_job_numberOfFailedCheckpoints numberOfFailedCheckpoints (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_numberOfFailedCheckpoints gauge
+flink_jobmanager_job_numberOfFailedCheckpoints{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 0.0
+# HELP flink_jobmanager_job_lastCheckpointAlignmentBuffered lastCheckpointAlignmentBuffered (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_lastCheckpointAlignmentBuffered gauge
+flink_jobmanager_job_lastCheckpointAlignmentBuffered{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 0.0
+# HELP flink_jobmanager_job_lastCheckpointExternalPath lastCheckpointExternalPath (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_lastCheckpointExternalPath gauge
+flink_jobmanager_job_lastCheckpointExternalPath{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 0.0
+# HELP flink_jobmanager_Status_JVM_Memory_Direct_Count Count (scope: jobmanager_Status_JVM_Memory_Direct)
+# TYPE flink_jobmanager_Status_JVM_Memory_Direct_Count gauge
+flink_jobmanager_Status_JVM_Memory_Direct_Count{host="localhost",} 22.0
+# HELP flink_jobmanager_job_restartingTime restartingTime (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_restartingTime gauge
+flink_jobmanager_job_restartingTime{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 0.0
+# HELP flink_jobmanager_Status_JVM_Memory_Direct_MemoryUsed MemoryUsed (scope: jobmanager_Status_JVM_Memory_Direct)
+# TYPE flink_jobmanager_Status_JVM_Memory_Direct_MemoryUsed gauge
+flink_jobmanager_Status_JVM_Memory_Direct_MemoryUsed{host="localhost",} 995319.0
+# HELP flink_jobmanager_Status_JVM_Memory_Mapped_TotalCapacity TotalCapacity (scope: jobmanager_Status_JVM_Memory_Mapped)
+# TYPE flink_jobmanager_Status_JVM_Memory_Mapped_TotalCapacity gauge
+flink_jobmanager_Status_JVM_Memory_Mapped_TotalCapacity{host="localhost",} 0.0
+# HELP flink_jobmanager_numRunningJobs numRunningJobs (scope: jobmanager)
+# TYPE flink_jobmanager_numRunningJobs gauge
+flink_jobmanager_numRunningJobs{host="localhost",} 1.0
+# HELP flink_jobmanager_taskSlotsTotal taskSlotsTotal (scope: jobmanager)
+# TYPE flink_jobmanager_taskSlotsTotal gauge
+flink_jobmanager_taskSlotsTotal{host="localhost",} 1.0
+# HELP flink_jobmanager_job_lastCheckpointSize lastCheckpointSize (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_lastCheckpointSize gauge
+flink_jobmanager_job_lastCheckpointSize{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 268220.0
+# HELP flink_jobmanager_job_uptime uptime (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_uptime gauge
+flink_jobmanager_job_uptime{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 71267.0
+# HELP flink_jobmanager_Status_JVM_ClassLoader_ClassesUnloaded ClassesUnloaded (scope: jobmanager_Status_JVM_ClassLoader)
+# TYPE flink_jobmanager_Status_JVM_ClassLoader_ClassesUnloaded gauge
+flink_jobmanager_Status_JVM_ClassLoader_ClassesUnloaded{host="localhost",} 1.0
+# HELP flink_jobmanager_taskSlotsAvailable taskSlotsAvailable (scope: jobmanager)
+# TYPE flink_jobmanager_taskSlotsAvailable gauge
+flink_jobmanager_taskSlotsAvailable{host="localhost",} 0.0
+# HELP flink_jobmanager_Status_JVM_Memory_Heap_Used Used (scope: jobmanager_Status_JVM_Memory_Heap)
+# TYPE flink_jobmanager_Status_JVM_Memory_Heap_Used gauge
+flink_jobmanager_Status_JVM_Memory_Heap_Used{host="localhost",} 1.82268232E8
+# HELP flink_jobmanager_job_numberOfCompletedCheckpoints numberOfCompletedCheckpoints (scope: jobmanager_job)
+# TYPE flink_jobmanager_job_numberOfCompletedCheckpoints gauge
+flink_jobmanager_job_numberOfCompletedCheckpoints{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 2.0
+# HELP flink_jobmanager_Status_JVM_ClassLoader_ClassesLoaded ClassesLoaded (scope: jobmanager_Status_JVM_ClassLoader)
+# TYPE flink_jobmanager_Status_JVM_ClassLoader_ClassesLoaded gauge
+flink_jobmanager_Status_JVM_ClassLoader_ClassesLoaded{host="localhost",} 7282.0
+# HELP flink_jobmanager_Status_JVM_GarbageCollector_PS_Scavenge_Time Time (scope: jobmanager_Status_JVM_GarbageCollector_PS_Scavenge)
+# TYPE flink_jobmanager_Status_JVM_GarbageCollector_PS_Scavenge_Time gauge
+flink_jobmanager_Status_JVM_GarbageCollector_PS_Scavenge_Time{host="localhost",} 67.0
