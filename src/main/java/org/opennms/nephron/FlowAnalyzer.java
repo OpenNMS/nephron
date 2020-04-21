@@ -305,9 +305,9 @@ public class FlowAnalyzer {
         }
     }
 
-    public static TimestampPolicyFactory<String, FlowDocument> getKafkaInputTimestampPolicyFactory(NephronOptions options) {
+    public static TimestampPolicyFactory<String, FlowDocument> getKafkaInputTimestampPolicyFactory(Duration maxDelay) {
         return (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<>(
-                ReadFromKafka::getRecordTimestamp, Duration.millis(options.getDefaultMaxInputDelayMs()), previousWatermark);
+                ReadFromKafka::getRecordTimestamp, maxDelay, previousWatermark);
     }
 
     public static class ReadFromKafka extends PTransform<PBegin, PCollection<FlowDocument>> {
@@ -333,7 +333,7 @@ public class FlowAnalyzer {
                         .withKeyDeserializer(StringDeserializer.class)
                         .withValueDeserializer(FlowDocumentDeserializer.class)
                         .withConsumerConfigUpdates(kafkaConsumerConfig)
-                        .withTimestampPolicyFactory(getKafkaInputTimestampPolicyFactory(options))
+                        .withTimestampPolicyFactory(getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs())))
                         .withoutMetadata()
                     ).apply(Values.create())
                     .apply("init", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
