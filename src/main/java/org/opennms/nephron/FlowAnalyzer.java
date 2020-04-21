@@ -45,8 +45,10 @@ import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
+import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.io.kafka.KafkaRecord;
+import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Distribution;
 import org.apache.beam.sdk.metrics.Metrics;
@@ -303,6 +305,11 @@ public class FlowAnalyzer {
         }
     }
 
+    public static TimestampPolicyFactory<String, FlowDocument> getKafkaInputTimestampPolicyFactory(NephronOptions options) {
+        return (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<>(
+                ReadFromKafka::getRecordTimestamp, Duration.millis(options.getDefaultMaxInputDelayMs()), previousWatermark);
+    }
+
     public static class ReadFromKafka extends PTransform<PBegin, PCollection<FlowDocument>> {
         private final String bootstrapServers;
         private final String topic;
@@ -319,15 +326,14 @@ public class FlowAnalyzer {
 
         @Override
         public PCollection<FlowDocument> expand(PBegin input) {
+            final NephronOptions options = input.getPipeline().getOptions().as(NephronOptions.class);
             return input.apply(KafkaIO.<String, FlowDocument>read()
                         .withBootstrapServers(bootstrapServers)
                         .withTopic(topic)
                         .withKeyDeserializer(StringDeserializer.class)
                         .withValueDeserializer(FlowDocumentDeserializer.class)
                         .withConsumerConfigUpdates(kafkaConsumerConfig)
-//                        .withTimestampPolicyFactory((TimestampPolicyFactory<String, FlowDocument>)
-//                                (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<>(
-//                                        ReadFromKafka::getRecordTimestamp, Duration.standardMinutes(2), previousWatermark))
+                        .withTimestampPolicyFactory(getKafkaInputTimestampPolicyFactory(options))
                         .withoutMetadata()
                     ).apply(Values.create())
                     .apply("init", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {

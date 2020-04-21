@@ -96,4 +96,12 @@ public interface NephronOptions extends PipelineOptions {
 
     void setElasticIndex(String value);
 
+    @Description("Max input delay in milliseconds. Messages received from a Kafka topic are expected to be delayed" +
+            " by no more than this duration when compared to the latest timestamp observed, or the current time if " +
+            "there is no backlog.")
+    @Default.Long(2 * 60 * 1000L) // 2 minutes
+    Long getDefaultMaxInputDelayMs();
+
+    void setDefaultMaxInputDelayMs(Long value);
+
 }
