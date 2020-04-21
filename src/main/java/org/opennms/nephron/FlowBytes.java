@@ -28,21 +28,24 @@
 
 package org.opennms.nephron;
 
-import java.io.Serializable;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Objects;
 
+import org.apache.beam.sdk.coders.AtomicCoder;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.DefaultCoder;
+import org.apache.beam.sdk.coders.VarLongCoder;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
-
-public class FlowBytes implements Serializable, Comparable<FlowBytes> {
+@DefaultCoder(FlowBytes.FlowBytesCoder.class)
+public class FlowBytes implements Comparable<FlowBytes> {
     final long bytesIn;
     final long bytesOut;
 
-    @JsonCreator
-    public FlowBytes(@JsonProperty("bytesIn") long bytesIn,@JsonProperty("bytesOut") long bytesOut) {
+    public FlowBytes(long bytesIn, long bytesOut) {
         this.bytesIn = bytesIn;
         this.bytesOut = bytesOut;
     }
@@ -99,5 +102,22 @@ public class FlowBytes implements Serializable, Comparable<FlowBytes> {
                 "bytesIn=" + bytesIn +
                 ", bytesOut=" + bytesOut +
                 '}';
+    }
+
+    public static class FlowBytesCoder extends AtomicCoder<FlowBytes> {
+        private final Coder<Long> LONG_CODER = VarLongCoder.of();
+
+        @Override
+        public void encode(FlowBytes value, OutputStream outStream) throws IOException {
+            LONG_CODER.encode(value.bytesIn, outStream);
+            LONG_CODER.encode(value.bytesOut, outStream);
+        }
+
+        @Override
+        public FlowBytes decode(InputStream inStream) throws IOException {
+            final long bytesIn = LONG_CODER.decode(inStream);
+            final long bytesOut = LONG_CODER.decode(inStream);
+            return new FlowBytes(bytesIn, bytesOut);
+        }
     }
 }

@@ -38,7 +38,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
@@ -90,6 +89,8 @@ public class FlowAnalyzer {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlowAnalyzer.class);
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private static final RateLimitedLog rateLimitedLog = RateLimitedLog
             .withRateLimit(LOG)
             .maxRate(5).every(java.time.Duration.ofSeconds(10))
@@ -132,6 +133,7 @@ public class FlowAnalyzer {
         coderRegistry.registerCoderForClass(FlowSummary.class, new JacksonJsonCoder<>(FlowSummary.class));
         coderRegistry.registerCoderForClass(Groupings.ExporterInterfaceApplicationKey.class, new Groupings.CompoundKeyCoder());
         coderRegistry.registerCoderForClass(Groupings.CompoundKey.class, new Groupings.CompoundKeyCoder());
+        coderRegistry.registerCoderForClass(FlowBytes.class, new FlowBytes.FlowBytesCoder());
     }
 
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
@@ -204,7 +206,7 @@ public class FlowAnalyzer {
                     .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
                     .apply(transformPrefix + "group_by_outer_key", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, FlowBytes>>>() {
                         @ProcessElement
-                        public void processElement(ProcessContext c, IntervalWindow window) {
+                        public void processElement(ProcessContext c) {
                             KV<Groupings.CompoundKey, FlowBytes> el = c.element();
                             c.output(KV.of(el.getKey().getOuterKey(), el));
                         }
@@ -216,7 +218,7 @@ public class FlowAnalyzer {
                         public void processElement(ProcessContext c, IntervalWindow window) {
                             int ranking = 1;
                             for (KV<Groupings.CompoundKey, FlowBytes> el : c.element()) {
-                                FlowSummary flowSummary =  toFlowSummary(Context.TOPK, window, el);
+                                FlowSummary flowSummary = toFlowSummary(Context.TOPK, window, el);
                                 flowSummary.setRanking(ranking++);
                                 c.output(flowSummary);
                             }
@@ -381,9 +383,7 @@ public class FlowAnalyzer {
         return ParDo.of(new DoFn<FlowSummary, String>() {
             @ProcessElement
             public void processElement(ProcessContext c) throws JsonProcessingException {
-                // FIXME: Re-use mapper
-                final ObjectMapper mapper = new ObjectMapper();
-                c.output(mapper.writeValueAsString(c.element()));
+                c.output(MAPPER.writeValueAsString(c.element()));
             }
         });
     }
