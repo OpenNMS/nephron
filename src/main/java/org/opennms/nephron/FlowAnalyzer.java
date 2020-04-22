@@ -93,7 +93,7 @@ public class FlowAnalyzer {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private static final RateLimitedLog rateLimitedLog = RateLimitedLog
+    public static final RateLimitedLog RATE_LIMITED_LOG = RateLimitedLog
             .withRateLimit(LOG)
             .maxRate(5).every(java.time.Duration.ofSeconds(10))
             .build();
@@ -537,7 +537,7 @@ public class FlowAnalyzer {
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.outputWithTimestamp(SimpleDoFnRunner.java:573)
                         //                    at org.opennms.nephron.FlowAnalyzer$1.processElement(FlowAnalyzer.java:96)
-                        rateLimitedLog.warn("Skipping output for flow w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
+                        RATE_LIMITED_LOG.warn("Skipping output for flow w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
                                 Instant.ofEpochMilli(flowStart), Instant.ofEpochMilli(flow.getLastSwitched().getValue()), Instant.ofEpochMilli(timestamp), c.timestamp(),
                                 flow);
                         timestamp += windowSizeMs;

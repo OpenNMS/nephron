@@ -28,6 +28,8 @@
 
 package org.opennms.nephron;
 
+import static org.opennms.nephron.FlowAnalyzer.RATE_LIMITED_LOG;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -39,6 +41,8 @@ import org.apache.beam.sdk.coders.DefaultCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @DefaultCoder(FlowBytes.FlowBytesCoder.class)
 public class FlowBytes implements Comparable<FlowBytes> {
@@ -109,6 +113,21 @@ public class FlowBytes implements Comparable<FlowBytes> {
 
         @Override
         public void encode(FlowBytes value, OutputStream outStream) throws IOException {
+            // TODO: FIXME: Hack for NPEs
+            // Caused by: java.lang.NullPointerException
+            //	at org.opennms.nephron.FlowBytes$FlowBytesCoder.encode(FlowBytes.java:112)
+            //	at org.opennms.nephron.FlowBytes$FlowBytesCoder.encode(FlowBytes.java:107)
+            //	at org.apache.beam.sdk.coders.Coder.encode(Coder.java:136)
+            //	at org.apache.beam.sdk.coders.KvCoder.encode(KvCoder.java:71)
+            //	at org.apache.beam.sdk.coders.KvCoder.encode(KvCoder.java:36)
+            //	at org.apache.beam.sdk.util.WindowedValue$FullWindowedValueCoder.encode(WindowedValue.java:588)
+            //	at org.apache.beam.sdk.util.WindowedValue$FullWindowedValueCoder.encode(WindowedValue.java:539)
+            if (value == null) {
+                RATE_LIMITED_LOG.error("Got null FlowBytes value. Encoding as 0s.");
+                LONG_CODER.encode(0L, outStream);
+                LONG_CODER.encode(0L, outStream);
+                return;
+            }
             LONG_CODER.encode(value.bytesIn, outStream);
             LONG_CODER.encode(value.bytesOut, outStream);
         }
