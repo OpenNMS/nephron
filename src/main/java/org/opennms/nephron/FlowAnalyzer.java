@@ -74,7 +74,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
-import org.opennms.nephron.elastic.Context;
+import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.elastic.IndexStrategy;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
@@ -116,7 +116,7 @@ public class FlowAnalyzer {
         PCollection<FlowDocument> streamOfFlows = p.apply(new ReadFromKafka(options.getBootstrapServers(), options.getFlowSourceTopic(), kafkaConsumerConfig));
 
         // Calculate the flow summary statistics
-        PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options.getFixedWindowSize(), options.getTopK()));
+        PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(Duration.millis(options.getFixedWindowSizeMs()), options.getTopK()));
 
         // Write the results out to Elasticsearch
         flowSummaries.apply(new WriteToElasticsearch(options, IndexStrategy.DAILY));
@@ -139,10 +139,10 @@ public class FlowAnalyzer {
     }
 
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
-        private final String fixedWindowSize;
+        private final Duration fixedWindowSize;
         private final int topK;
 
-        public CalculateFlowStatistics(String fixedWindowSize, int topK) {
+        public CalculateFlowStatistics(Duration fixedWindowSize, int topK) {
             this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
             this.topK = topK;
         }
@@ -173,9 +173,9 @@ public class FlowAnalyzer {
     }
 
     public static class WindowedFlows extends PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> {
-        private final String fixedWindowSize;
+        private final Duration fixedWindowSize;
 
-        public WindowedFlows(String fixedWindowSize) {
+        public WindowedFlows(Duration fixedWindowSize) {
             this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
         }
 
@@ -220,7 +220,7 @@ public class FlowAnalyzer {
                         public void processElement(ProcessContext c, IntervalWindow window) {
                             int ranking = 1;
                             for (KV<Groupings.CompoundKey, FlowBytes> el : c.element()) {
-                                FlowSummary flowSummary = toFlowSummary(Context.TOPK, window, el);
+                                FlowSummary flowSummary = toFlowSummary(AggregationType.TOPK, window, el);
                                 flowSummary.setRanking(ranking++);
                                 c.output(flowSummary);
                             }
@@ -250,7 +250,7 @@ public class FlowAnalyzer {
                     .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, FlowSummary>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, IntervalWindow window) {
-                            c.output(toFlowSummary(Context.TOTAL, window, c.element()));
+                            c.output(toFlowSummary(AggregationType.TOTAL, window, c.element()));
                         }
                     }));
         }
@@ -278,7 +278,7 @@ public class FlowAnalyzer {
         }
 
         public WriteToElasticsearch(NephronOptions options, IndexStrategy indexStrategy) {
-            this(options.getElasticUrl(), options.getElasticUser(), options.getElasticPassword(), options.getElasticIndex(), indexStrategy);
+            this(options.getElasticUrl(), options.getElasticUser(), options.getElasticPassword(), options.getElasticFlowIndex(), indexStrategy);
         }
 
         @Override
@@ -518,7 +518,7 @@ public class FlowAnalyzer {
         return ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
             @ProcessElement
             public void processElement(ProcessContext c) {
-                final long windowSizeMs = DurationUtils.toMillis(c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSize());
+                final long windowSizeMs = c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSizeMs();
 
                 // We want to dispatch the flow to all the windows it may be a part of
                 // The flow ranges from [delta_switched, last_switched]
@@ -557,10 +557,10 @@ public class FlowAnalyzer {
         });
     }
 
-    public static FlowSummary toFlowSummary(Context ctx, IntervalWindow window, KV<Groupings.CompoundKey, FlowBytes> el) {
+    public static FlowSummary toFlowSummary(AggregationType aggregationType, IntervalWindow window, KV<Groupings.CompoundKey, FlowBytes> el) {
         FlowSummary flowSummary = new FlowSummary();
         el.getKey().visit(new Groupings.FlowPopulatingVisitor(flowSummary));
-        flowSummary.setContext(ctx);
+        flowSummary.setAggregationType(aggregationType);
 
         flowSummary.setRangeStartMs(window.start().getMillis());
         flowSummary.setRangeEndMs(window.end().getMillis());
@@ -573,8 +573,8 @@ public class FlowAnalyzer {
         return flowSummary;
     }
 
-    public static Window<FlowDocument> toWindow(String fixedWindowSize) {
-        return Window.<FlowDocument>into(FixedWindows.of(DurationUtils.toDuration(fixedWindowSize)))
+    public static Window<FlowDocument> toWindow(Duration fixedWindowSize) {
+        return Window.<FlowDocument>into(FixedWindows.of(fixedWindowSize))
                 // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
                 .triggering(Repeatedly.forever(AfterWatermark.pastEndOfWindow()))
                 .accumulatingFiredPanes()

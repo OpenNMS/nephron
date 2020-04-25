@@ -33,7 +33,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-import org.opennms.nephron.elastic.ConversationKeyUtils;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.opennms.netmgt.flows.persistence.model.NodeInfo;

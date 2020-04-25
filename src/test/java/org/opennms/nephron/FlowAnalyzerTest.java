@@ -39,14 +39,14 @@ import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.Create;
-import org.apache.beam.sdk.transforms.DoFnTester;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
+import org.joda.time.Duration;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.opennms.nephron.elastic.Context;
+import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.ExporterNode;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
@@ -85,7 +85,7 @@ public class FlowAnalyzerTest {
 
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(new FlowAnalyzer.WindowedFlows("1m"))
+                .apply(new FlowAnalyzer.WindowedFlows(Duration.standardMinutes(1)))
                 .apply(new FlowAnalyzer.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
         FlowSummary summary = new FlowSummary();
@@ -94,7 +94,7 @@ public class FlowAnalyzerTest {
         summary.setRangeEndMs(1546318860000L);
         summary.setRanking(0);
         summary.setGroupedBy(EXPORTER_INTERFACE);
-        summary.setContext(Context.TOTAL);
+        summary.setAggregationType(AggregationType.TOTAL);
         summary.setBytesIngress(5368709118L);
         summary.setBytesEgress(2147483646L);
         summary.setBytesTotal(7516192764L);
@@ -119,7 +119,7 @@ public class FlowAnalyzerTest {
                 .build();
         PCollection<FlowDocument> output = p.apply(Create.of(flowDocument))
                 .apply(FlowAnalyzer.attachTimestamps())
-                .apply(FlowAnalyzer.toWindow("1m"));
+                .apply(FlowAnalyzer.toWindow(Duration.standardMinutes(1)));
         PAssert.that(output)
                 .containsInAnyOrder(flowDocument);
 

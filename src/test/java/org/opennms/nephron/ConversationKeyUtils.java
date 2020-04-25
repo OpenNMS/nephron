@@ -26,12 +26,11 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.nephron.elastic;
+package org.opennms.nephron;
 
 import java.io.StringWriter;
 import java.util.Objects;
 
-import org.opennms.netmgt.flows.api.ConversationKey;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 import com.google.gson.Gson;

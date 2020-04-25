@@ -32,10 +32,10 @@ import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.Validation;
-import org.opennms.nephron.query.NGFlowRepository;
 
 public interface NephronOptions extends PipelineOptions {
 
+    String DEFAULT_NETFLOW_AGG_INDEX_PREFIX = "netflow_agg";
     String DEFAULT_FLOW_SOURCE_TOPIC = "opennms-flows";
 
     @Description("Kafka Bootstrap Servers")
@@ -61,12 +61,12 @@ public interface NephronOptions extends PipelineOptions {
 
     void setFlowDestTopic(String value);
 
-    @Description("Size of the window i.e. 1m")
-    @Default.String("1m")
+    @Description("Size of the window in milliseconds")
+    @Default.Long(60 * 1000L)
     @Validation.Required
-    String getFixedWindowSize();
+    long getFixedWindowSizeMs();
 
-    void setFixedWindowSize(String value);
+    void setFixedWindowSizeMs(long value);
 
     @Description("Top K")
     @Default.Integer(10)
@@ -90,11 +90,11 @@ public interface NephronOptions extends PipelineOptions {
 
     void setElasticPassword(String value);
 
-    @Description("Elasticsearch Index")
-    @Default.String(NGFlowRepository.NETFLOW_AGG_INDEX_PREFIX)
-    String getElasticIndex();
+    @Description("Elasticsearch Flow Index")
+    @Default.String(DEFAULT_NETFLOW_AGG_INDEX_PREFIX)
+    String getElasticFlowIndex();
 
-    void setElasticIndex(String value);
+    void setElasticFlowIndex(String value);
 
     @Description("Max input delay in milliseconds. Messages received from a Kafka topic are expected to be delayed" +
             " by no more than this duration when compared to the latest timestamp observed, or the current time if " +

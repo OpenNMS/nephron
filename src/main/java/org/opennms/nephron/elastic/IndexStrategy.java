@@ -33,8 +33,6 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAccessor;
 import java.util.TimeZone;
 
-import com.google.common.base.Strings;
-
 /**
  * Defines a strategy on how to define the index when persisting.
  *

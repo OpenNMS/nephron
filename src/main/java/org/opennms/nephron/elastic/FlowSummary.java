@@ -55,8 +55,8 @@ public class FlowSummary {
     @JsonProperty("grouped_by")
     private GroupedBy groupedBy;
 
-    @JsonProperty("context")
-    private Context context;
+    @JsonProperty("aggregation_type")
+    private AggregationType aggregationType;
 
     @JsonProperty("bytes_ingress")
     private Long bytesIngress;
@@ -125,12 +125,12 @@ public class FlowSummary {
         this.groupedBy = groupedBy;
     }
 
-    public Context getContext() {
-        return context;
+    public AggregationType getAggregationType() {
+        return aggregationType;
     }
 
-    public void setContext(Context context) {
-        this.context = context;
+    public void setAggregationType(AggregationType aggregationType) {
+        this.aggregationType = aggregationType;
     }
 
     public Long getBytesIngress() {
@@ -215,7 +215,7 @@ public class FlowSummary {
                 rangeEndMs == summary.rangeEndMs &&
                 ranking == summary.ranking &&
                 groupedBy == summary.groupedBy &&
-                context == summary.context &&
+                aggregationType == summary.aggregationType &&
                 Objects.equals(bytesIngress, summary.bytesIngress) &&
                 Objects.equals(bytesEgress, summary.bytesEgress) &&
                 Objects.equals(bytesTotal, summary.bytesTotal) &&
@@ -229,7 +229,7 @@ public class FlowSummary {
 
     @Override
     public int hashCode() {
-        return Objects.hash(timestamp, rangeStartMs, rangeEndMs, ranking, groupedBy, context, bytesIngress,
+        return Objects.hash(timestamp, rangeStartMs, rangeEndMs, ranking, groupedBy, aggregationType, bytesIngress,
                 bytesEgress, bytesTotal, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
     }
 
@@ -241,7 +241,7 @@ public class FlowSummary {
                 ", rangeEndMs=" + rangeEndMs +
                 ", ranking=" + ranking +
                 ", groupedBy=" + groupedBy +
-                ", context=" + context +
+                ", aggregationType=" + aggregationType +
                 ", bytesIngress=" + bytesIngress +
                 ", bytesEgress=" + bytesEgress +
                 ", bytesTotal=" + bytesTotal +

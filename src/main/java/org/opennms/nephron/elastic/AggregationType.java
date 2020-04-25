@@ -1,8 +1,8 @@
 /*******************************************************************************
  * This file is part of OpenNMS(R).
  *
- * Copyright (C) 2017-2017 The OpenNMS Group, Inc.
- * OpenNMS(R) is Copyright (C) 1999-2017 The OpenNMS Group, Inc.
+ * Copyright (C) 2020 The OpenNMS Group, Inc.
+ * OpenNMS(R) is Copyright (C) 1999-2020 The OpenNMS Group, Inc.
  *
  * OpenNMS(R) is a registered trademark of The OpenNMS Group, Inc.
  *
@@ -28,37 +28,7 @@
 
 package org.opennms.nephron.elastic;
 
-import java.util.Objects;
-
-public class IndexSettings {
-
-    private String indexPrefix;
-
-    public String getIndexPrefix() {
-        return indexPrefix;
-    }
-
-    public void setIndexPrefix(String indexPrefix) {
-        this.indexPrefix = indexPrefix;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof IndexSettings)) return false;
-        IndexSettings that = (IndexSettings) o;
-        return Objects.equals(indexPrefix, that.indexPrefix);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(indexPrefix);
-    }
-
-    @Override
-    public String toString() {
-        return "IndexSettings{" +
-                "indexPrefix='" + indexPrefix + '\'' +
-                '}';
-    }
+public enum AggregationType {
+    TOTAL,
+    TOPK
 }
