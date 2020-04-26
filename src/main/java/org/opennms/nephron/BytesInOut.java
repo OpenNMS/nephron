@@ -28,7 +28,7 @@
 
 package org.opennms.nephron;
 
-import static org.opennms.nephron.FlowAnalyzer.RATE_LIMITED_LOG;
+import static org.opennms.nephron.Pipeline.RATE_LIMITED_LOG;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,20 +41,18 @@ import org.apache.beam.sdk.coders.DefaultCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-@DefaultCoder(FlowBytes.FlowBytesCoder.class)
-public class FlowBytes implements Comparable<FlowBytes> {
+@DefaultCoder(BytesInOut.BytesInOutCoder.class)
+public class BytesInOut implements Comparable<BytesInOut> {
     final long bytesIn;
     final long bytesOut;
 
-    public FlowBytes(long bytesIn, long bytesOut) {
+    public BytesInOut(long bytesIn, long bytesOut) {
         this.bytesIn = bytesIn;
         this.bytesOut = bytesOut;
     }
 
-    public FlowBytes(FlowDocument flow, double multiplier) {
+    public BytesInOut(FlowDocument flow, double multiplier) {
         // TODO: FIXME: Add test for sampling interval
         if (Direction.INGRESS.equals(flow.getDirection())) {
             bytesIn =  (long)(flow.getNumBytes().getValue() * flow.getSamplingInterval().getValue() * multiplier);
@@ -65,12 +63,12 @@ public class FlowBytes implements Comparable<FlowBytes> {
         }
     }
 
-    public FlowBytes(FlowDocument flow) {
+    public BytesInOut(FlowDocument flow) {
         this(flow, 1.0d);
     }
 
-    public static FlowBytes sum(FlowBytes a, FlowBytes b) {
-        return new FlowBytes(a.bytesIn + b.bytesIn, a.bytesOut + b.bytesOut);
+    public static BytesInOut sum(BytesInOut a, BytesInOut b) {
+        return new BytesInOut(a.bytesIn + b.bytesIn, a.bytesOut + b.bytesOut);
     }
 
     public long getBytesIn() {
@@ -82,15 +80,15 @@ public class FlowBytes implements Comparable<FlowBytes> {
     }
 
     @Override
-    public int compareTo(FlowBytes other) {
+    public int compareTo(BytesInOut other) {
         return Long.compare(bytesIn + bytesOut, other.bytesIn + other.bytesOut);
     }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof FlowBytes)) return false;
-        FlowBytes flowBytes = (FlowBytes) o;
+        if (!(o instanceof BytesInOut)) return false;
+        BytesInOut flowBytes = (BytesInOut) o;
         return bytesIn == flowBytes.bytesIn &&
                 bytesOut == flowBytes.bytesOut;
     }
@@ -108,11 +106,11 @@ public class FlowBytes implements Comparable<FlowBytes> {
                 '}';
     }
 
-    public static class FlowBytesCoder extends AtomicCoder<FlowBytes> {
+    public static class BytesInOutCoder extends AtomicCoder<BytesInOut> {
         private final Coder<Long> LONG_CODER = VarLongCoder.of();
 
         @Override
-        public void encode(FlowBytes value, OutputStream outStream) throws IOException {
+        public void encode(BytesInOut value, OutputStream outStream) throws IOException {
             // TODO: FIXME: Hack for NPEs
             // Caused by: java.lang.NullPointerException
             //	at org.opennms.nephron.FlowBytes$FlowBytesCoder.encode(FlowBytes.java:112)
@@ -133,10 +131,10 @@ public class FlowBytes implements Comparable<FlowBytes> {
         }
 
         @Override
-        public FlowBytes decode(InputStream inStream) throws IOException {
+        public BytesInOut decode(InputStream inStream) throws IOException {
             final long bytesIn = LONG_CODER.decode(inStream);
             final long bytesOut = LONG_CODER.decode(inStream);
-            return new FlowBytes(bytesIn, bytesOut);
+            return new BytesInOut(bytesIn, bytesOut);
         }
     }
 }

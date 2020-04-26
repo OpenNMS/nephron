@@ -34,17 +34,21 @@ import static org.hamcrest.Matchers.hasSize;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
-import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -54,19 +58,19 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.FlowSummary;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.ImmutableMap;
 
 /**
  * Complete end-to-end test - reading & writing to/from Kafka
  */
-@Ignore("broken")
 public class FlowAnalyzerIT {
 
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -78,7 +82,7 @@ public class FlowAnalyzerIT {
     public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
 
     @Test
-    public void canStreamIt() throws InterruptedException, IOException {
+    public void canStreamIt() throws InterruptedException {
         NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
                 "--fixedWindowSizeMs=50000",
                 "--flowDestTopic=opennms-flows-aggregated")
@@ -87,21 +91,14 @@ public class FlowAnalyzerIT {
 
         Executor executor = Executors.newCachedThreadPool();
 
-        Map<String, Object> producerProps = new HashMap<>();
-        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
-        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
-        KafkaProducer<String,byte[]> producer = new KafkaProducer<>(producerProps);
+        // Create the topic
+        createTopics(options.getFlowSourceTopic(), options.getFlowDestTopic());
 
-        // Write some flows
-        OldFlowGenerator flowGenerator = new OldFlowGenerator(producer);
-        executor.execute(flowGenerator);
-
+        // Start our output consumer
         List<FlowSummary> allRecords = new LinkedList<>();
-
         Map<String, Object> consumerProps = new HashMap<>();
         consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
-        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "test");
+        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID().toString());
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         KafkaConsumer<String,String> consumer = new KafkaConsumer<>(consumerProps);
@@ -123,10 +120,8 @@ public class FlowAnalyzerIT {
             }
         });
 
-
-
         // Fire up the pipeline
-        final Pipeline pipeline = FlowAnalyzer.create(options);
+        final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(options);
         Thread t = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -141,13 +136,46 @@ public class FlowAnalyzerIT {
             }
         });
         t.start();
+        // Wait until the pipeline's Kafka consumer has started
+        Thread.sleep(10*1000);
 
-        // Wait for some records to be consumed
+        // Now write some flows
+        Map<String, Object> producerProps = new HashMap<>();
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+        KafkaProducer<String,byte[]> producer = new KafkaProducer<>(producerProps);
+        KafkaFlowGenerator flowGenerator = new KafkaFlowGenerator(producer);
+        executor.execute(flowGenerator);
+
+        // Wait until we've sent at least one flow
+        final List<FlowDocument> flowsSent = new LinkedList<>();
+        flowGenerator.setCallback(flowsSent::add);
+        await().atMost(1, TimeUnit.MINUTES).until(() -> flowsSent, hasSize(greaterThanOrEqualTo(1)));
+
+        // Wait for some flow summaries to appear
         await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
                 .until(() -> allRecords, hasSize(greaterThanOrEqualTo(6)));
 
         t.interrupt();
         t.join();
+    }
+
+    /**
+     * Adapted from https://stackoverflow.com/questions/59164611/how-to-efficiently-create-kafka-topics-with-testcontainers
+     *
+     * @param topics topics to create
+     */
+    private void createTopics(String... topics) {
+        List<NewTopic> newTopics =
+                Arrays.stream(topics)
+                        .map(topic -> new NewTopic(topic, 1, (short) 1))
+                        .collect(Collectors.toList());
+        try (AdminClient admin = AdminClient.create(ImmutableMap.<String,Object>builder()
+                .put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers())
+                .build())) {
+            admin.createTopics(newTopics);
+        }
     }
 
 }

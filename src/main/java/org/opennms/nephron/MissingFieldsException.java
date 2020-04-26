@@ -28,17 +28,21 @@
 
 package org.opennms.nephron;
 
-import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
-public class Nephron {
-    static void runNephron(NephronOptions options) {
-        final org.apache.beam.sdk.Pipeline p = Pipeline.create(options);
-        p.run().waitUntilFinish();
+/**
+ * Thrown when we are unable to derive a {@link org.opennms.nephron.Groupings.CompoundKey} from
+ * a {@link FlowDocument} due to one or more missing fields.
+ */
+public class MissingFieldsException extends Exception {
+    private final FlowDocument flow;
+
+    public MissingFieldsException(String field, FlowDocument flow) {
+        super("Property not populated on flow: " + field);
+        this.flow = flow;
     }
 
-    public static void main(String[] args) {
-        final NephronOptions options =
-                PipelineOptionsFactory.fromArgs(args).withValidation().as(NephronOptions.class);
-        runNephron(options);
+    public FlowDocument getFlow() {
+        return flow;
     }
 }

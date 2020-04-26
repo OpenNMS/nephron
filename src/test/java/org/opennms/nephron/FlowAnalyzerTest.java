@@ -58,7 +58,7 @@ public class FlowAnalyzerTest {
 
     @Before
     public void setUp() {
-        FlowAnalyzer.registerCoders(p);
+        Pipeline.registerCoders(p);
     }
 
     private static final List<FlowDocument> FLOWS = FlowGenerator.builder()
@@ -76,7 +76,7 @@ public class FlowAnalyzerTest {
     public void canComputeTotalBytesInWindow() {
         // Build a stream from the given set of flows
         long timestampOffsetMillis = TimeUnit.MINUTES.toMillis(1);
-        TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowAnalyzer.FlowDocumentProtobufCoder());
+        TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new Pipeline.FlowDocumentProtobufCoder());
         for (FlowDocument flow : FLOWS) {
             flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(flow,
                     org.joda.time.Instant.ofEpochMilli(flow.getLastSwitched().getValue() + timestampOffsetMillis)));
@@ -85,8 +85,8 @@ public class FlowAnalyzerTest {
 
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(new FlowAnalyzer.WindowedFlows(Duration.standardMinutes(1)))
-                .apply(new FlowAnalyzer.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
+                .apply(new Pipeline.WindowedFlows(Duration.standardMinutes(1)))
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
         FlowSummary summary = new FlowSummary();
         summary.setTimestamp(1546318860000L);
@@ -118,8 +118,8 @@ public class FlowAnalyzerTest {
         FlowDocument flowDocument = FlowDocument.newBuilder()
                 .build();
         PCollection<FlowDocument> output = p.apply(Create.of(flowDocument))
-                .apply(FlowAnalyzer.attachTimestamps())
-                .apply(FlowAnalyzer.toWindow(Duration.standardMinutes(1)));
+                .apply(Pipeline.attachTimestamps())
+                .apply(Pipeline.toWindow(Duration.standardMinutes(1)));
         PAssert.that(output)
                 .containsInAnyOrder(flowDocument);
 

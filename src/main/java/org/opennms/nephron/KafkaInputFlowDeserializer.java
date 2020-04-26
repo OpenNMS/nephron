@@ -28,17 +28,19 @@
 
 package org.opennms.nephron;
 
-import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.kafka.common.serialization.Deserializer;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
-public class Nephron {
-    static void runNephron(NephronOptions options) {
-        final org.apache.beam.sdk.Pipeline p = Pipeline.create(options);
-        p.run().waitUntilFinish();
-    }
+import com.google.protobuf.InvalidProtocolBufferException;
 
-    public static void main(String[] args) {
-        final NephronOptions options =
-                PipelineOptionsFactory.fromArgs(args).withValidation().as(NephronOptions.class);
-        runNephron(options);
+public class KafkaInputFlowDeserializer implements Deserializer<FlowDocument> {
+
+    @Override
+    public FlowDocument deserialize(String topic, byte[] data) {
+        try {
+            return FlowDocument.parseFrom(data);
+        } catch (InvalidProtocolBufferException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

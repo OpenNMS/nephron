@@ -28,11 +28,15 @@
 
 package org.opennms.nephron;
 
+import static org.opennms.nephron.FlowGenerator.GIGABYTE;
+
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -41,45 +45,44 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class OldFlowGenerator implements Runnable {
-    private static final Logger LOG = LoggerFactory.getLogger(OldFlowGenerator.class);
-    private final KafkaProducer<String,byte[]> producer;
+import com.google.common.util.concurrent.RateLimiter;
 
-    public OldFlowGenerator(KafkaProducer<String,byte[]> producer) {
+public class KafkaFlowGenerator implements Runnable {
+    private static final Logger LOG = LoggerFactory.getLogger(KafkaFlowGenerator.class);
+    private final KafkaProducer<String,byte[]> producer;
+    private Consumer<FlowDocument> callback;
+
+    public KafkaFlowGenerator(KafkaProducer<String,byte[]> producer) {
         this.producer = Objects.requireNonNull(producer);
     }
 
     @Override
     public void run() {
-        long flowIntervalMs = TimeUnit.SECONDS.toMillis(5);
-        Instant lastFlow = new Date(System.currentTimeMillis() - flowIntervalMs).toInstant();
+        final FlowGenerator flowGenerator = FlowGenerator.builder()
+                .withNumConversations(2)
+                .withNumFlowsPerConversation(5)
+                .withConversationDuration(2, TimeUnit.MINUTES)
+                .withStartTime(Instant.now().minus(Duration.ofHours(1)))
+                .withApplications("http", "https")
+                .withTotalIngressBytes(5*GIGABYTE)
+                .withTotalEgressBytes(2*GIGABYTE)
+                .withApplicationTrafficWeights(0.2d, 0.8d)
+                .build();
 
-        while (true) {
-            Instant now = new Date().toInstant();
-            Instant then = lastFlow;
-
-            final List<FlowDocument> flows = new SyntheticFlowBuilder()
-                    .withExporter("SomeFs", "SomeFid", 99)
-                    .withSnmpInterfaceId(98)
-                    // 192.168.1.100:43444 <-> 10.1.1.11:80 (110 bytes in total)
-                    .withApplication("http")
-                    .withDirection(Direction.INGRESS)
-                    .withFlow(then, now, "192.168.1.100", 43444, "10.1.1.11", 80, 10)
-                    .withDirection(Direction.EGRESS)
-                    .withFlow(then, now, "10.1.1.11", 80, "192.168.1.100", 43444, 100)
-                    .build();
-
-            for (FlowDocument flow : flows) {
-                producer.send(new ProducerRecord<>(NephronOptions.DEFAULT_FLOW_SOURCE_TOPIC, flow.toByteArray()));
-            }
-
-            lastFlow = then;
-            try {
-                Thread.sleep(flowIntervalMs);
-            } catch (InterruptedException e) {
-                LOG.info("Interrupted while sleeping... Exiting thread.");
-                return;
-            }
+        // Limit to 10 flows per second
+        final RateLimiter rateLimiter = RateLimiter.create(10);
+        for (FlowDocument flow : flowGenerator.streamFlows()) {
+            rateLimiter.acquire(1);
+            producer.send(new ProducerRecord<>(NephronOptions.DEFAULT_FLOW_SOURCE_TOPIC, flow.toByteArray()), (metadata, exception) -> {
+                // Issue the callback then the send was successful
+                if (callback != null && exception == null) {
+                    callback.accept(flow);
+                }
+            });
         }
+    }
+
+    public void setCallback(Consumer<FlowDocument> callback) {
+        this.callback = callback;
     }
 }

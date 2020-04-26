@@ -28,19 +28,47 @@
 
 package org.opennms.nephron;
 
-import org.apache.kafka.common.serialization.Deserializer;
-import org.opennms.netmgt.flows.persistence.model.FlowDocument;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
 
-import com.google.protobuf.InvalidProtocolBufferException;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 
-public class FlowDocumentDeserializer  implements Deserializer<FlowDocument> {
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+public class JacksonJsonCoder<T> extends Coder<T> {
+
+    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final StringUtf8Coder delegate = StringUtf8Coder.of();
+    private final Class<T> clazz;
+
+    public JacksonJsonCoder(Class<T> clazz) {
+        this.clazz = Objects.requireNonNull(clazz);
+    }
 
     @Override
-    public FlowDocument deserialize(String topic, byte[] data) {
-        try {
-            return FlowDocument.parseFrom(data);
-        } catch (InvalidProtocolBufferException e) {
-            throw new RuntimeException(e);
-        }
+    public void encode(T value, OutputStream outStream) throws IOException {
+        final String json = mapper.writeValueAsString(value);
+        delegate.encode(json, outStream);
+    }
+
+    @Override
+    public T decode(InputStream inStream) throws IOException {
+        String json = delegate.decode(inStream);
+        return mapper.readValue(json, clazz);
+    }
+
+    @Override
+    public List<? extends Coder<?>> getCoderArguments() {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public void verifyDeterministic() {
+        // pass
     }
 }

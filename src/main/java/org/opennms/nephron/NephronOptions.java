@@ -32,6 +32,7 @@ import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.Validation;
+import org.opennms.nephron.elastic.IndexStrategy;
 
 public interface NephronOptions extends PipelineOptions {
 
@@ -89,6 +90,12 @@ public interface NephronOptions extends PipelineOptions {
     String getElasticPassword();
 
     void setElasticPassword(String value);
+
+    @Description("Elasticsearch Index Strategy")
+    @Default.Enum("DAILY")
+    IndexStrategy getElasticIndexStrategy();
+
+    void setElasticIndexStrategy(IndexStrategy value);
 
     @Description("Elasticsearch Flow Index")
     @Default.String(DEFAULT_NETFLOW_AGG_INDEX_PREFIX)

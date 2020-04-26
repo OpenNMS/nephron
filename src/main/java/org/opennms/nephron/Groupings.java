@@ -31,7 +31,13 @@ package org.opennms.nephron;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.Coder;
@@ -39,6 +45,8 @@ import org.apache.beam.sdk.coders.DefaultCoder;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
+import org.apache.beam.sdk.metrics.Counter;
+import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.values.KV;
 import org.opennms.nephron.elastic.ExporterNode;
@@ -50,133 +58,102 @@ import org.opennms.netmgt.flows.persistence.model.NodeInfo;
 
 import com.google.common.base.Strings;
 
+/**
+ * Contains functions used to group flows by different keys.
+ *
+ * The keys are modeled as subclasses of {@link CompoundKey} and include
+ * associated {@link Coder}s for serdes.
+ *
+ * A visitor pattern is used to handle the different key types to
+ * ensure that all the implementations that need to be aware of them get updated
+ * when new types are added.
+ *
+ * @author jwhite
+ */
 public class Groupings {
 
+    @DefaultCoder(CompoundKeyCoder.class)
+    public static abstract class CompoundKey {
+        public abstract void visit(Visitor visitor);
 
-    public static class KeyByExporterInterfaceConversation extends DoFn<FlowDocument, KV<CompoundKey, FlowDocument>> {
+        /**
+         * Ordered list of references from which the key is composed
+         *
+         * @return immutable list of keys
+         */
+        public abstract List<Ref> getKeys();
+
+        /**
+         * Build the parent, or "outer" key for the current key.
+         *
+         * @return the outer key, or null if no such key exists
+         */
+        public abstract CompoundKey getOuterKey();
+
+    }
+
+    public interface Visitor {
+        void visit(ExporterKey key);
+        void visit(ExporterInterfaceKey key);
+        void visit(ExporterInterfaceApplicationKey key);
+        void visit(ExporterInterfaceHostKey key);
+        void visit(ExporterInterfaceConversationKey key);
+    }
+
+    public static abstract class KeyFlowBy extends DoFn<FlowDocument, KV<CompoundKey, FlowDocument>> {
+        private final Counter flowsWithMissingFields = Metrics.counter(Groupings.class, "flowsWithMissingFields");
+
         @ProcessElement
         public void processElement(ProcessContext c) {
             final FlowDocument flow = c.element();
-            if (!flow.hasExporterNode()) {
-                return;
+            try {
+                for (CompoundKey key: key(flow)) {
+                    c.output(KV.of(key, flow));
+                }
+            } catch (MissingFieldsException mfe) {
+                flowsWithMissingFields.inc();
             }
+        }
 
-            final NodeRef nodeRef;
-            final NodeInfo exporterNode = flow.getExporterNode();
-            if (!Strings.isNullOrEmpty(exporterNode.getForeignSource())
-                    && !Strings.isNullOrEmpty(exporterNode.getForeginId())) {
-                nodeRef = NodeRef.of(exporterNode.getForeignSource(), exporterNode.getForeginId());
-            } else {
-                nodeRef = NodeRef.of(exporterNode.getNodeId());
-            }
+        public abstract Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException;
+    }
 
-            final InterfaceRef interfaceRef;
-            if (Direction.INGRESS.equals(flow.getDirection())) {
-                interfaceRef = InterfaceRef.of(flow.getInputSnmpIfindex().getValue());
-            } else {
-                interfaceRef = InterfaceRef.of(flow.getOutputSnmpIfindex().getValue());
-            }
-
-            final ConversationRef conversationRef = ConversationRef.of(flow.getConvoKey());
-
-
-            c.output(KV.of(ExporterInterfaceConversationKey.of(nodeRef, interfaceRef, conversationRef), flow));
+    public static class KeyByExporterInterface extends KeyFlowBy {
+        @Override
+        public Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException {
+            return Collections.singleton(ExporterInterfaceKey.from(flow));
         }
     }
 
-    static class KeyByExporterInterface extends DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> {
-        @ProcessElement
-        public void processElement(ProcessContext c) {
-            final FlowDocument flow = c.element();
-            if (!flow.hasExporterNode()) {
-                return;
-            }
-
-            final NodeRef nodeRef;
-            final NodeInfo exporterNode = flow.getExporterNode();
-            if (!Strings.isNullOrEmpty(exporterNode.getForeignSource())
-                    && !Strings.isNullOrEmpty(exporterNode.getForeginId())) {
-                nodeRef = NodeRef.of(exporterNode.getForeignSource(), exporterNode.getForeginId());
-            } else {
-                nodeRef = NodeRef.of(exporterNode.getNodeId());
-            }
-
-            final InterfaceRef interfaceRef;
-            if (Direction.INGRESS.equals(flow.getDirection())) {
-                interfaceRef = InterfaceRef.of(flow.getInputSnmpIfindex().getValue());
-            } else {
-                interfaceRef = InterfaceRef.of(flow.getOutputSnmpIfindex().getValue());
-            }
-
-            c.output(KV.of(ExporterInterfaceKey.of(nodeRef, interfaceRef), flow));
+    public static class KeyByExporterInterfaceApplication extends KeyFlowBy {
+        @Override
+        public Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException {
+            return Collections.singleton(ExporterInterfaceApplicationKey.from(flow));
         }
     }
 
-    static class KeyByExporterInterfaceApplication extends DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> {
-        @ProcessElement
-        public void processElement(ProcessContext c) {
-            final FlowDocument flow = c.element();
-            if (!flow.hasExporterNode()) {
-                return;
-            }
-
-            final NodeRef nodeRef;
-            final NodeInfo exporterNode = flow.getExporterNode();
-            if (!Strings.isNullOrEmpty(exporterNode.getForeignSource())
-                    && !Strings.isNullOrEmpty(exporterNode.getForeginId())) {
-                nodeRef = NodeRef.of(exporterNode.getForeignSource(), exporterNode.getForeginId());
-            } else {
-                nodeRef = NodeRef.of(exporterNode.getNodeId());
-            }
-
-            final InterfaceRef interfaceRef;
-            if (Direction.INGRESS.equals(flow.getDirection())) {
-                interfaceRef = InterfaceRef.of(flow.getInputSnmpIfindex().getValue());
-            } else {
-                interfaceRef = InterfaceRef.of(flow.getOutputSnmpIfindex().getValue());
-            }
-
-            final ApplicationRef applicationRef;
-            if (Strings.isNullOrEmpty(flow.getApplication())) {
-                applicationRef = ApplicationRef.of(FlowSummary.UNKNOWN_APPLICATION_NAME_KEY);
-            } else {
-                applicationRef = ApplicationRef.of(flow.getApplication());
-            }
-
-            c.output(KV.of(ExporterInterfaceApplicationKey.of(nodeRef, interfaceRef, applicationRef), flow));
+    public static class KeyByExporterInterfaceHost extends KeyFlowBy {
+        @Override
+        public Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException {
+            final NodeRef nodeRef = NodeRef.of(flow);
+            final InterfaceRef interfaceRef = InterfaceRef.of(flow);
+            return Arrays.asList(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getSrcAddress(), flow.getSrcHostname())),
+                    ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getDstAddress(), flow.getDstHostname())));
         }
     }
 
-    static class KeyByExporterInterfaceHost extends DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> {
-        @ProcessElement
-        public void processElement(ProcessContext c) {
-            final FlowDocument flow = c.element();
-            if (!flow.hasExporterNode()) {
-                return;
-            }
-
-            final NodeRef nodeRef;
-            final NodeInfo exporterNode = flow.getExporterNode();
-            if (!Strings.isNullOrEmpty(exporterNode.getForeignSource())
-                    && !Strings.isNullOrEmpty(exporterNode.getForeginId())) {
-                nodeRef = NodeRef.of(exporterNode.getForeignSource(), exporterNode.getForeginId());
-            } else {
-                nodeRef = NodeRef.of(exporterNode.getNodeId());
-            }
-
-            final InterfaceRef interfaceRef;
-            if (Direction.INGRESS.equals(flow.getDirection())) {
-                interfaceRef = InterfaceRef.of(flow.getInputSnmpIfindex().getValue());
-            } else {
-                interfaceRef = InterfaceRef.of(flow.getOutputSnmpIfindex().getValue());
-            }
-
-            c.output(KV.of(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getSrcAddress(), flow.getSrcHostname())), flow));
-            c.output(KV.of(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getDstAddress(), flow.getDstHostname())), flow));
+    public static class KeyByExporterInterfaceConversation extends KeyFlowBy {
+        @Override
+        public Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException {
+            return Collections.singleton(ExporterInterfaceConversationKey.from(flow));
         }
     }
 
-    public static class NodeRef {
+    interface Ref {
+        String idAsString();
+    }
+
+    public static class NodeRef implements Ref {
         private String foreignSource;
         private String foreignId;
         private Integer nodeId;
@@ -192,6 +169,19 @@ public class Groupings {
             NodeRef nodeRef = new NodeRef();
             nodeRef.setNodeId(nodeId);
             return nodeRef;
+        }
+
+        public static NodeRef of(FlowDocument flow) throws MissingFieldsException {
+            if (!flow.hasExporterNode()) {
+                throw new MissingFieldsException("exporterNode", flow);
+            }
+            final NodeInfo exporterNode = flow.getExporterNode();
+            if (!Strings.isNullOrEmpty(exporterNode.getForeignSource())
+                    && !Strings.isNullOrEmpty(exporterNode.getForeginId())) {
+                return NodeRef.of(exporterNode.getForeignSource(), exporterNode.getForeginId());
+            } else {
+                return NodeRef.of(exporterNode.getNodeId());
+            }
         }
 
         public String getForeignSource() {
@@ -241,16 +231,31 @@ public class Groupings {
                     ", nodeId=" + nodeId +
                     '}';
         }
+
+        @Override
+        public String idAsString() {
+            if (foreignSource != null) {
+                return foreignSource + ":" + foreignId;
+            }
+            return Integer.toString(nodeId);
+        }
     }
 
-
-    public static class InterfaceRef {
+    public static class InterfaceRef implements Ref {
         private int ifIndex;
 
         public static InterfaceRef of(int ifIndex) {
             InterfaceRef interfaceRef = new InterfaceRef();
             interfaceRef.setIfIndex(ifIndex);
             return interfaceRef;
+        }
+
+        public static InterfaceRef of(FlowDocument flow) {
+            if (Direction.INGRESS.equals(flow.getDirection())) {
+                return InterfaceRef.of(flow.getInputSnmpIfindex().getValue());
+            } else {
+                return InterfaceRef.of(flow.getOutputSnmpIfindex().getValue());
+            }
         }
 
         public int getIfIndex() {
@@ -280,9 +285,14 @@ public class Groupings {
                     "ifIndex=" + ifIndex +
                     '}';
         }
+
+        @Override
+        public String idAsString() {
+            return Integer.toString(ifIndex);
+        }
     }
 
-    public static class ApplicationRef {
+    public static class ApplicationRef implements Ref {
         private String application;
 
         public static ApplicationRef of(String application) {
@@ -318,9 +328,14 @@ public class Groupings {
                     "application='" + application + '\'' +
                     '}';
         }
+
+        @Override
+        public String idAsString() {
+            return application;
+        }
     }
 
-    public static class HostRef {
+    public static class HostRef implements Ref {
         private String address;
         private String hostname;
 
@@ -368,23 +383,28 @@ public class Groupings {
                     ", hostname='" + hostname + '\'' +
                     '}';
         }
+
+        @Override
+        public String idAsString() {
+            return address;
+        }
     }
 
-    public static class ConversationRef {
-        private String convesrationKey;
+    public static class ConversationRef implements Ref {
+        private String conversationKey;
 
         public static ConversationRef of(String conversationKey) {
             ConversationRef conversationRef = new ConversationRef();
-            conversationRef.setConvesrationKey(conversationKey);
+            conversationRef.setConversationKey(conversationKey);
             return conversationRef;
         }
 
-        public String getConvesrationKey() {
-            return convesrationKey;
+        public String getConversationKey() {
+            return conversationKey;
         }
 
-        public void setConvesrationKey(String convesrationKey) {
-            this.convesrationKey = convesrationKey;
+        public void setConversationKey(String conversationKey) {
+            this.conversationKey = conversationKey;
         }
 
         @Override
@@ -392,19 +412,24 @@ public class Groupings {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             ConversationRef that = (ConversationRef) o;
-            return Objects.equals(convesrationKey, that.convesrationKey);
+            return Objects.equals(conversationKey, that.conversationKey);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(convesrationKey);
+            return Objects.hash(conversationKey);
         }
 
         @Override
         public String toString() {
             return "ConversationRef{" +
-                    "convesrationKey='" + convesrationKey + '\'' +
+                    "conversationKey='" + conversationKey + '\'' +
                     '}';
+        }
+
+        @Override
+        public String idAsString() {
+            return conversationKey;
         }
     }
 
@@ -420,6 +445,20 @@ public class Groupings {
             key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
             key.setApplicationRef(Objects.requireNonNull(applicationRef));
             return key;
+        }
+
+        public static ExporterInterfaceApplicationKey from(FlowDocument flow) throws MissingFieldsException {
+            final NodeRef nodeRef = NodeRef.of(flow);
+            final InterfaceRef interfaceRef = InterfaceRef.of(flow);
+
+            final ApplicationRef applicationRef;
+            if (Strings.isNullOrEmpty(flow.getApplication())) {
+                applicationRef = ApplicationRef.of(FlowSummary.UNKNOWN_APPLICATION_NAME_KEY);
+            } else {
+                applicationRef = ApplicationRef.of(flow.getApplication());
+            }
+
+            return of(nodeRef, interfaceRef, applicationRef);
         }
 
         public NodeRef getNodeRef() {
@@ -479,6 +518,66 @@ public class Groupings {
         public CompoundKey getOuterKey() {
             return ExporterInterfaceKey.of(nodeRef, interfaceRef);
         }
+
+        @Override
+        public List<Ref> getKeys() {
+            return Arrays.asList(nodeRef, interfaceRef, applicationRef);
+        }
+    }
+
+    @DefaultCoder(CompoundKeyCoder.class)
+    public static class ExporterKey extends CompoundKey {
+        private NodeRef nodeRef;
+
+        public static ExporterKey from(FlowDocument flow) throws MissingFieldsException {
+            final ExporterKey key = new ExporterKey();
+            key.setNodeRef(NodeRef.of(flow));
+            return key;
+        }
+
+        public NodeRef getNodeRef() {
+            return nodeRef;
+        }
+
+        public void setNodeRef(NodeRef nodeRef) {
+            this.nodeRef = nodeRef;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ExporterKey)) return false;
+            ExporterKey that = (ExporterKey) o;
+            return Objects.equals(nodeRef, that.nodeRef);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(nodeRef);
+        }
+
+        @Override
+        public String toString() {
+            return "ExporterKey{" +
+                    "nodeRef=" + nodeRef +
+                    '}';
+        }
+
+        @Override
+        public void visit(Visitor visitor) {
+            visitor.visit(this);
+        }
+
+        @Override
+        public CompoundKey getOuterKey() {
+            // No parent
+            return null;
+        }
+
+        @Override
+        public List<Ref> getKeys() {
+            return Arrays.asList(nodeRef);
+        }
     }
 
     @DefaultCoder(CompoundKeyCoder.class)
@@ -491,6 +590,10 @@ public class Groupings {
             key.setNodeRef(Objects.requireNonNull(nodeRef));
             key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
             return key;
+        }
+
+        public static ExporterInterfaceKey from(FlowDocument flow) throws MissingFieldsException {
+            return of(NodeRef.of(flow), InterfaceRef.of(flow));
         }
 
         public NodeRef getNodeRef() {
@@ -538,7 +641,14 @@ public class Groupings {
 
         @Override
         public CompoundKey getOuterKey() {
-            throw new UnsupportedOperationException("No export key yet.");
+            ExporterKey parentKey = new ExporterKey();
+            parentKey.setNodeRef(nodeRef);
+            return parentKey;
+        }
+
+        @Override
+        public List<Ref> getKeys() {
+            return Arrays.asList(nodeRef, interfaceRef);
         }
     }
 
@@ -614,6 +724,11 @@ public class Groupings {
         public CompoundKey getOuterKey() {
             return ExporterInterfaceKey.of(nodeRef, interfaceRef);
         }
+
+        @Override
+        public List<Ref> getKeys() {
+            return Arrays.asList(nodeRef, interfaceRef, hostRef);
+        }
     }
 
     @DefaultCoder(CompoundKeyCoder.class)
@@ -623,11 +738,22 @@ public class Groupings {
         private ConversationRef conversationRef;
 
         public static ExporterInterfaceConversationKey of(NodeRef nodeRef, InterfaceRef interfaceRef, ConversationRef conversationRef) {
-            ExporterInterfaceConversationKey key = new ExporterInterfaceConversationKey();
+            final ExporterInterfaceConversationKey key = new ExporterInterfaceConversationKey();
             key.setNodeRef(Objects.requireNonNull(nodeRef));
             key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
             key.setConversationRef(Objects.requireNonNull(conversationRef));
             return key;
+        }
+
+        public static CompoundKey from(FlowDocument flow) throws MissingFieldsException {
+            if (!flow.hasExporterNode()) {
+                throw new MissingFieldsException("exporterNode", flow);
+            }
+
+            final NodeRef nodeRef = NodeRef.of(flow);
+            final InterfaceRef interfaceRef = InterfaceRef.of(flow);
+            final ConversationRef conversationRef = ConversationRef.of(flow.getConvoKey());
+            return of(nodeRef, interfaceRef, conversationRef);
         }
 
         public NodeRef getNodeRef() {
@@ -678,19 +804,11 @@ public class Groupings {
         public CompoundKey getOuterKey() {
             return ExporterInterfaceKey.of(nodeRef, interfaceRef);
         }
-    }
 
-    @DefaultCoder(CompoundKeyCoder.class)
-    public static abstract class CompoundKey {
-        public abstract void visit(Visitor visitor);
-        public abstract CompoundKey getOuterKey();
-    }
-
-    public interface Visitor {
-        void visit(ExporterInterfaceKey key);
-        void visit(ExporterInterfaceApplicationKey key);
-        void visit(ExporterInterfaceHostKey key);
-        void visit(ExporterInterfaceConversationKey key);
+        @Override
+        public List<Ref> getKeys() {
+            return Arrays.asList(nodeRef, interfaceRef, conversationRef);
+        }
     }
 
     public static class FlowPopulatingVisitor implements Visitor {
@@ -700,8 +818,22 @@ public class Groupings {
             this.flow = Objects.requireNonNull(flow);
         }
 
+        private static String keyToString(List<Ref> keys) {
+            return keys.stream()
+                    .map(Ref::idAsString)
+                    .collect(Collectors.joining("-"));
+        }
+
+        @Override
+        public void visit(ExporterKey key) {
+            flow.setKey(keyToString(key.getKeys()));
+            flow.setGroupedBy(GroupedBy.EXPORTER);
+            flow.setExporter(toExporterNode(key.nodeRef));
+        }
+
         @Override
         public void visit(ExporterInterfaceKey key) {
+            flow.setKey(keyToString(key.getKeys()));
             flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE);
             flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);
@@ -709,6 +841,7 @@ public class Groupings {
 
         @Override
         public void visit(ExporterInterfaceApplicationKey key) {
+            flow.setKey(keyToString(key.getKeys()));
             flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_APPLICATION);
             flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);
@@ -717,6 +850,7 @@ public class Groupings {
 
         @Override
         public void visit(ExporterInterfaceHostKey key) {
+            flow.setKey(keyToString(key.getKeys()));
             flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_HOST);
             flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);
@@ -726,10 +860,11 @@ public class Groupings {
 
         @Override
         public void visit(ExporterInterfaceConversationKey key) {
+            flow.setKey(keyToString(key.getKeys()));
             flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_CONVERSATION);
             flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);
-            flow.setConversationKey(key.conversationRef.convesrationKey);
+            flow.setConversationKey(key.conversationRef.conversationKey);
         }
 
         private static ExporterNode toExporterNode(NodeRef nodeRef) {
@@ -747,8 +882,18 @@ public class Groupings {
         private Coder<Integer> INT_CODER = NullableCoder.of(VarIntCoder.of());
 
         @Override
-        public void encode(CompoundKey value, OutputStream os) throws IOException {
+        public void encode(CompoundKey value, OutputStream os) {
             value.visit(new Visitor() {
+                @Override
+                public void visit(ExporterKey key) {
+                    try {
+                        INT_CODER.encode(0, os);
+                        NODE_REF_KEY_CODER.encode(key.nodeRef, os);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+
                 @Override
                 public void visit(ExporterInterfaceKey key) {
                     try {
@@ -791,7 +936,7 @@ public class Groupings {
                         INT_CODER.encode(4, os);
                         NODE_REF_KEY_CODER.encode(key.nodeRef, os);
                         INT_CODER.encode(key.interfaceRef.ifIndex, os);
-                        STRING_CODER.encode(key.conversationRef.convesrationKey, os);
+                        STRING_CODER.encode(key.conversationRef.conversationKey, os);
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
@@ -841,10 +986,10 @@ public class Groupings {
                 key.interfaceRef.ifIndex = INT_CODER.decode(is);
 
                 key.conversationRef = new ConversationRef();
-                key.conversationRef.convesrationKey = STRING_CODER.decode(is);
+                key.conversationRef.conversationKey = STRING_CODER.decode(is);
                 return key;
             }
-            throw new RuntimeException("oops: " + type);
+            throw new RuntimeException("Unsupported type: " + type);
         }
 
         @Override

@@ -39,11 +39,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderRegistry;
-import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
 import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
@@ -59,10 +57,10 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
+import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
-import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PBegin;
@@ -87,9 +85,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
 import com.swrve.ratelimitedlogger.RateLimitedLog;
 
-public class FlowAnalyzer {
+public class Pipeline {
 
-    private static final Logger LOG = LoggerFactory.getLogger(FlowAnalyzer.class);
+    private static final Logger LOG = LoggerFactory.getLogger(Pipeline.class);
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -104,14 +102,16 @@ public class FlowAnalyzer {
      * @param options runtime options
      * @return a new pipeline
      */
-    public static Pipeline create(NephronOptions options) {
+    public static org.apache.beam.sdk.Pipeline create(NephronOptions options) {
         Objects.requireNonNull(options);
-        Pipeline p = Pipeline.create(options);
+        org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
         // Read from Kafka
         Map<String, Object> kafkaConsumerConfig = new HashMap<>();
         kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, options.getGroupId());
+        // TODO: Auto-commit should be disabled when checkpointing is on - the state in the checkpoints
+        // are used to derive the offsets instead
         kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true);
         PCollection<FlowDocument> streamOfFlows = p.apply(new ReadFromKafka(options.getBootstrapServers(), options.getFlowSourceTopic(), kafkaConsumerConfig));
 
@@ -119,7 +119,7 @@ public class FlowAnalyzer {
         PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(Duration.millis(options.getFixedWindowSizeMs()), options.getTopK()));
 
         // Write the results out to Elasticsearch
-        flowSummaries.apply(new WriteToElasticsearch(options, IndexStrategy.DAILY));
+        flowSummaries.apply(new WriteToElasticsearch(options));
 
         // Optionally write out to Kafka as well
         if (options.getFlowDestTopic() != null) {
@@ -129,13 +129,13 @@ public class FlowAnalyzer {
         return p;
     }
 
-    public static void registerCoders(Pipeline p) {
+    public static void registerCoders(org.apache.beam.sdk.Pipeline p) {
         final CoderRegistry coderRegistry = p.getCoderRegistry();
         coderRegistry.registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
         coderRegistry.registerCoderForClass(FlowSummary.class, new JacksonJsonCoder<>(FlowSummary.class));
         coderRegistry.registerCoderForClass(Groupings.ExporterInterfaceApplicationKey.class, new Groupings.CompoundKeyCoder());
         coderRegistry.registerCoderForClass(Groupings.CompoundKey.class, new Groupings.CompoundKeyCoder());
-        coderRegistry.registerCoderForClass(FlowBytes.class, new FlowBytes.FlowBytesCoder());
+        coderRegistry.registerCoderForClass(BytesInOut.class, new BytesInOut.BytesInOutCoder());
     }
 
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
@@ -206,20 +206,20 @@ public class FlowAnalyzer {
             return input.apply(transformPrefix + "group_by_key", ParDo.of(groupingBy))
                     .apply(transformPrefix + "compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
                     .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply(transformPrefix + "group_by_outer_key", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, FlowBytes>>>() {
+                    .apply(transformPrefix + "group_by_outer_key", ParDo.of(new DoFn<KV<Groupings.CompoundKey, BytesInOut>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, BytesInOut>>>() {
                         @ProcessElement
                         public void processElement(ProcessContext c) {
-                            KV<Groupings.CompoundKey, FlowBytes> el = c.element();
+                            KV<Groupings.CompoundKey, BytesInOut> el = c.element();
                             c.output(KV.of(el.getKey().getOuterKey(), el));
                         }
                     }))
                     .apply(transformPrefix + "top_k_per_key", Top.perKey(topK, new FlowBytesValueComparator()))
                     .apply(transformPrefix + "flatten", Values.create())
-                    .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, FlowBytes>>, FlowSummary>() {
+                    .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, BytesInOut>>, FlowSummary>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, IntervalWindow window) {
                             int ranking = 1;
-                            for (KV<Groupings.CompoundKey, FlowBytes> el : c.element()) {
+                            for (KV<Groupings.CompoundKey, BytesInOut> el : c.element()) {
                                 FlowSummary flowSummary = toFlowSummary(AggregationType.TOPK, window, el);
                                 flowSummary.setRanking(ranking++);
                                 c.output(flowSummary);
@@ -247,7 +247,7 @@ public class FlowAnalyzer {
             return input.apply(transformPrefix + "group_by_key", ParDo.of(groupingBy))
                     .apply(transformPrefix + "compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
                     .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, FlowBytes>, FlowSummary>() {
+                    .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, BytesInOut>, FlowSummary>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, IntervalWindow window) {
                             c.output(toFlowSummary(AggregationType.TOTAL, window, c.element()));
@@ -277,14 +277,15 @@ public class FlowAnalyzer {
             this.esConfig = thisEsConfig;
         }
 
-        public WriteToElasticsearch(NephronOptions options, IndexStrategy indexStrategy) {
-            this(options.getElasticUrl(), options.getElasticUser(), options.getElasticPassword(), options.getElasticFlowIndex(), indexStrategy);
+        public WriteToElasticsearch(NephronOptions options) {
+            this(options.getElasticUrl(), options.getElasticUser(), options.getElasticPassword(), options.getElasticFlowIndex(), options.getElasticIndexStrategy());
         }
 
         @Override
         public PDone expand(PCollection<FlowSummary> input) {
             return input.apply("SerializeToJson", toJson())
                     .apply("WriteToElasticsearch", ElasticsearchIO.write().withConnectionConfiguration(esConfig)
+                            .withUsePartialUpdate(true)
                             .withIndexFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
                                 @Override
                                 public String apply(JsonNode input) {
@@ -301,6 +302,12 @@ public class FlowAnalyzer {
 
                                     return indexName;
                                 }
+                            })
+                            .withIdFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
+                                @Override
+                                public String apply(JsonNode input) {
+                                    return input.get("@key").asText();
+                                }
                             }));
         }
     }
@@ -315,8 +322,8 @@ public class FlowAnalyzer {
         private final String topic;
         private final Map<String, Object> kafkaConsumerConfig;
 
-        private final Counter flowsFromKafka = Metrics.counter("flows","from_kafka");
-        private final Distribution flowsFromKafkaDrift = Metrics.distribution("flows","from_kafka_drift");
+        private final Counter flowsFromKafka = Metrics.counter("flows", "from_kafka");
+        private final Distribution flowsFromKafkaDrift = Metrics.distribution("flows", "from_kafka_drift");
 
         public ReadFromKafka(String bootstrapServers, String topic, Map<String, Object> kafkaConsumerConfig) {
             this.bootstrapServers = Objects.requireNonNull(bootstrapServers);
@@ -328,14 +335,14 @@ public class FlowAnalyzer {
         public PCollection<FlowDocument> expand(PBegin input) {
             final NephronOptions options = input.getPipeline().getOptions().as(NephronOptions.class);
             return input.apply(KafkaIO.<String, FlowDocument>read()
-                        .withBootstrapServers(bootstrapServers)
-                        .withTopic(topic)
-                        .withKeyDeserializer(StringDeserializer.class)
-                        .withValueDeserializer(FlowDocumentDeserializer.class)
-                        .withConsumerConfigUpdates(kafkaConsumerConfig)
-                        .withTimestampPolicyFactory(getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs())))
-                        .withoutMetadata()
-                    ).apply(Values.create())
+                    .withBootstrapServers(bootstrapServers)
+                    .withTopic(topic)
+                    .withKeyDeserializer(StringDeserializer.class)
+                    .withValueDeserializer(KafkaInputFlowDeserializer.class)
+                    .withConsumerConfigUpdates(kafkaConsumerConfig)
+                    .withTimestampPolicyFactory(getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs())))
+                    .withoutMetadata()
+            ).apply(Values.create())
                     .apply("init", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
                         @ProcessElement
                         public void processElement(ProcessContext c) {
@@ -351,7 +358,8 @@ public class FlowAnalyzer {
                             // Metrics
                             flowsFromKafka.inc();
                             flowsFromKafkaDrift.update(System.currentTimeMillis() - flow.getTimestamp());
-                        }}));
+                        }
+                    }));
         }
 
         private static Instant getRecordTimestamp(KafkaRecord<String, FlowDocument> record) {
@@ -394,14 +402,14 @@ public class FlowAnalyzer {
         });
     }
 
-    static class SumBytes extends Combine.BinaryCombineFn<FlowBytes> {
+    static class SumBytes extends Combine.BinaryCombineFn<BytesInOut> {
         @Override
-        public FlowBytes apply(FlowBytes left, FlowBytes right) {
-            return FlowBytes.sum(left, right);
+        public BytesInOut apply(BytesInOut left, BytesInOut right) {
+            return BytesInOut.sum(left, right);
         }
     }
 
-    static class ToWindowedBytes extends DoFn<KV<Groupings.CompoundKey, FlowDocument>, KV<Groupings.CompoundKey, FlowBytes>> {
+    static class ToWindowedBytes extends DoFn<KV<Groupings.CompoundKey, FlowDocument>, KV<Groupings.CompoundKey, BytesInOut>> {
 
         private final Counter flowsInWindow = Metrics.counter("flows", "in_window");
 
@@ -423,7 +431,7 @@ public class FlowAnalyzer {
                 if (flow.getDeltaSwitched().getValue() >= window.start().getMillis()
                         && flow.getLastSwitched().getValue() <= window.end().getMillis()) {
                     // Use the entirety of the flow bytes
-                    c.output(KV.of(keyedFlow.getKey(), new FlowBytes(flow)));
+                    c.output(KV.of(keyedFlow.getKey(), new BytesInOut(flow)));
                 }
                 return;
             }
@@ -441,13 +449,13 @@ public class FlowAnalyzer {
 
             // Output value proportional to the overlap with the window
             double multiplier = flowWindowOverlapMs / (double) flowDurationMs;
-            c.output(KV.of(keyedFlow.getKey(), new FlowBytes(keyedFlow.getValue(), multiplier)));
+            c.output(KV.of(keyedFlow.getKey(), new BytesInOut(keyedFlow.getValue(), multiplier)));
         }
     }
 
-    static class FlowBytesValueComparator implements Comparator<KV<Groupings.CompoundKey, FlowBytes>>, Serializable {
+    static class FlowBytesValueComparator implements Comparator<KV<Groupings.CompoundKey, BytesInOut>>, Serializable {
         @Override
-        public int compare(KV<Groupings.CompoundKey, FlowBytes> a, KV<Groupings.CompoundKey, FlowBytes> b) {
+        public int compare(KV<Groupings.CompoundKey, BytesInOut> a, KV<Groupings.CompoundKey, BytesInOut> b) {
             return a.getValue().compareTo(b.getValue());
         }
     }
@@ -476,42 +484,9 @@ public class FlowAnalyzer {
         }
     }
 
-    public static class JacksonJsonCoder<T> extends Coder<T> {
-
-        private static final ObjectMapper mapper = new ObjectMapper();
-        private static final StringUtf8Coder delegate = StringUtf8Coder.of();
-        private final Class<T> clazz;
-
-        public JacksonJsonCoder(Class<T> clazz) {
-            this.clazz = Objects.requireNonNull(clazz);
-        }
-
-        @Override
-        public void encode(T value, OutputStream outStream) throws IOException {
-            final String json = mapper.writeValueAsString(value);
-            delegate.encode(json, outStream);
-        }
-
-        @Override
-        public T decode(InputStream inStream) throws IOException {
-            String json = delegate.decode(inStream);
-            return mapper.readValue(json, clazz);
-        }
-
-        @Override
-        public List<? extends Coder<?>> getCoderArguments() {
-            return Collections.emptyList();
-        }
-
-        @Override
-        public void verifyDeterministic() {
-            // pass
-        }
-    }
-
-
     /**
      * Dispatches a {@link FlowDocument} to all of the windows that overlap with the flow range.
+     *
      * @return transform
      */
     public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps() {
@@ -557,7 +532,7 @@ public class FlowAnalyzer {
         });
     }
 
-    public static FlowSummary toFlowSummary(AggregationType aggregationType, IntervalWindow window, KV<Groupings.CompoundKey, FlowBytes> el) {
+    public static FlowSummary toFlowSummary(AggregationType aggregationType, IntervalWindow window, KV<Groupings.CompoundKey, BytesInOut> el) {
         FlowSummary flowSummary = new FlowSummary();
         el.getKey().visit(new Groupings.FlowPopulatingVisitor(flowSummary));
         flowSummary.setAggregationType(aggregationType);
@@ -576,9 +551,16 @@ public class FlowAnalyzer {
     public static Window<FlowDocument> toWindow(Duration fixedWindowSize) {
         return Window.<FlowDocument>into(FixedWindows.of(fixedWindowSize))
                 // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
-                .triggering(Repeatedly.forever(AfterWatermark.pastEndOfWindow()))
-                .accumulatingFiredPanes()
-                .withAllowedLateness(Duration.standardMinutes(2));
+                .triggering(AfterWatermark
+                        // On Beam’s estimate that all the data has arrived (the watermark passes the end of the window)
+                        .pastEndOfWindow()
+                        // Any time late data arrives, after a ten-minute delay
+                        .withLateFirings(AfterProcessingTime
+                                .pastFirstElementInPane()
+                                .plusDelayOf(Duration.standardMinutes(10))))
+                // After 4 hours, we assume no more data of interest will arrive, and the trigger stops executing
+                .withAllowedLateness(Duration.standardHours(4))
+                .accumulatingFiredPanes();
     }
 
 }

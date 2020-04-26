@@ -16,7 +16,7 @@ java -jar target/nephron-bundled-1.0.0-SNAPSHOT.jar
 
 ## Run on Flink
 
->  We require Flink 1.9.x since no release of Apache Beam is compatible with Flink 1.10.x yet.
+>  We require Flink 1.9.x since Apache Beam is not yet compatible with Flink 1.10.x.
 
 Build for Flink
 ```

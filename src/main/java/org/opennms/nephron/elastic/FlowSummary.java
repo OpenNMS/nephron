@@ -43,6 +43,9 @@ public class FlowSummary {
     @JsonProperty("@timestamp")
     private long timestamp;
 
+    @JsonProperty("@key")
+    private String key;
+
     @JsonProperty("range_start")
     private long rangeStartMs;
 
@@ -84,6 +87,14 @@ public class FlowSummary {
 
     @JsonProperty("conversation_key")
     private String conversationKey;
+
+    public String getKey() {
+        return key;
+    }
+
+    public void setKey(String key) {
+        this.key = key;
+    }
 
     public long getTimestamp() {
         return timestamp;
