@@ -65,7 +65,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string dst_address = 4;</code>
    */
-  java.lang.String getDstAddress();
+  String getDstAddress();
   /**
    * <pre>
    *  Destination address.
@@ -83,7 +83,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string dst_hostname = 5;</code>
    */
-  java.lang.String getDstHostname();
+  String getDstHostname();
   /**
    * <pre>
    * Destination address hostname.
@@ -451,7 +451,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string next_hop_address = 20;</code>
    */
-  java.lang.String getNextHopAddress();
+  String getNextHopAddress();
   /**
    * <pre>
    * Next hop IpAddress.
@@ -469,7 +469,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string next_hop_hostname = 21;</code>
    */
-  java.lang.String getNextHopHostname();
+  String getNextHopHostname();
   /**
    * <pre>
    * Next hop hostname.
@@ -554,7 +554,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string src_address = 26;</code>
    */
-  java.lang.String getSrcAddress();
+  String getSrcAddress();
   /**
    * <pre>
    * Source address.
@@ -572,7 +572,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string src_hostname = 27;</code>
    */
-  java.lang.String getSrcHostname();
+  String getSrcHostname();
   /**
    * <pre>
    * Source hostname.
@@ -732,7 +732,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string vlan = 34;</code>
    */
-  java.lang.String getVlan();
+  String getVlan();
   /**
    * <pre>
    * VLAN ID.
@@ -785,7 +785,7 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>string application = 38;</code>
    */
-  java.lang.String getApplication();
+  String getApplication();
   /**
    * <code>string application = 38;</code>
    */
@@ -795,7 +795,7 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>string host = 39;</code>
    */
-  java.lang.String getHost();
+  String getHost();
   /**
    * <code>string host = 39;</code>
    */
@@ -805,7 +805,7 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>string location = 40;</code>
    */
-  java.lang.String getLocation();
+  String getLocation();
   /**
    * <code>string location = 40;</code>
    */
@@ -842,7 +842,7 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>string convo_key = 44;</code>
    */
-  java.lang.String getConvoKey();
+  String getConvoKey();
   /**
    * <code>string convo_key = 44;</code>
    */

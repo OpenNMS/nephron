@@ -4,34 +4,34 @@
 package org.opennms.netmgt.flows.persistence.model;
 
 /**
- * Protobuf enum {@code Locality}
+ * Protobuf enum {@code Direction}
  */
-public enum Locality
+public enum Direction
     implements com.google.protobuf.ProtocolMessageEnum {
   /**
-   * <code>PUBLIC = 0;</code>
+   * <code>INGRESS = 0;</code>
    */
-  PUBLIC(0),
+  INGRESS(0),
   /**
-   * <code>PRIVATE = 1;</code>
+   * <code>EGRESS = 1;</code>
    */
-  PRIVATE(1),
+  EGRESS(1),
   UNRECOGNIZED(-1),
   ;
 
   /**
-   * <code>PUBLIC = 0;</code>
+   * <code>INGRESS = 0;</code>
    */
-  public static final int PUBLIC_VALUE = 0;
+  public static final int INGRESS_VALUE = 0;
   /**
-   * <code>PRIVATE = 1;</code>
+   * <code>EGRESS = 1;</code>
    */
-  public static final int PRIVATE_VALUE = 1;
+  public static final int EGRESS_VALUE = 1;
 
 
   public final int getNumber() {
     if (this == UNRECOGNIZED) {
-      throw new java.lang.IllegalArgumentException(
+      throw new IllegalArgumentException(
           "Can't get the number of an unknown enum value.");
     }
     return value;
@@ -40,28 +40,28 @@ public enum Locality
   /**
    * @deprecated Use {@link #forNumber(int)} instead.
    */
-  @java.lang.Deprecated
-  public static Locality valueOf(int value) {
+  @Deprecated
+  public static Direction valueOf(int value) {
     return forNumber(value);
   }
 
-  public static Locality forNumber(int value) {
+  public static Direction forNumber(int value) {
     switch (value) {
-      case 0: return PUBLIC;
-      case 1: return PRIVATE;
+      case 0: return INGRESS;
+      case 1: return EGRESS;
       default: return null;
     }
   }
 
-  public static com.google.protobuf.Internal.EnumLiteMap<Locality>
+  public static com.google.protobuf.Internal.EnumLiteMap<Direction>
       internalGetValueMap() {
     return internalValueMap;
   }
   private static final com.google.protobuf.Internal.EnumLiteMap<
-      Locality> internalValueMap =
-        new com.google.protobuf.Internal.EnumLiteMap<Locality>() {
-          public Locality findValueByNumber(int number) {
-            return Locality.forNumber(number);
+      Direction> internalValueMap =
+        new com.google.protobuf.Internal.EnumLiteMap<Direction>() {
+          public Direction findValueByNumber(int number) {
+            return Direction.forNumber(number);
           }
         };
 
@@ -75,15 +75,15 @@ public enum Locality
   }
   public static final com.google.protobuf.Descriptors.EnumDescriptor
       getDescriptor() {
-    return org.opennms.netmgt.flows.persistence.model.EnrichedFlowProtos.getDescriptor().getEnumTypes().get(3);
+    return org.opennms.netmgt.flows.persistence.model.EnrichedFlowProtos.getDescriptor().getEnumTypes().get(0);
   }
 
-  private static final Locality[] VALUES = values();
+  private static final Direction[] VALUES = values();
 
-  public static Locality valueOf(
+  public static Direction valueOf(
       com.google.protobuf.Descriptors.EnumValueDescriptor desc) {
     if (desc.getType() != getDescriptor()) {
-      throw new java.lang.IllegalArgumentException(
+      throw new IllegalArgumentException(
         "EnumValueDescriptor is not for this type.");
     }
     if (desc.getIndex() == -1) {
@@ -94,10 +94,10 @@ public enum Locality
 
   private final int value;
 
-  private Locality(int value) {
+  private Direction(int value) {
     this.value = value;
   }
 
-  // @@protoc_insertion_point(enum_scope:Locality)
+  // @@protoc_insertion_point(enum_scope:Direction)
 }
 

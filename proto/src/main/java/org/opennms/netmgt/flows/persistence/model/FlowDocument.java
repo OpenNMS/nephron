@@ -35,14 +35,14 @@ private static final long serialVersionUID = 0L;
     convoKey_ = "";
   }
 
-  @java.lang.Override
+  @Override
   @SuppressWarnings({"unused"})
-  protected java.lang.Object newInstance(
+  protected Object newInstance(
       UnusedPrivateParameter unused) {
     return new FlowDocument();
   }
 
-  @java.lang.Override
+  @Override
   public final com.google.protobuf.UnknownFieldSet
   getUnknownFields() {
     return this.unknownFields;
@@ -53,7 +53,7 @@ private static final long serialVersionUID = 0L;
       throws com.google.protobuf.InvalidProtocolBufferException {
     this();
     if (extensionRegistry == null) {
-      throw new java.lang.NullPointerException();
+      throw new NullPointerException();
     }
     com.google.protobuf.UnknownFieldSet.Builder unknownFields =
         com.google.protobuf.UnknownFieldSet.newBuilder();
@@ -90,13 +90,13 @@ private static final long serialVersionUID = 0L;
             break;
           }
           case 34: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             dstAddress_ = s;
             break;
           }
           case 42: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             dstHostname_ = s;
             break;
@@ -284,13 +284,13 @@ private static final long serialVersionUID = 0L;
             break;
           }
           case 162: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             nextHopAddress_ = s;
             break;
           }
           case 170: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             nextHopHostname_ = s;
             break;
@@ -328,13 +328,13 @@ private static final long serialVersionUID = 0L;
             break;
           }
           case 210: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             srcAddress_ = s;
             break;
           }
           case 218: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             srcHostname_ = s;
             break;
@@ -411,7 +411,7 @@ private static final long serialVersionUID = 0L;
             break;
           }
           case 274: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             vlan_ = s;
             break;
@@ -456,19 +456,19 @@ private static final long serialVersionUID = 0L;
             break;
           }
           case 306: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             application_ = s;
             break;
           }
           case 314: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             host_ = s;
             break;
           }
           case 322: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             location_ = s;
             break;
@@ -492,7 +492,7 @@ private static final long serialVersionUID = 0L;
             break;
           }
           case 354: {
-            java.lang.String s = input.readStringRequireUtf8();
+            String s = input.readStringRequireUtf8();
 
             convoKey_ = s;
             break;
@@ -521,8 +521,8 @@ private static final long serialVersionUID = 0L;
     return org.opennms.netmgt.flows.persistence.model.EnrichedFlowProtos.internal_static_FlowDocument_descriptor;
   }
 
-  @java.lang.Override
-  protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+  @Override
+  protected FieldAccessorTable
       internalGetFieldAccessorTable() {
     return org.opennms.netmgt.flows.persistence.model.EnrichedFlowProtos.internal_static_FlowDocument_fieldAccessorTable
         .ensureFieldAccessorsInitialized(
@@ -601,7 +601,7 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int DST_ADDRESS_FIELD_NUMBER = 4;
-  private volatile java.lang.Object dstAddress_;
+  private volatile Object dstAddress_;
   /**
    * <pre>
    *  Destination address.
@@ -609,14 +609,14 @@ private static final long serialVersionUID = 0L;
    *
    * <code>string dst_address = 4;</code>
    */
-  public java.lang.String getDstAddress() {
-    java.lang.Object ref = dstAddress_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getDstAddress() {
+    Object ref = dstAddress_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       dstAddress_ = s;
       return s;
     }
@@ -630,11 +630,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getDstAddressBytes() {
-    java.lang.Object ref = dstAddress_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = dstAddress_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       dstAddress_ = b;
       return b;
     } else {
@@ -643,7 +643,7 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int DST_HOSTNAME_FIELD_NUMBER = 5;
-  private volatile java.lang.Object dstHostname_;
+  private volatile Object dstHostname_;
   /**
    * <pre>
    * Destination address hostname.
@@ -651,14 +651,14 @@ private static final long serialVersionUID = 0L;
    *
    * <code>string dst_hostname = 5;</code>
    */
-  public java.lang.String getDstHostname() {
-    java.lang.Object ref = dstHostname_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getDstHostname() {
+    Object ref = dstHostname_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       dstHostname_ = s;
       return s;
     }
@@ -672,11 +672,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getDstHostnameBytes() {
-    java.lang.Object ref = dstHostname_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = dstHostname_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       dstHostname_ = b;
       return b;
     } else {
@@ -1147,7 +1147,7 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int NEXT_HOP_ADDRESS_FIELD_NUMBER = 20;
-  private volatile java.lang.Object nextHopAddress_;
+  private volatile Object nextHopAddress_;
   /**
    * <pre>
    * Next hop IpAddress.
@@ -1155,14 +1155,14 @@ private static final long serialVersionUID = 0L;
    *
    * <code>string next_hop_address = 20;</code>
    */
-  public java.lang.String getNextHopAddress() {
-    java.lang.Object ref = nextHopAddress_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getNextHopAddress() {
+    Object ref = nextHopAddress_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       nextHopAddress_ = s;
       return s;
     }
@@ -1176,11 +1176,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getNextHopAddressBytes() {
-    java.lang.Object ref = nextHopAddress_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = nextHopAddress_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       nextHopAddress_ = b;
       return b;
     } else {
@@ -1189,7 +1189,7 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int NEXT_HOP_HOSTNAME_FIELD_NUMBER = 21;
-  private volatile java.lang.Object nextHopHostname_;
+  private volatile Object nextHopHostname_;
   /**
    * <pre>
    * Next hop hostname.
@@ -1197,14 +1197,14 @@ private static final long serialVersionUID = 0L;
    *
    * <code>string next_hop_hostname = 21;</code>
    */
-  public java.lang.String getNextHopHostname() {
-    java.lang.Object ref = nextHopHostname_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getNextHopHostname() {
+    Object ref = nextHopHostname_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       nextHopHostname_ = s;
       return s;
     }
@@ -1218,11 +1218,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getNextHopHostnameBytes() {
-    java.lang.Object ref = nextHopHostname_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = nextHopHostname_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       nextHopHostname_ = b;
       return b;
     } else {
@@ -1322,7 +1322,7 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int SRC_ADDRESS_FIELD_NUMBER = 26;
-  private volatile java.lang.Object srcAddress_;
+  private volatile Object srcAddress_;
   /**
    * <pre>
    * Source address.
@@ -1330,14 +1330,14 @@ private static final long serialVersionUID = 0L;
    *
    * <code>string src_address = 26;</code>
    */
-  public java.lang.String getSrcAddress() {
-    java.lang.Object ref = srcAddress_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getSrcAddress() {
+    Object ref = srcAddress_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       srcAddress_ = s;
       return s;
     }
@@ -1351,11 +1351,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getSrcAddressBytes() {
-    java.lang.Object ref = srcAddress_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = srcAddress_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       srcAddress_ = b;
       return b;
     } else {
@@ -1364,7 +1364,7 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int SRC_HOSTNAME_FIELD_NUMBER = 27;
-  private volatile java.lang.Object srcHostname_;
+  private volatile Object srcHostname_;
   /**
    * <pre>
    * Source hostname.
@@ -1372,14 +1372,14 @@ private static final long serialVersionUID = 0L;
    *
    * <code>string src_hostname = 27;</code>
    */
-  public java.lang.String getSrcHostname() {
-    java.lang.Object ref = srcHostname_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getSrcHostname() {
+    Object ref = srcHostname_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       srcHostname_ = s;
       return s;
     }
@@ -1393,11 +1393,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getSrcHostnameBytes() {
-    java.lang.Object ref = srcHostname_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = srcHostname_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       srcHostname_ = b;
       return b;
     } else {
@@ -1596,7 +1596,7 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int VLAN_FIELD_NUMBER = 34;
-  private volatile java.lang.Object vlan_;
+  private volatile Object vlan_;
   /**
    * <pre>
    * VLAN ID.
@@ -1604,14 +1604,14 @@ private static final long serialVersionUID = 0L;
    *
    * <code>string vlan = 34;</code>
    */
-  public java.lang.String getVlan() {
-    java.lang.Object ref = vlan_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getVlan() {
+    Object ref = vlan_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       vlan_ = s;
       return s;
     }
@@ -1625,11 +1625,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getVlanBytes() {
-    java.lang.Object ref = vlan_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = vlan_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       vlan_ = b;
       return b;
     } else {
@@ -1701,18 +1701,18 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int APPLICATION_FIELD_NUMBER = 38;
-  private volatile java.lang.Object application_;
+  private volatile Object application_;
   /**
    * <code>string application = 38;</code>
    */
-  public java.lang.String getApplication() {
-    java.lang.Object ref = application_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getApplication() {
+    Object ref = application_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       application_ = s;
       return s;
     }
@@ -1722,11 +1722,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getApplicationBytes() {
-    java.lang.Object ref = application_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = application_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       application_ = b;
       return b;
     } else {
@@ -1735,18 +1735,18 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int HOST_FIELD_NUMBER = 39;
-  private volatile java.lang.Object host_;
+  private volatile Object host_;
   /**
    * <code>string host = 39;</code>
    */
-  public java.lang.String getHost() {
-    java.lang.Object ref = host_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getHost() {
+    Object ref = host_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       host_ = s;
       return s;
     }
@@ -1756,11 +1756,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getHostBytes() {
-    java.lang.Object ref = host_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = host_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       host_ = b;
       return b;
     } else {
@@ -1769,18 +1769,18 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int LOCATION_FIELD_NUMBER = 40;
-  private volatile java.lang.Object location_;
+  private volatile Object location_;
   /**
    * <code>string location = 40;</code>
    */
-  public java.lang.String getLocation() {
-    java.lang.Object ref = location_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getLocation() {
+    Object ref = location_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       location_ = s;
       return s;
     }
@@ -1790,11 +1790,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getLocationBytes() {
-    java.lang.Object ref = location_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = location_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       location_ = b;
       return b;
     } else {
@@ -1854,18 +1854,18 @@ private static final long serialVersionUID = 0L;
   }
 
   public static final int CONVO_KEY_FIELD_NUMBER = 44;
-  private volatile java.lang.Object convoKey_;
+  private volatile Object convoKey_;
   /**
    * <code>string convo_key = 44;</code>
    */
-  public java.lang.String getConvoKey() {
-    java.lang.Object ref = convoKey_;
-    if (ref instanceof java.lang.String) {
-      return (java.lang.String) ref;
+  public String getConvoKey() {
+    Object ref = convoKey_;
+    if (ref instanceof String) {
+      return (String) ref;
     } else {
-      com.google.protobuf.ByteString bs = 
+      com.google.protobuf.ByteString bs =
           (com.google.protobuf.ByteString) ref;
-      java.lang.String s = bs.toStringUtf8();
+      String s = bs.toStringUtf8();
       convoKey_ = s;
       return s;
     }
@@ -1875,11 +1875,11 @@ private static final long serialVersionUID = 0L;
    */
   public com.google.protobuf.ByteString
       getConvoKeyBytes() {
-    java.lang.Object ref = convoKey_;
-    if (ref instanceof java.lang.String) {
-      com.google.protobuf.ByteString b = 
+    Object ref = convoKey_;
+    if (ref instanceof String) {
+      com.google.protobuf.ByteString b =
           com.google.protobuf.ByteString.copyFromUtf8(
-              (java.lang.String) ref);
+              (String) ref);
       convoKey_ = b;
       return b;
     } else {
@@ -1888,7 +1888,7 @@ private static final long serialVersionUID = 0L;
   }
 
   private byte memoizedIsInitialized = -1;
-  @java.lang.Override
+  @Override
   public final boolean isInitialized() {
     byte isInitialized = memoizedIsInitialized;
     if (isInitialized == 1) return true;
@@ -1898,7 +1898,7 @@ private static final long serialVersionUID = 0L;
     return true;
   }
 
-  @java.lang.Override
+  @Override
   public void writeTo(com.google.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
     if (timestamp_ != 0L) {
@@ -2033,7 +2033,7 @@ private static final long serialVersionUID = 0L;
     unknownFields.writeTo(output);
   }
 
-  @java.lang.Override
+  @Override
   public int getSerializedSize() {
     int size = memoizedSize;
     if (size != -1) return size;
@@ -2205,8 +2205,8 @@ private static final long serialVersionUID = 0L;
     return size;
   }
 
-  @java.lang.Override
-  public boolean equals(final java.lang.Object obj) {
+  @Override
+  public boolean equals(final Object obj) {
     if (obj == this) {
      return true;
     }
@@ -2374,7 +2374,7 @@ private static final long serialVersionUID = 0L;
     return true;
   }
 
-  @java.lang.Override
+  @Override
   public int hashCode() {
     if (memoizedHashCode != 0) {
       return memoizedHashCode;
@@ -2593,7 +2593,7 @@ private static final long serialVersionUID = 0L;
         .parseWithIOException(PARSER, input, extensionRegistry);
   }
 
-  @java.lang.Override
+  @Override
   public Builder newBuilderForType() { return newBuilder(); }
   public static Builder newBuilder() {
     return DEFAULT_INSTANCE.toBuilder();
@@ -2601,15 +2601,15 @@ private static final long serialVersionUID = 0L;
   public static Builder newBuilder(org.opennms.netmgt.flows.persistence.model.FlowDocument prototype) {
     return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
   }
-  @java.lang.Override
+  @Override
   public Builder toBuilder() {
     return this == DEFAULT_INSTANCE
         ? new Builder() : new Builder().mergeFrom(this);
   }
 
-  @java.lang.Override
+  @Override
   protected Builder newBuilderForType(
-      com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+      BuilderParent parent) {
     Builder builder = new Builder(parent);
     return builder;
   }
@@ -2625,21 +2625,21 @@ private static final long serialVersionUID = 0L;
       return org.opennms.netmgt.flows.persistence.model.EnrichedFlowProtos.internal_static_FlowDocument_descriptor;
     }
 
-    @java.lang.Override
-    protected com.google.protobuf.GeneratedMessageV3.FieldAccessorTable
+    @Override
+    protected FieldAccessorTable
         internalGetFieldAccessorTable() {
       return org.opennms.netmgt.flows.persistence.model.EnrichedFlowProtos.internal_static_FlowDocument_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
               org.opennms.netmgt.flows.persistence.model.FlowDocument.class, org.opennms.netmgt.flows.persistence.model.FlowDocument.Builder.class);
     }
 
-    // Construct using org.opennms.netmgt.flows.persistence.model.FlowDocument.newBuilder()
+    // Construct using org.opennms.netmgt.flows.persistence.org.opennms.netmgt.flows.persistence.model.FlowDocument.newBuilder()
     private Builder() {
       maybeForceBuilderInitialization();
     }
 
     private Builder(
-        com.google.protobuf.GeneratedMessageV3.BuilderParent parent) {
+        BuilderParent parent) {
       super(parent);
       maybeForceBuilderInitialization();
     }
@@ -2648,7 +2648,7 @@ private static final long serialVersionUID = 0L;
               .alwaysUseFieldBuilders) {
       }
     }
-    @java.lang.Override
+    @Override
     public Builder clear() {
       super.clear();
       timestamp_ = 0L;
@@ -2840,18 +2840,18 @@ private static final long serialVersionUID = 0L;
       return this;
     }
 
-    @java.lang.Override
+    @Override
     public com.google.protobuf.Descriptors.Descriptor
         getDescriptorForType() {
       return org.opennms.netmgt.flows.persistence.model.EnrichedFlowProtos.internal_static_FlowDocument_descriptor;
     }
 
-    @java.lang.Override
+    @Override
     public org.opennms.netmgt.flows.persistence.model.FlowDocument getDefaultInstanceForType() {
-      return org.opennms.netmgt.flows.persistence.model.FlowDocument.getDefaultInstance();
+      return getDefaultInstance();
     }
 
-    @java.lang.Override
+    @Override
     public org.opennms.netmgt.flows.persistence.model.FlowDocument build() {
       org.opennms.netmgt.flows.persistence.model.FlowDocument result = buildPartial();
       if (!result.isInitialized()) {
@@ -2860,7 +2860,7 @@ private static final long serialVersionUID = 0L;
       return result;
     }
 
-    @java.lang.Override
+    @Override
     public org.opennms.netmgt.flows.persistence.model.FlowDocument buildPartial() {
       org.opennms.netmgt.flows.persistence.model.FlowDocument result = new org.opennms.netmgt.flows.persistence.model.FlowDocument(this);
       result.timestamp_ = timestamp_;
@@ -3010,39 +3010,39 @@ private static final long serialVersionUID = 0L;
       return result;
     }
 
-    @java.lang.Override
+    @Override
     public Builder clone() {
       return super.clone();
     }
-    @java.lang.Override
+    @Override
     public Builder setField(
         com.google.protobuf.Descriptors.FieldDescriptor field,
-        java.lang.Object value) {
+        Object value) {
       return super.setField(field, value);
     }
-    @java.lang.Override
+    @Override
     public Builder clearField(
         com.google.protobuf.Descriptors.FieldDescriptor field) {
       return super.clearField(field);
     }
-    @java.lang.Override
+    @Override
     public Builder clearOneof(
         com.google.protobuf.Descriptors.OneofDescriptor oneof) {
       return super.clearOneof(oneof);
     }
-    @java.lang.Override
+    @Override
     public Builder setRepeatedField(
         com.google.protobuf.Descriptors.FieldDescriptor field,
-        int index, java.lang.Object value) {
+        int index, Object value) {
       return super.setRepeatedField(field, index, value);
     }
-    @java.lang.Override
+    @Override
     public Builder addRepeatedField(
         com.google.protobuf.Descriptors.FieldDescriptor field,
-        java.lang.Object value) {
+        Object value) {
       return super.addRepeatedField(field, value);
     }
-    @java.lang.Override
+    @Override
     public Builder mergeFrom(com.google.protobuf.Message other) {
       if (other instanceof org.opennms.netmgt.flows.persistence.model.FlowDocument) {
         return mergeFrom((org.opennms.netmgt.flows.persistence.model.FlowDocument)other);
@@ -3053,7 +3053,7 @@ private static final long serialVersionUID = 0L;
     }
 
     public Builder mergeFrom(org.opennms.netmgt.flows.persistence.model.FlowDocument other) {
-      if (other == org.opennms.netmgt.flows.persistence.model.FlowDocument.getDefaultInstance()) return this;
+      if (other == getDefaultInstance()) return this;
       if (other.getTimestamp() != 0L) {
         setTimestamp(other.getTimestamp());
       }
@@ -3199,12 +3199,12 @@ private static final long serialVersionUID = 0L;
       return this;
     }
 
-    @java.lang.Override
+    @Override
     public final boolean isInitialized() {
       return true;
     }
 
-    @java.lang.Override
+    @Override
     public Builder mergeFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
@@ -3242,7 +3242,7 @@ private static final long serialVersionUID = 0L;
      * <code>uint64 timestamp = 1;</code>
      */
     public Builder setTimestamp(long value) {
-      
+
       timestamp_ = value;
       onChanged();
       return this;
@@ -3255,7 +3255,7 @@ private static final long serialVersionUID = 0L;
      * <code>uint64 timestamp = 1;</code>
      */
     public Builder clearTimestamp() {
-      
+
       timestamp_ = 0L;
       onChanged();
       return this;
@@ -3374,7 +3374,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value num_bytes = 2;</code>
      */
     public com.google.protobuf.UInt64Value.Builder getNumBytesBuilder() {
-      
+
       onChanged();
       return getNumBytesFieldBuilder().getBuilder();
     }
@@ -3401,7 +3401,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value num_bytes = 2;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder> 
+        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder>
         getNumBytesFieldBuilder() {
       if (numBytesBuilder_ == null) {
         numBytesBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -3460,7 +3460,7 @@ private static final long serialVersionUID = 0L;
       if (value == null) {
         throw new NullPointerException();
       }
-      
+
       direction_ = value.getNumber();
       onChanged();
       return this;
@@ -3473,13 +3473,13 @@ private static final long serialVersionUID = 0L;
      * <code>.Direction direction = 3;</code>
      */
     public Builder clearDirection() {
-      
+
       direction_ = 0;
       onChanged();
       return this;
     }
 
-    private java.lang.Object dstAddress_ = "";
+    private Object dstAddress_ = "";
     /**
      * <pre>
      *  Destination address.
@@ -3487,16 +3487,16 @@ private static final long serialVersionUID = 0L;
      *
      * <code>string dst_address = 4;</code>
      */
-    public java.lang.String getDstAddress() {
-      java.lang.Object ref = dstAddress_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getDstAddress() {
+      Object ref = dstAddress_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         dstAddress_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -3508,11 +3508,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getDstAddressBytes() {
-      java.lang.Object ref = dstAddress_;
+      Object ref = dstAddress_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         dstAddress_ = b;
         return b;
       } else {
@@ -3527,11 +3527,11 @@ private static final long serialVersionUID = 0L;
      * <code>string dst_address = 4;</code>
      */
     public Builder setDstAddress(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       dstAddress_ = value;
       onChanged();
       return this;
@@ -3544,7 +3544,7 @@ private static final long serialVersionUID = 0L;
      * <code>string dst_address = 4;</code>
      */
     public Builder clearDstAddress() {
-      
+
       dstAddress_ = getDefaultInstance().getDstAddress();
       onChanged();
       return this;
@@ -3562,13 +3562,13 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       dstAddress_ = value;
       onChanged();
       return this;
     }
 
-    private java.lang.Object dstHostname_ = "";
+    private Object dstHostname_ = "";
     /**
      * <pre>
      * Destination address hostname.
@@ -3576,16 +3576,16 @@ private static final long serialVersionUID = 0L;
      *
      * <code>string dst_hostname = 5;</code>
      */
-    public java.lang.String getDstHostname() {
-      java.lang.Object ref = dstHostname_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getDstHostname() {
+      Object ref = dstHostname_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         dstHostname_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -3597,11 +3597,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getDstHostnameBytes() {
-      java.lang.Object ref = dstHostname_;
+      Object ref = dstHostname_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         dstHostname_ = b;
         return b;
       } else {
@@ -3616,11 +3616,11 @@ private static final long serialVersionUID = 0L;
      * <code>string dst_hostname = 5;</code>
      */
     public Builder setDstHostname(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       dstHostname_ = value;
       onChanged();
       return this;
@@ -3633,7 +3633,7 @@ private static final long serialVersionUID = 0L;
      * <code>string dst_hostname = 5;</code>
      */
     public Builder clearDstHostname() {
-      
+
       dstHostname_ = getDefaultInstance().getDstHostname();
       onChanged();
       return this;
@@ -3651,7 +3651,7 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       dstHostname_ = value;
       onChanged();
       return this;
@@ -3770,7 +3770,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value dst_as = 6;</code>
      */
     public com.google.protobuf.UInt64Value.Builder getDstAsBuilder() {
-      
+
       onChanged();
       return getDstAsFieldBuilder().getBuilder();
     }
@@ -3797,7 +3797,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value dst_as = 6;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder> 
+        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder>
         getDstAsFieldBuilder() {
       if (dstAsBuilder_ == null) {
         dstAsBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -3923,7 +3923,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value dst_mask_len = 7;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getDstMaskLenBuilder() {
-      
+
       onChanged();
       return getDstMaskLenFieldBuilder().getBuilder();
     }
@@ -3950,7 +3950,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value dst_mask_len = 7;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getDstMaskLenFieldBuilder() {
       if (dstMaskLenBuilder_ == null) {
         dstMaskLenBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -4076,7 +4076,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value dst_port = 8;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getDstPortBuilder() {
-      
+
       onChanged();
       return getDstPortFieldBuilder().getBuilder();
     }
@@ -4103,7 +4103,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value dst_port = 8;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getDstPortFieldBuilder() {
       if (dstPortBuilder_ == null) {
         dstPortBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -4229,7 +4229,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value engine_id = 9;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getEngineIdBuilder() {
-      
+
       onChanged();
       return getEngineIdFieldBuilder().getBuilder();
     }
@@ -4256,7 +4256,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value engine_id = 9;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getEngineIdFieldBuilder() {
       if (engineIdBuilder_ == null) {
         engineIdBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -4382,7 +4382,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value engine_type = 10;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getEngineTypeBuilder() {
-      
+
       onChanged();
       return getEngineTypeFieldBuilder().getBuilder();
     }
@@ -4409,7 +4409,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value engine_type = 10;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getEngineTypeFieldBuilder() {
       if (engineTypeBuilder_ == null) {
         engineTypeBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -4535,7 +4535,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value delta_switched = 11;</code>
      */
     public com.google.protobuf.UInt64Value.Builder getDeltaSwitchedBuilder() {
-      
+
       onChanged();
       return getDeltaSwitchedFieldBuilder().getBuilder();
     }
@@ -4562,7 +4562,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value delta_switched = 11;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder> 
+        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder>
         getDeltaSwitchedFieldBuilder() {
       if (deltaSwitchedBuilder_ == null) {
         deltaSwitchedBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -4688,7 +4688,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value first_switched = 12;</code>
      */
     public com.google.protobuf.UInt64Value.Builder getFirstSwitchedBuilder() {
-      
+
       onChanged();
       return getFirstSwitchedFieldBuilder().getBuilder();
     }
@@ -4715,7 +4715,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value first_switched = 12;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder> 
+        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder>
         getFirstSwitchedFieldBuilder() {
       if (firstSwitchedBuilder_ == null) {
         firstSwitchedBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -4841,7 +4841,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value last_switched = 13;</code>
      */
     public com.google.protobuf.UInt64Value.Builder getLastSwitchedBuilder() {
-      
+
       onChanged();
       return getLastSwitchedFieldBuilder().getBuilder();
     }
@@ -4868,7 +4868,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value last_switched = 13;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder> 
+        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder>
         getLastSwitchedFieldBuilder() {
       if (lastSwitchedBuilder_ == null) {
         lastSwitchedBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -4994,7 +4994,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value num_flow_records = 14;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getNumFlowRecordsBuilder() {
-      
+
       onChanged();
       return getNumFlowRecordsFieldBuilder().getBuilder();
     }
@@ -5021,7 +5021,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value num_flow_records = 14;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getNumFlowRecordsFieldBuilder() {
       if (numFlowRecordsBuilder_ == null) {
         numFlowRecordsBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -5147,7 +5147,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value num_packets = 15;</code>
      */
     public com.google.protobuf.UInt64Value.Builder getNumPacketsBuilder() {
-      
+
       onChanged();
       return getNumPacketsFieldBuilder().getBuilder();
     }
@@ -5174,7 +5174,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value num_packets = 15;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder> 
+        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder>
         getNumPacketsFieldBuilder() {
       if (numPacketsBuilder_ == null) {
         numPacketsBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -5300,7 +5300,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value flow_seq_num = 16;</code>
      */
     public com.google.protobuf.UInt64Value.Builder getFlowSeqNumBuilder() {
-      
+
       onChanged();
       return getFlowSeqNumFieldBuilder().getBuilder();
     }
@@ -5327,7 +5327,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value flow_seq_num = 16;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder> 
+        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder>
         getFlowSeqNumFieldBuilder() {
       if (flowSeqNumBuilder_ == null) {
         flowSeqNumBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -5453,7 +5453,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value input_snmp_ifindex = 17;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getInputSnmpIfindexBuilder() {
-      
+
       onChanged();
       return getInputSnmpIfindexFieldBuilder().getBuilder();
     }
@@ -5480,7 +5480,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value input_snmp_ifindex = 17;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getInputSnmpIfindexFieldBuilder() {
       if (inputSnmpIfindexBuilder_ == null) {
         inputSnmpIfindexBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -5606,7 +5606,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value output_snmp_ifindex = 18;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getOutputSnmpIfindexBuilder() {
-      
+
       onChanged();
       return getOutputSnmpIfindexFieldBuilder().getBuilder();
     }
@@ -5633,7 +5633,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value output_snmp_ifindex = 18;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getOutputSnmpIfindexFieldBuilder() {
       if (outputSnmpIfindexBuilder_ == null) {
         outputSnmpIfindexBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -5759,7 +5759,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value ip_protocol_version = 19;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getIpProtocolVersionBuilder() {
-      
+
       onChanged();
       return getIpProtocolVersionFieldBuilder().getBuilder();
     }
@@ -5786,7 +5786,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value ip_protocol_version = 19;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getIpProtocolVersionFieldBuilder() {
       if (ipProtocolVersionBuilder_ == null) {
         ipProtocolVersionBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -5799,7 +5799,7 @@ private static final long serialVersionUID = 0L;
       return ipProtocolVersionBuilder_;
     }
 
-    private java.lang.Object nextHopAddress_ = "";
+    private Object nextHopAddress_ = "";
     /**
      * <pre>
      * Next hop IpAddress.
@@ -5807,16 +5807,16 @@ private static final long serialVersionUID = 0L;
      *
      * <code>string next_hop_address = 20;</code>
      */
-    public java.lang.String getNextHopAddress() {
-      java.lang.Object ref = nextHopAddress_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getNextHopAddress() {
+      Object ref = nextHopAddress_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         nextHopAddress_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -5828,11 +5828,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getNextHopAddressBytes() {
-      java.lang.Object ref = nextHopAddress_;
+      Object ref = nextHopAddress_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         nextHopAddress_ = b;
         return b;
       } else {
@@ -5847,11 +5847,11 @@ private static final long serialVersionUID = 0L;
      * <code>string next_hop_address = 20;</code>
      */
     public Builder setNextHopAddress(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       nextHopAddress_ = value;
       onChanged();
       return this;
@@ -5864,7 +5864,7 @@ private static final long serialVersionUID = 0L;
      * <code>string next_hop_address = 20;</code>
      */
     public Builder clearNextHopAddress() {
-      
+
       nextHopAddress_ = getDefaultInstance().getNextHopAddress();
       onChanged();
       return this;
@@ -5882,13 +5882,13 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       nextHopAddress_ = value;
       onChanged();
       return this;
     }
 
-    private java.lang.Object nextHopHostname_ = "";
+    private Object nextHopHostname_ = "";
     /**
      * <pre>
      * Next hop hostname.
@@ -5896,16 +5896,16 @@ private static final long serialVersionUID = 0L;
      *
      * <code>string next_hop_hostname = 21;</code>
      */
-    public java.lang.String getNextHopHostname() {
-      java.lang.Object ref = nextHopHostname_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getNextHopHostname() {
+      Object ref = nextHopHostname_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         nextHopHostname_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -5917,11 +5917,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getNextHopHostnameBytes() {
-      java.lang.Object ref = nextHopHostname_;
+      Object ref = nextHopHostname_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         nextHopHostname_ = b;
         return b;
       } else {
@@ -5936,11 +5936,11 @@ private static final long serialVersionUID = 0L;
      * <code>string next_hop_hostname = 21;</code>
      */
     public Builder setNextHopHostname(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       nextHopHostname_ = value;
       onChanged();
       return this;
@@ -5953,7 +5953,7 @@ private static final long serialVersionUID = 0L;
      * <code>string next_hop_hostname = 21;</code>
      */
     public Builder clearNextHopHostname() {
-      
+
       nextHopHostname_ = getDefaultInstance().getNextHopHostname();
       onChanged();
       return this;
@@ -5971,7 +5971,7 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       nextHopHostname_ = value;
       onChanged();
       return this;
@@ -6090,7 +6090,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value protocol = 22;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getProtocolBuilder() {
-      
+
       onChanged();
       return getProtocolFieldBuilder().getBuilder();
     }
@@ -6117,7 +6117,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value protocol = 22;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getProtocolFieldBuilder() {
       if (protocolBuilder_ == null) {
         protocolBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -6176,7 +6176,7 @@ private static final long serialVersionUID = 0L;
       if (value == null) {
         throw new NullPointerException();
       }
-      
+
       samplingAlgorithm_ = value.getNumber();
       onChanged();
       return this;
@@ -6189,7 +6189,7 @@ private static final long serialVersionUID = 0L;
      * <code>.SamplingAlgorithm sampling_algorithm = 23;</code>
      */
     public Builder clearSamplingAlgorithm() {
-      
+
       samplingAlgorithm_ = 0;
       onChanged();
       return this;
@@ -6308,7 +6308,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.DoubleValue sampling_interval = 24;</code>
      */
     public com.google.protobuf.DoubleValue.Builder getSamplingIntervalBuilder() {
-      
+
       onChanged();
       return getSamplingIntervalFieldBuilder().getBuilder();
     }
@@ -6335,7 +6335,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.DoubleValue sampling_interval = 24;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.DoubleValue, com.google.protobuf.DoubleValue.Builder, com.google.protobuf.DoubleValueOrBuilder> 
+        com.google.protobuf.DoubleValue, com.google.protobuf.DoubleValue.Builder, com.google.protobuf.DoubleValueOrBuilder>
         getSamplingIntervalFieldBuilder() {
       if (samplingIntervalBuilder_ == null) {
         samplingIntervalBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -6348,7 +6348,7 @@ private static final long serialVersionUID = 0L;
       return samplingIntervalBuilder_;
     }
 
-    private java.lang.Object srcAddress_ = "";
+    private Object srcAddress_ = "";
     /**
      * <pre>
      * Source address.
@@ -6356,16 +6356,16 @@ private static final long serialVersionUID = 0L;
      *
      * <code>string src_address = 26;</code>
      */
-    public java.lang.String getSrcAddress() {
-      java.lang.Object ref = srcAddress_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getSrcAddress() {
+      Object ref = srcAddress_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         srcAddress_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -6377,11 +6377,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getSrcAddressBytes() {
-      java.lang.Object ref = srcAddress_;
+      Object ref = srcAddress_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         srcAddress_ = b;
         return b;
       } else {
@@ -6396,11 +6396,11 @@ private static final long serialVersionUID = 0L;
      * <code>string src_address = 26;</code>
      */
     public Builder setSrcAddress(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       srcAddress_ = value;
       onChanged();
       return this;
@@ -6413,7 +6413,7 @@ private static final long serialVersionUID = 0L;
      * <code>string src_address = 26;</code>
      */
     public Builder clearSrcAddress() {
-      
+
       srcAddress_ = getDefaultInstance().getSrcAddress();
       onChanged();
       return this;
@@ -6431,13 +6431,13 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       srcAddress_ = value;
       onChanged();
       return this;
     }
 
-    private java.lang.Object srcHostname_ = "";
+    private Object srcHostname_ = "";
     /**
      * <pre>
      * Source hostname.
@@ -6445,16 +6445,16 @@ private static final long serialVersionUID = 0L;
      *
      * <code>string src_hostname = 27;</code>
      */
-    public java.lang.String getSrcHostname() {
-      java.lang.Object ref = srcHostname_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getSrcHostname() {
+      Object ref = srcHostname_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         srcHostname_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -6466,11 +6466,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getSrcHostnameBytes() {
-      java.lang.Object ref = srcHostname_;
+      Object ref = srcHostname_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         srcHostname_ = b;
         return b;
       } else {
@@ -6485,11 +6485,11 @@ private static final long serialVersionUID = 0L;
      * <code>string src_hostname = 27;</code>
      */
     public Builder setSrcHostname(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       srcHostname_ = value;
       onChanged();
       return this;
@@ -6502,7 +6502,7 @@ private static final long serialVersionUID = 0L;
      * <code>string src_hostname = 27;</code>
      */
     public Builder clearSrcHostname() {
-      
+
       srcHostname_ = getDefaultInstance().getSrcHostname();
       onChanged();
       return this;
@@ -6520,7 +6520,7 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       srcHostname_ = value;
       onChanged();
       return this;
@@ -6639,7 +6639,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value src_as = 28;</code>
      */
     public com.google.protobuf.UInt64Value.Builder getSrcAsBuilder() {
-      
+
       onChanged();
       return getSrcAsFieldBuilder().getBuilder();
     }
@@ -6666,7 +6666,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt64Value src_as = 28;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder> 
+        com.google.protobuf.UInt64Value, com.google.protobuf.UInt64Value.Builder, com.google.protobuf.UInt64ValueOrBuilder>
         getSrcAsFieldBuilder() {
       if (srcAsBuilder_ == null) {
         srcAsBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -6792,7 +6792,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value src_mask_len = 29;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getSrcMaskLenBuilder() {
-      
+
       onChanged();
       return getSrcMaskLenFieldBuilder().getBuilder();
     }
@@ -6819,7 +6819,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value src_mask_len = 29;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getSrcMaskLenFieldBuilder() {
       if (srcMaskLenBuilder_ == null) {
         srcMaskLenBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -6945,7 +6945,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value src_port = 30;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getSrcPortBuilder() {
-      
+
       onChanged();
       return getSrcPortFieldBuilder().getBuilder();
     }
@@ -6972,7 +6972,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value src_port = 30;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getSrcPortFieldBuilder() {
       if (srcPortBuilder_ == null) {
         srcPortBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -7098,7 +7098,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value tcp_flags = 31;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getTcpFlagsBuilder() {
-      
+
       onChanged();
       return getTcpFlagsFieldBuilder().getBuilder();
     }
@@ -7125,7 +7125,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value tcp_flags = 31;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getTcpFlagsFieldBuilder() {
       if (tcpFlagsBuilder_ == null) {
         tcpFlagsBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -7251,7 +7251,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value tos = 32;</code>
      */
     public com.google.protobuf.UInt32Value.Builder getTosBuilder() {
-      
+
       onChanged();
       return getTosFieldBuilder().getBuilder();
     }
@@ -7278,7 +7278,7 @@ private static final long serialVersionUID = 0L;
      * <code>.google.protobuf.UInt32Value tos = 32;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder> 
+        com.google.protobuf.UInt32Value, com.google.protobuf.UInt32Value.Builder, com.google.protobuf.UInt32ValueOrBuilder>
         getTosFieldBuilder() {
       if (tosBuilder_ == null) {
         tosBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -7337,7 +7337,7 @@ private static final long serialVersionUID = 0L;
       if (value == null) {
         throw new NullPointerException();
       }
-      
+
       netflowVersion_ = value.getNumber();
       onChanged();
       return this;
@@ -7350,13 +7350,13 @@ private static final long serialVersionUID = 0L;
      * <code>.NetflowVersion netflow_version = 33;</code>
      */
     public Builder clearNetflowVersion() {
-      
+
       netflowVersion_ = 0;
       onChanged();
       return this;
     }
 
-    private java.lang.Object vlan_ = "";
+    private Object vlan_ = "";
     /**
      * <pre>
      * VLAN ID.
@@ -7364,16 +7364,16 @@ private static final long serialVersionUID = 0L;
      *
      * <code>string vlan = 34;</code>
      */
-    public java.lang.String getVlan() {
-      java.lang.Object ref = vlan_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getVlan() {
+      Object ref = vlan_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         vlan_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -7385,11 +7385,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getVlanBytes() {
-      java.lang.Object ref = vlan_;
+      Object ref = vlan_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         vlan_ = b;
         return b;
       } else {
@@ -7404,11 +7404,11 @@ private static final long serialVersionUID = 0L;
      * <code>string vlan = 34;</code>
      */
     public Builder setVlan(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       vlan_ = value;
       onChanged();
       return this;
@@ -7421,7 +7421,7 @@ private static final long serialVersionUID = 0L;
      * <code>string vlan = 34;</code>
      */
     public Builder clearVlan() {
-      
+
       vlan_ = getDefaultInstance().getVlan();
       onChanged();
       return this;
@@ -7439,7 +7439,7 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       vlan_ = value;
       onChanged();
       return this;
@@ -7530,7 +7530,7 @@ private static final long serialVersionUID = 0L;
      * <code>.NodeInfo src_node = 35;</code>
      */
     public org.opennms.netmgt.flows.persistence.model.NodeInfo.Builder getSrcNodeBuilder() {
-      
+
       onChanged();
       return getSrcNodeFieldBuilder().getBuilder();
     }
@@ -7549,7 +7549,7 @@ private static final long serialVersionUID = 0L;
      * <code>.NodeInfo src_node = 35;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        org.opennms.netmgt.flows.persistence.model.NodeInfo, org.opennms.netmgt.flows.persistence.model.NodeInfo.Builder, org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder> 
+        org.opennms.netmgt.flows.persistence.model.NodeInfo, org.opennms.netmgt.flows.persistence.model.NodeInfo.Builder, org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder>
         getSrcNodeFieldBuilder() {
       if (srcNodeBuilder_ == null) {
         srcNodeBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -7647,7 +7647,7 @@ private static final long serialVersionUID = 0L;
      * <code>.NodeInfo exporter_node = 36;</code>
      */
     public org.opennms.netmgt.flows.persistence.model.NodeInfo.Builder getExporterNodeBuilder() {
-      
+
       onChanged();
       return getExporterNodeFieldBuilder().getBuilder();
     }
@@ -7666,7 +7666,7 @@ private static final long serialVersionUID = 0L;
      * <code>.NodeInfo exporter_node = 36;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        org.opennms.netmgt.flows.persistence.model.NodeInfo, org.opennms.netmgt.flows.persistence.model.NodeInfo.Builder, org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder> 
+        org.opennms.netmgt.flows.persistence.model.NodeInfo, org.opennms.netmgt.flows.persistence.model.NodeInfo.Builder, org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder>
         getExporterNodeFieldBuilder() {
       if (exporterNodeBuilder_ == null) {
         exporterNodeBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -7764,7 +7764,7 @@ private static final long serialVersionUID = 0L;
      * <code>.NodeInfo dest_node = 37;</code>
      */
     public org.opennms.netmgt.flows.persistence.model.NodeInfo.Builder getDestNodeBuilder() {
-      
+
       onChanged();
       return getDestNodeFieldBuilder().getBuilder();
     }
@@ -7783,7 +7783,7 @@ private static final long serialVersionUID = 0L;
      * <code>.NodeInfo dest_node = 37;</code>
      */
     private com.google.protobuf.SingleFieldBuilderV3<
-        org.opennms.netmgt.flows.persistence.model.NodeInfo, org.opennms.netmgt.flows.persistence.model.NodeInfo.Builder, org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder> 
+        org.opennms.netmgt.flows.persistence.model.NodeInfo, org.opennms.netmgt.flows.persistence.model.NodeInfo.Builder, org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder>
         getDestNodeFieldBuilder() {
       if (destNodeBuilder_ == null) {
         destNodeBuilder_ = new com.google.protobuf.SingleFieldBuilderV3<
@@ -7796,20 +7796,20 @@ private static final long serialVersionUID = 0L;
       return destNodeBuilder_;
     }
 
-    private java.lang.Object application_ = "";
+    private Object application_ = "";
     /**
      * <code>string application = 38;</code>
      */
-    public java.lang.String getApplication() {
-      java.lang.Object ref = application_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getApplication() {
+      Object ref = application_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         application_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -7817,11 +7817,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getApplicationBytes() {
-      java.lang.Object ref = application_;
+      Object ref = application_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         application_ = b;
         return b;
       } else {
@@ -7832,11 +7832,11 @@ private static final long serialVersionUID = 0L;
      * <code>string application = 38;</code>
      */
     public Builder setApplication(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       application_ = value;
       onChanged();
       return this;
@@ -7845,7 +7845,7 @@ private static final long serialVersionUID = 0L;
      * <code>string application = 38;</code>
      */
     public Builder clearApplication() {
-      
+
       application_ = getDefaultInstance().getApplication();
       onChanged();
       return this;
@@ -7859,26 +7859,26 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       application_ = value;
       onChanged();
       return this;
     }
 
-    private java.lang.Object host_ = "";
+    private Object host_ = "";
     /**
      * <code>string host = 39;</code>
      */
-    public java.lang.String getHost() {
-      java.lang.Object ref = host_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getHost() {
+      Object ref = host_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         host_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -7886,11 +7886,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getHostBytes() {
-      java.lang.Object ref = host_;
+      Object ref = host_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         host_ = b;
         return b;
       } else {
@@ -7901,11 +7901,11 @@ private static final long serialVersionUID = 0L;
      * <code>string host = 39;</code>
      */
     public Builder setHost(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       host_ = value;
       onChanged();
       return this;
@@ -7914,7 +7914,7 @@ private static final long serialVersionUID = 0L;
      * <code>string host = 39;</code>
      */
     public Builder clearHost() {
-      
+
       host_ = getDefaultInstance().getHost();
       onChanged();
       return this;
@@ -7928,26 +7928,26 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       host_ = value;
       onChanged();
       return this;
     }
 
-    private java.lang.Object location_ = "";
+    private Object location_ = "";
     /**
      * <code>string location = 40;</code>
      */
-    public java.lang.String getLocation() {
-      java.lang.Object ref = location_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getLocation() {
+      Object ref = location_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         location_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -7955,11 +7955,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getLocationBytes() {
-      java.lang.Object ref = location_;
+      Object ref = location_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         location_ = b;
         return b;
       } else {
@@ -7970,11 +7970,11 @@ private static final long serialVersionUID = 0L;
      * <code>string location = 40;</code>
      */
     public Builder setLocation(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       location_ = value;
       onChanged();
       return this;
@@ -7983,7 +7983,7 @@ private static final long serialVersionUID = 0L;
      * <code>string location = 40;</code>
      */
     public Builder clearLocation() {
-      
+
       location_ = getDefaultInstance().getLocation();
       onChanged();
       return this;
@@ -7997,7 +7997,7 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       location_ = value;
       onChanged();
       return this;
@@ -8033,7 +8033,7 @@ private static final long serialVersionUID = 0L;
       if (value == null) {
         throw new NullPointerException();
       }
-      
+
       srcLocality_ = value.getNumber();
       onChanged();
       return this;
@@ -8042,7 +8042,7 @@ private static final long serialVersionUID = 0L;
      * <code>.Locality src_locality = 41;</code>
      */
     public Builder clearSrcLocality() {
-      
+
       srcLocality_ = 0;
       onChanged();
       return this;
@@ -8078,7 +8078,7 @@ private static final long serialVersionUID = 0L;
       if (value == null) {
         throw new NullPointerException();
       }
-      
+
       dstLocality_ = value.getNumber();
       onChanged();
       return this;
@@ -8087,7 +8087,7 @@ private static final long serialVersionUID = 0L;
      * <code>.Locality dst_locality = 42;</code>
      */
     public Builder clearDstLocality() {
-      
+
       dstLocality_ = 0;
       onChanged();
       return this;
@@ -8123,7 +8123,7 @@ private static final long serialVersionUID = 0L;
       if (value == null) {
         throw new NullPointerException();
       }
-      
+
       flowLocality_ = value.getNumber();
       onChanged();
       return this;
@@ -8132,26 +8132,26 @@ private static final long serialVersionUID = 0L;
      * <code>.Locality flow_locality = 43;</code>
      */
     public Builder clearFlowLocality() {
-      
+
       flowLocality_ = 0;
       onChanged();
       return this;
     }
 
-    private java.lang.Object convoKey_ = "";
+    private Object convoKey_ = "";
     /**
      * <code>string convo_key = 44;</code>
      */
-    public java.lang.String getConvoKey() {
-      java.lang.Object ref = convoKey_;
-      if (!(ref instanceof java.lang.String)) {
+    public String getConvoKey() {
+      Object ref = convoKey_;
+      if (!(ref instanceof String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
+        String s = bs.toStringUtf8();
         convoKey_ = s;
         return s;
       } else {
-        return (java.lang.String) ref;
+        return (String) ref;
       }
     }
     /**
@@ -8159,11 +8159,11 @@ private static final long serialVersionUID = 0L;
      */
     public com.google.protobuf.ByteString
         getConvoKeyBytes() {
-      java.lang.Object ref = convoKey_;
+      Object ref = convoKey_;
       if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
+        com.google.protobuf.ByteString b =
             com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
+                (String) ref);
         convoKey_ = b;
         return b;
       } else {
@@ -8174,11 +8174,11 @@ private static final long serialVersionUID = 0L;
      * <code>string convo_key = 44;</code>
      */
     public Builder setConvoKey(
-        java.lang.String value) {
+        String value) {
       if (value == null) {
     throw new NullPointerException();
   }
-  
+
       convoKey_ = value;
       onChanged();
       return this;
@@ -8187,7 +8187,7 @@ private static final long serialVersionUID = 0L;
      * <code>string convo_key = 44;</code>
      */
     public Builder clearConvoKey() {
-      
+
       convoKey_ = getDefaultInstance().getConvoKey();
       onChanged();
       return this;
@@ -8201,18 +8201,18 @@ private static final long serialVersionUID = 0L;
     throw new NullPointerException();
   }
   checkByteStringIsUtf8(value);
-      
+
       convoKey_ = value;
       onChanged();
       return this;
     }
-    @java.lang.Override
+    @Override
     public final Builder setUnknownFields(
         final com.google.protobuf.UnknownFieldSet unknownFields) {
       return super.setUnknownFields(unknownFields);
     }
 
-    @java.lang.Override
+    @Override
     public final Builder mergeUnknownFields(
         final com.google.protobuf.UnknownFieldSet unknownFields) {
       return super.mergeUnknownFields(unknownFields);
@@ -8234,7 +8234,7 @@ private static final long serialVersionUID = 0L;
 
   private static final com.google.protobuf.Parser<FlowDocument>
       PARSER = new com.google.protobuf.AbstractParser<FlowDocument>() {
-    @java.lang.Override
+    @Override
     public FlowDocument parsePartialFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
@@ -8247,12 +8247,12 @@ private static final long serialVersionUID = 0L;
     return PARSER;
   }
 
-  @java.lang.Override
+  @Override
   public com.google.protobuf.Parser<FlowDocument> getParserForType() {
     return PARSER;
   }
 
-  @java.lang.Override
+  @Override
   public org.opennms.netmgt.flows.persistence.model.FlowDocument getDefaultInstanceForType() {
     return DEFAULT_INSTANCE;
   }
