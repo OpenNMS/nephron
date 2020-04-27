@@ -68,6 +68,7 @@ import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
 import org.opennms.nephron.coders.JacksonJsonCoder;
+import org.opennms.nephron.coders.KafkaInputFlowDeserializer;
 import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.elastic.IndexStrategy;
@@ -109,10 +110,15 @@ public class Pipeline {
         // Auto-commit should be disabled when checkpointing is on:
         // the state in the checkpoints are used to derive the offsets instead
         kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, options.getAutoCommit());
-        PCollection<FlowDocument> streamOfFlows = p.apply(new ReadFromKafka(options.getBootstrapServers(), options.getFlowSourceTopic(), kafkaConsumerConfig));
+        PCollection<FlowDocument> streamOfFlows = p.apply(new ReadFromKafka(options.getBootstrapServers(),
+                options.getFlowSourceTopic(), kafkaConsumerConfig));
 
         // Calculate the flow summary statistics
-        PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(Duration.millis(options.getFixedWindowSizeMs()), options.getTopK()));
+        PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options.getTopK(),
+                Duration.millis(options.getFixedWindowSizeMs()),
+                Duration.millis(options.getMaxFlowDurationMs()),
+                Duration.millis(options.getLateProcessingDelayMs()),
+                Duration.millis(options.getAllowedLatenessMs())));
 
         // Write the results out to Elasticsearch
         flowSummaries.apply(new WriteToElasticsearch(options));
@@ -135,17 +141,24 @@ public class Pipeline {
     }
 
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
-        private final Duration fixedWindowSize;
         private final int topK;
+        private final Duration fixedWindowSize;
+        private final Duration maxFlowDuration;
+        private final Duration lateProcessingDelay;
+        private final Duration allowedLateness;
 
-        public CalculateFlowStatistics(Duration fixedWindowSize, int topK) {
-            this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
+        public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration maxFlowDuration, Duration lateProcessingDelay, Duration allowedLateness) {
             this.topK = topK;
+            this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
+            this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
+            this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
+            this.allowedLateness = Objects.requireNonNull(allowedLateness);
         }
 
         @Override
         public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
-            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows", new WindowedFlows(fixedWindowSize));
+            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
+                    new WindowedFlows(fixedWindowSize, maxFlowDuration, lateProcessingDelay, allowedLateness));
 
             PCollection<FlowSummary> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
                     new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
@@ -170,15 +183,21 @@ public class Pipeline {
 
     public static class WindowedFlows extends PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> {
         private final Duration fixedWindowSize;
+        private final Duration maxFlowDuration;
+        private final Duration lateProcessingDelay;
+        private final Duration allowedLateness;
 
-        public WindowedFlows(Duration fixedWindowSize) {
+        public WindowedFlows(Duration fixedWindowSize, Duration maxFlowDuration, Duration lateProcessingDelay, Duration allowedLateness) {
             this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
+            this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
+            this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
+            this.allowedLateness = Objects.requireNonNull(allowedLateness);
         }
 
         @Override
         public PCollection<FlowDocument> expand(PCollection<FlowDocument> input) {
-            return input.apply("attach_timestamp", attachTimestamps())
-                    .apply("to_windows", toWindow(fixedWindowSize));
+            return input.apply("attach_timestamp", attachTimestamps(maxFlowDuration))
+                    .apply("to_windows", toWindow(fixedWindowSize, lateProcessingDelay, allowedLateness));
         }
     }
 
@@ -363,12 +382,11 @@ public class Pipeline {
         }
 
         private static Instant getRecordTimestamp(KafkaRecord<String, FlowDocument> record) {
-            final FlowDocument doc = record.getKV().getValue();
-            if (doc.hasDeltaSwitched()) {
-                return Instant.ofEpochMilli(doc.getDeltaSwitched().getValue());
-            } else {
-                return Instant.ofEpochMilli(doc.getFirstSwitched().getValue());
-            }
+            return getTimestamp(record.getKV().getValue());
+        }
+
+        public static Instant getTimestamp(FlowDocument doc) {
+            return Instant.ofEpochMilli(doc.getLastSwitched().getValue());
         }
     }
 
@@ -465,7 +483,7 @@ public class Pipeline {
      *
      * @return transform
      */
-    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps() {
+    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps(Duration maxFlowDuration) {
         return ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
             @ProcessElement
             public void processElement(ProcessContext c) {
@@ -482,7 +500,7 @@ public class Pipeline {
                     timestamp += windowSizeMs;
                 }
                 while (timestamp <= flow.getLastSwitched().getValue()) {
-                    if (timestamp <= c.timestamp().minus(Duration.standardMinutes(15)).getMillis()) {
+                    if (timestamp <= c.timestamp().minus(maxFlowDuration).getMillis()) {
                         // Caused by: java.lang.IllegalArgumentException: Cannot output with timestamp 1970-01-01T00:00:00.000Z. Output timestamps must be no earlier than the timestamp of the current input (2020-
                         //                            04-14T15:33:11.302Z) minus the allowed skew (30 minutes). See the DoFn#getAllowedTimestampSkew() Javadoc for details on changing the allowed skew.
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
@@ -503,7 +521,7 @@ public class Pipeline {
             @Override
             public Duration getAllowedTimestampSkew() {
                 // Max flow duration
-                return Duration.standardMinutes(15);
+                return maxFlowDuration;
             }
         });
     }
@@ -524,7 +542,7 @@ public class Pipeline {
         return flowSummary;
     }
 
-    public static Window<FlowDocument> toWindow(Duration fixedWindowSize) {
+    public static Window<FlowDocument> toWindow(Duration fixedWindowSize, Duration lateProcessingDelay, Duration allowedLateness) {
         return Window.<FlowDocument>into(FixedWindows.of(fixedWindowSize))
                 // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
                 .triggering(AfterWatermark
@@ -533,9 +551,9 @@ public class Pipeline {
                         // Any time late data arrives, after a one-minute delay
                         .withLateFirings(AfterProcessingTime
                                 .pastFirstElementInPane()
-                                .plusDelayOf(Duration.standardMinutes(1))))
+                                .plusDelayOf(lateProcessingDelay)))
                 // After 4 hours, we assume no more data of interest will arrive, and the trigger stops executing
-                .withAllowedLateness(Duration.standardHours(4))
+                .withAllowedLateness(allowedLateness)
                 .accumulatingFiredPanes();
     }
 

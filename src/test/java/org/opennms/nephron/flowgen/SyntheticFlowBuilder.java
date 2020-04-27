@@ -26,8 +26,9 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.nephron;
+package org.opennms.nephron.flowgen;
 
+import java.io.StringWriter;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,11 +38,14 @@ import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.opennms.netmgt.flows.persistence.model.NodeInfo;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.protobuf.DoubleValue;
 import com.google.protobuf.UInt32Value;
 import com.google.protobuf.UInt64Value;
 
 public class SyntheticFlowBuilder {
+    private static final Gson gson = new GsonBuilder().create();
 
     private final List<FlowDocument> flows = new ArrayList<>();
 
@@ -121,11 +125,54 @@ public class SyntheticFlowBuilder {
         }
         builder.setDirection(direction);
 
-        builder.setConvoKey(ConversationKeyUtils.getConvoKeyAsJsonString(builder));
+        builder.setConvoKey(getConvoKeyAsJsonString(builder));
         builder.setSamplingInterval(DoubleValue.of(1.0d));
 
         flows.add(builder.build());
         return this;
+    }
+
+    private static String getConvoKeyAsJsonString(FlowDocument.Builder document) {
+        // Only generate the key if all of the required fields are set
+        if (document.getLocation() != null
+                && document.getProtocol() != null
+                && document.getSrcAddress() != null
+                && document.getDstAddress() != null) {
+            // Build the JSON string manually
+            // This is faster than creating some new object on which we can use gson.toJson or similar
+            final StringWriter writer = new StringWriter();
+            writer.write("[");
+
+            // Use GSON to encode the location, since this may contain characters that need to be escape
+            writer.write(gson.toJson(document.getLocation()));
+            writer.write(",");
+            writer.write(Integer.toString(document.getProtocol().getValue()));
+            writer.write(",");
+
+            // Write out addresses in canonical format (lower one first)
+            final String srcAddr = document.getSrcAddress();
+            final String dstAddr = document.getDstAddress();
+            if (Objects.compare(srcAddr, dstAddr, String::compareTo) < 0) {
+                writer.write(gson.toJson(srcAddr));
+                writer.write(",");
+                writer.write(gson.toJson(dstAddr));
+            } else {
+                writer.write(gson.toJson(dstAddr));
+                writer.write(",");
+                writer.write(gson.toJson(srcAddr));
+            }
+            writer.write(",");
+
+            if (document.getApplication() != null) {
+                writer.write(gson.toJson(document.getApplication()));
+            } else {
+                writer.write("null");
+            }
+
+            writer.write("]");
+            return writer.toString();
+        }
+        return null;
     }
 
     public List<FlowDocument> build() {

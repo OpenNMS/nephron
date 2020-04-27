@@ -26,7 +26,7 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.nephron;
+package org.opennms.nephron.coders;
 
 import org.apache.kafka.common.serialization.Deserializer;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;

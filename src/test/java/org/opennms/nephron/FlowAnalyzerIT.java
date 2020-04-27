@@ -81,6 +81,7 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.FlowSummary;
+import org.opennms.nephron.flowgen.KafkaFlowGenerator;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
@@ -184,7 +185,7 @@ public class FlowAnalyzerIT {
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
         KafkaProducer<String,byte[]> producer = new KafkaProducer<>(producerProps);
-        KafkaFlowGenerator flowGenerator = new KafkaFlowGenerator(producer);
+        KafkaFlowGenerator flowGenerator = new KafkaFlowGenerator(producer, options);
         executor.execute(flowGenerator);
 
         // Wait until we've sent at least one flow

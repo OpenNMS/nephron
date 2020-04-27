@@ -26,34 +26,31 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.nephron;
+package org.opennms.nephron.flowgen;
 
-import static org.opennms.nephron.FlowGenerator.GIGABYTE;
+import static org.opennms.nephron.flowgen.FlowGenerator.GIGABYTE;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Date;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.opennms.netmgt.flows.persistence.model.Direction;
+import org.opennms.nephron.NephronOptions;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.google.common.util.concurrent.RateLimiter;
 
 public class KafkaFlowGenerator implements Runnable {
-    private static final Logger LOG = LoggerFactory.getLogger(KafkaFlowGenerator.class);
     private final KafkaProducer<String,byte[]> producer;
+    private final NephronOptions options;
     private Consumer<FlowDocument> callback;
 
-    public KafkaFlowGenerator(KafkaProducer<String,byte[]> producer) {
+    public KafkaFlowGenerator(KafkaProducer<String, byte[]> producer, NephronOptions options) {
         this.producer = Objects.requireNonNull(producer);
+        this.options = Objects.requireNonNull(options);
     }
 
     @Override
@@ -73,7 +70,7 @@ public class KafkaFlowGenerator implements Runnable {
         final RateLimiter rateLimiter = RateLimiter.create(10);
         for (FlowDocument flow : flowGenerator.streamFlows()) {
             rateLimiter.acquire(1);
-            producer.send(new ProducerRecord<>(NephronOptions.DEFAULT_FLOW_SOURCE_TOPIC, flow.toByteArray()), (metadata, exception) -> {
+            producer.send(new ProducerRecord<>(options.getFlowSourceTopic(), flow.toByteArray()), (metadata, exception) -> {
                 // Issue the callback then the send was successful
                 if (callback != null && exception == null) {
                     callback.accept(flow);
