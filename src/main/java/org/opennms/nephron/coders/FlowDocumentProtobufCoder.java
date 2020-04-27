@@ -26,40 +26,29 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.nephron;
+package org.opennms.nephron.coders;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 
+import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+public class FlowDocumentProtobufCoder extends Coder<FlowDocument> {
+    private final ByteArrayCoder delegate = ByteArrayCoder.of();
 
-public class JacksonJsonCoder<T> extends Coder<T> {
-
-    private static final ObjectMapper mapper = new ObjectMapper();
-    private static final StringUtf8Coder delegate = StringUtf8Coder.of();
-    private final Class<T> clazz;
-
-    public JacksonJsonCoder(Class<T> clazz) {
-        this.clazz = Objects.requireNonNull(clazz);
+    @Override
+    public void encode(FlowDocument value, OutputStream outStream) throws IOException {
+        delegate.encode(value.toByteArray(), outStream);
     }
 
     @Override
-    public void encode(T value, OutputStream outStream) throws IOException {
-        final String json = mapper.writeValueAsString(value);
-        delegate.encode(json, outStream);
-    }
-
-    @Override
-    public T decode(InputStream inStream) throws IOException {
-        String json = delegate.decode(inStream);
-        return mapper.readValue(json, clazz);
+    public FlowDocument decode(InputStream inStream) throws IOException {
+        return FlowDocument.parseFrom(delegate.decode(inStream));
     }
 
     @Override

@@ -51,6 +51,12 @@ public interface NephronOptions extends PipelineOptions {
 
     void setGroupId(String value);
 
+    @Description("Enable/disable auto-commit for the Kafka consumer. Should be enabled when checkpointing is disabled.")
+    @Default.Boolean(true)
+    boolean getAutoCommit();
+
+    void setAutoCommit(boolean value);
+
     @Description("Source topic for flows")
     @Default.String(DEFAULT_FLOW_SOURCE_TOPIC)
     String getFlowSourceTopic();

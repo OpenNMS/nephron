@@ -28,19 +28,13 @@
 
 package org.opennms.nephron;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.Serializable;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import org.apache.beam.sdk.coders.ByteArrayCoder;
-import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
 import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
@@ -72,6 +66,8 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
+import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
+import org.opennms.nephron.coders.JacksonJsonCoder;
 import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.elastic.IndexStrategy;
@@ -110,9 +106,9 @@ public class Pipeline {
         // Read from Kafka
         Map<String, Object> kafkaConsumerConfig = new HashMap<>();
         kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, options.getGroupId());
-        // TODO: Auto-commit should be disabled when checkpointing is on - the state in the checkpoints
-        // are used to derive the offsets instead
-        kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, true);
+        // Auto-commit should be disabled when checkpointing is on:
+        // the state in the checkpoints are used to derive the offsets instead
+        kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, options.getAutoCommit());
         PCollection<FlowDocument> streamOfFlows = p.apply(new ReadFromKafka(options.getBootstrapServers(), options.getFlowSourceTopic(), kafkaConsumerConfig));
 
         // Calculate the flow summary statistics
@@ -306,7 +302,11 @@ public class Pipeline {
                             .withIdFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
                                 @Override
                                 public String apply(JsonNode input) {
-                                    return input.get("@key").asText();
+                                    return input.get("@timestamp").asLong() + "_" +
+                                            input.get("grouped_by").asText() + "_" +
+                                            input.get("aggregation_type").asText() + "_" +
+                                            input.get("@key").asText() + "_" +
+                                            input.get("ranking").asLong();
                                 }
                             }));
         }
@@ -460,30 +460,6 @@ public class Pipeline {
         }
     }
 
-    public static class FlowDocumentProtobufCoder extends Coder<FlowDocument> {
-        private final ByteArrayCoder delegate = ByteArrayCoder.of();
-
-        @Override
-        public void encode(FlowDocument value, OutputStream outStream) throws IOException {
-            delegate.encode(value.toByteArray(), outStream);
-        }
-
-        @Override
-        public FlowDocument decode(InputStream inStream) throws IOException {
-            return FlowDocument.parseFrom(delegate.decode(inStream));
-        }
-
-        @Override
-        public List<? extends Coder<?>> getCoderArguments() {
-            return Collections.emptyList();
-        }
-
-        @Override
-        public void verifyDeterministic() {
-            // pass
-        }
-    }
-
     /**
      * Dispatches a {@link FlowDocument} to all of the windows that overlap with the flow range.
      *
@@ -554,10 +530,10 @@ public class Pipeline {
                 .triggering(AfterWatermark
                         // On Beam’s estimate that all the data has arrived (the watermark passes the end of the window)
                         .pastEndOfWindow()
-                        // Any time late data arrives, after a ten-minute delay
+                        // Any time late data arrives, after a one-minute delay
                         .withLateFirings(AfterProcessingTime
                                 .pastFirstElementInPane()
-                                .plusDelayOf(Duration.standardMinutes(10))))
+                                .plusDelayOf(Duration.standardMinutes(1))))
                 // After 4 hours, we assume no more data of interest will arrive, and the trigger stops executing
                 .withAllowedLateness(Duration.standardHours(4))
                 .accumulatingFiredPanes();

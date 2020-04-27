@@ -40,6 +40,9 @@ public class FlowSummary {
     public static final String OTHER_APPLICATION_NAME_KEY = "__other";
     public static final String OTHER_APPLICATION_NAME_DISPLAY = "Other";
 
+    @JsonProperty("_id")
+    private String id;
+
     @JsonProperty("@timestamp")
     private long timestamp;
 
@@ -87,6 +90,14 @@ public class FlowSummary {
 
     @JsonProperty("conversation_key")
     private String conversationKey;
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
 
     public String getKey() {
         return key;
@@ -220,34 +231,37 @@ public class FlowSummary {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof FlowSummary)) return false;
-        FlowSummary summary = (FlowSummary) o;
-        return timestamp == summary.timestamp &&
-                rangeStartMs == summary.rangeStartMs &&
-                rangeEndMs == summary.rangeEndMs &&
-                ranking == summary.ranking &&
-                groupedBy == summary.groupedBy &&
-                aggregationType == summary.aggregationType &&
-                Objects.equals(bytesIngress, summary.bytesIngress) &&
-                Objects.equals(bytesEgress, summary.bytesEgress) &&
-                Objects.equals(bytesTotal, summary.bytesTotal) &&
-                Objects.equals(exporter, summary.exporter) &&
-                Objects.equals(ifIndex, summary.ifIndex) &&
-                Objects.equals(application, summary.application) &&
-                Objects.equals(hostAddress, summary.hostAddress) &&
-                Objects.equals(hostName, summary.hostName) &&
-                Objects.equals(conversationKey, summary.conversationKey);
+        FlowSummary that = (FlowSummary) o;
+        return timestamp == that.timestamp &&
+                rangeStartMs == that.rangeStartMs &&
+                rangeEndMs == that.rangeEndMs &&
+                ranking == that.ranking &&
+                Objects.equals(id, that.id) &&
+                Objects.equals(key, that.key) &&
+                groupedBy == that.groupedBy &&
+                aggregationType == that.aggregationType &&
+                Objects.equals(bytesIngress, that.bytesIngress) &&
+                Objects.equals(bytesEgress, that.bytesEgress) &&
+                Objects.equals(bytesTotal, that.bytesTotal) &&
+                Objects.equals(exporter, that.exporter) &&
+                Objects.equals(ifIndex, that.ifIndex) &&
+                Objects.equals(application, that.application) &&
+                Objects.equals(hostAddress, that.hostAddress) &&
+                Objects.equals(hostName, that.hostName) &&
+                Objects.equals(conversationKey, that.conversationKey);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(timestamp, rangeStartMs, rangeEndMs, ranking, groupedBy, aggregationType, bytesIngress,
-                bytesEgress, bytesTotal, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
+        return Objects.hash(id, timestamp, key, rangeStartMs, rangeEndMs, ranking, groupedBy, aggregationType, bytesIngress, bytesEgress, bytesTotal, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
     }
 
     @Override
     public String toString() {
         return "FlowSummary{" +
-                "timestamp=" + timestamp +
+                "id='" + id + '\'' +
+                ", timestamp=" + timestamp +
+                ", key='" + key + '\'' +
                 ", rangeStartMs=" + rangeStartMs +
                 ", rangeEndMs=" + rangeEndMs +
                 ", ranking=" + ranking +

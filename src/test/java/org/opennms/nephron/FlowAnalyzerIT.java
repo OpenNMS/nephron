@@ -29,8 +29,12 @@
 package org.opennms.nephron;
 
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.notNullValue;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -41,12 +45,15 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.http.HttpHost;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -58,6 +65,17 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestClientBuilder;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.sort.SortOrder;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -81,8 +99,24 @@ public class FlowAnalyzerIT {
     @Rule
     public ElasticsearchContainer elastic = new ElasticsearchContainer("docker.elastic.co/elasticsearch/elasticsearch-oss:7.6.2");
 
+    private RestHighLevelClient elasticClient;
+
+    @Before
+    public void setUp() {
+        HttpHost elasticHost = new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http");
+        RestClientBuilder restClientBuilder = RestClient.builder(elasticHost);
+        elasticClient = new RestHighLevelClient(restClientBuilder);
+    }
+
+    @After
+    public void tearDown() throws IOException {
+        if (elasticClient != null) {
+            elasticClient.close();
+        }
+    }
+
     @Test
-    public void canStreamIt() throws InterruptedException {
+    public void canStreamIt() throws InterruptedException, ExecutionException {
         NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
                 "--fixedWindowSizeMs=50000",
                 "--flowDestTopic=opennms-flows-aggregated")
@@ -155,10 +189,55 @@ public class FlowAnalyzerIT {
 
         // Wait for some flow summaries to appear
         await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
-                .until(() -> allRecords, hasSize(greaterThanOrEqualTo(6)));
+                .until(() -> allRecords, hasSize(greaterThanOrEqualTo(5)));
+
+        // Wait for documents to be indexed in Elasticsearch
+        await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
+                .ignoreExceptions()
+                .until(() -> getFlowSummaryCountFromES(options).get(), greaterThanOrEqualTo(5L));
+
+        // We know there are document in ES let, let's retrieve one and validate the contents
+        List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(5, options).get();
+        assertThat(flowSummaries, hasSize(5));
+
+        // Basic sanity check on the flow summary
+        FlowSummary firstFlowSummary = flowSummaries.get(0);
+        assertThat(firstFlowSummary.getKey(), notNullValue());
+        assertThat(firstFlowSummary.getId(), containsString(firstFlowSummary.getKey()));
+        assertThat(firstFlowSummary.getRangeEndMs(), greaterThanOrEqualTo(firstFlowSummary.getRangeStartMs()));
+        assertThat(firstFlowSummary.getRanking(), greaterThanOrEqualTo(0));
 
         t.interrupt();
         t.join();
+    }
+
+    public CompletableFuture<Long> getFlowSummaryCountFromES(NephronOptions options) {
+        CompletableFuture<SearchResponse> future = new CompletableFuture<>();
+        SearchRequest searchRequest = new SearchRequest(options.getElasticFlowIndex()+"-*");
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.size(0);
+        searchRequest.source(sourceBuilder);
+        elasticClient.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
+        return future.thenApply(s -> s.getHits().getTotalHits().value);
+    }
+
+    public CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options) {
+        CompletableFuture<SearchResponse> future = new CompletableFuture<>();
+        SearchRequest searchRequest = new SearchRequest(options.getElasticFlowIndex()+"-*");
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.size(numDocs);
+        sourceBuilder.sort("@timestamp", SortOrder.ASC);
+        searchRequest.source(sourceBuilder);
+        elasticClient.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
+        return future.thenApply(s -> Arrays.stream(s.getHits().getHits())
+                .map(hit -> {
+                    try {
+                        return objectMapper.readValue(hit.getSourceAsString(), FlowSummary.class);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .collect(Collectors.toList()));
     }
 
     /**
@@ -178,4 +257,16 @@ public class FlowAnalyzerIT {
         }
     }
 
+    private static <T> ActionListener<T> toFuture(CompletableFuture<T> future) {
+        return new ActionListener<T>(){
+            @Override
+            public void onResponse(T result) {
+                future.complete(result);
+            }
+            @Override
+            public void onFailure(Exception e) {
+                future.completeExceptionally(e);
+            }
+        };
+    };
 }

@@ -46,6 +46,7 @@ import org.joda.time.Duration;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
 import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.ExporterNode;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -76,7 +77,7 @@ public class FlowAnalyzerTest {
     public void canComputeTotalBytesInWindow() {
         // Build a stream from the given set of flows
         long timestampOffsetMillis = TimeUnit.MINUTES.toMillis(1);
-        TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new Pipeline.FlowDocumentProtobufCoder());
+        TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowDocumentProtobufCoder());
         for (FlowDocument flow : FLOWS) {
             flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(flow,
                     org.joda.time.Instant.ofEpochMilli(flow.getLastSwitched().getValue() + timestampOffsetMillis)));
@@ -89,6 +90,7 @@ public class FlowAnalyzerTest {
                 .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
         FlowSummary summary = new FlowSummary();
+        summary.setKey("SomeFs:SomeFid-98");
         summary.setTimestamp(1546318860000L);
         summary.setRangeStartMs(1546318800000L);
         summary.setRangeEndMs(1546318860000L);
