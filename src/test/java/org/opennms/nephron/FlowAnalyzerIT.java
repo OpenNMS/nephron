@@ -31,7 +31,6 @@ package org.opennms.nephron;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
@@ -194,7 +193,7 @@ public class FlowAnalyzerIT {
         // Wait for documents to be indexed in Elasticsearch
         await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
                 .ignoreExceptions()
-                .until(() -> getFlowSummaryCountFromES(options).get(), greaterThanOrEqualTo(5L));
+                .until(() -> getFirstNFlowSummmariesFromES(5, options).get(), hasSize(5));
 
         // We know there are document in ES let, let's retrieve one and validate the contents
         List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(5, options).get();
@@ -211,28 +210,21 @@ public class FlowAnalyzerIT {
         t.join();
     }
 
-    public CompletableFuture<Long> getFlowSummaryCountFromES(NephronOptions options) {
-        CompletableFuture<SearchResponse> future = new CompletableFuture<>();
-        SearchRequest searchRequest = new SearchRequest(options.getElasticFlowIndex()+"-*");
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.size(0);
-        searchRequest.source(sourceBuilder);
-        elasticClient.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
-        return future.thenApply(s -> s.getHits().getTotalHits().value);
-    }
-
     public CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options) {
         CompletableFuture<SearchResponse> future = new CompletableFuture<>();
-        SearchRequest searchRequest = new SearchRequest(options.getElasticFlowIndex()+"-*");
+        SearchRequest searchRequest = new SearchRequest(options.getElasticFlowIndex() + "-*");
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
         sourceBuilder.size(numDocs);
-        sourceBuilder.sort("@timestamp", SortOrder.ASC);
+        // We can't sort, since there is no template
+        // sourceBuilder.sort("@timestamp", SortOrder.ASC);
         searchRequest.source(sourceBuilder);
         elasticClient.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
         return future.thenApply(s -> Arrays.stream(s.getHits().getHits())
                 .map(hit -> {
                     try {
-                        return objectMapper.readValue(hit.getSourceAsString(), FlowSummary.class);
+                        final FlowSummary flowSummary = objectMapper.readValue(hit.getSourceAsString(), FlowSummary.class);
+                        flowSummary.setId(hit.getId());
+                        return flowSummary;
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }

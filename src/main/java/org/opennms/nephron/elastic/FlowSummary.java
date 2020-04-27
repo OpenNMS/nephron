@@ -30,8 +30,10 @@ package org.opennms.nephron.elastic;
 
 import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class FlowSummary {
 
     public static final String UNKNOWN_APPLICATION_NAME_KEY = "__unknown";
