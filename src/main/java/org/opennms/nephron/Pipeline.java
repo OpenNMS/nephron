@@ -304,8 +304,8 @@ public class Pipeline {
                                 public String apply(JsonNode input) {
                                     return input.get("@timestamp").asLong() + "_" +
                                             input.get("grouped_by").asText() + "_" +
+                                            input.get("grouped_by_key").asText() + "_" +
                                             input.get("aggregation_type").asText() + "_" +
-                                            input.get("@key").asText() + "_" +
                                             input.get("ranking").asLong();
                                 }
                             }));

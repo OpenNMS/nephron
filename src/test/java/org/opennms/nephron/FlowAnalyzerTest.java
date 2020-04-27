@@ -90,7 +90,7 @@ public class FlowAnalyzerTest {
                 .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
         FlowSummary summary = new FlowSummary();
-        summary.setKey("SomeFs:SomeFid-98");
+        summary.setGroupedByKey("SomeFs:SomeFid-98");
         summary.setTimestamp(1546318860000L);
         summary.setRangeStartMs(1546318800000L);
         summary.setRangeEndMs(1546318860000L);

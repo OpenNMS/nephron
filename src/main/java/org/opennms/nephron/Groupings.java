@@ -826,14 +826,14 @@ public class Groupings {
 
         @Override
         public void visit(ExporterKey key) {
-            flow.setKey(keyToString(key.getKeys()));
+            flow.setGroupedByKey(keyToString(key.getKeys()));
             flow.setGroupedBy(GroupedBy.EXPORTER);
             flow.setExporter(toExporterNode(key.nodeRef));
         }
 
         @Override
         public void visit(ExporterInterfaceKey key) {
-            flow.setKey(keyToString(key.getKeys()));
+            flow.setGroupedByKey(keyToString(key.getKeys()));
             flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE);
             flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);
@@ -841,7 +841,7 @@ public class Groupings {
 
         @Override
         public void visit(ExporterInterfaceApplicationKey key) {
-            flow.setKey(keyToString(key.getKeys()));
+            flow.setGroupedByKey(keyToString(key.getKeys()));
             flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_APPLICATION);
             flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);
@@ -850,7 +850,7 @@ public class Groupings {
 
         @Override
         public void visit(ExporterInterfaceHostKey key) {
-            flow.setKey(keyToString(key.getKeys()));
+            flow.setGroupedByKey(keyToString(key.getKeys()));
             flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_HOST);
             flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);
@@ -860,7 +860,7 @@ public class Groupings {
 
         @Override
         public void visit(ExporterInterfaceConversationKey key) {
-            flow.setKey(keyToString(key.getKeys()));
+            flow.setGroupedByKey(keyToString(key.getKeys()));
             flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_CONVERSATION);
             flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);

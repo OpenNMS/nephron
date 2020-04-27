@@ -36,6 +36,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
@@ -67,7 +68,9 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.client.Request;
 import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.Response;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.client.RestHighLevelClient;
@@ -84,6 +87,7 @@ import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.io.Resources;
 
 /**
  * Complete end-to-end test - reading & writing to/from Kafka
@@ -101,10 +105,12 @@ public class FlowAnalyzerIT {
     private RestHighLevelClient elasticClient;
 
     @Before
-    public void setUp() {
+    public void setUp() throws IOException {
         HttpHost elasticHost = new HttpHost(elastic.getContainerIpAddress(), elastic.getMappedPort(9200), "http");
         RestClientBuilder restClientBuilder = RestClient.builder(elasticHost);
         elasticClient = new RestHighLevelClient(restClientBuilder);
+        // Install the index mapping
+        insertIndexMapping();
     }
 
     @After
@@ -201,8 +207,8 @@ public class FlowAnalyzerIT {
 
         // Basic sanity check on the flow summary
         FlowSummary firstFlowSummary = flowSummaries.get(0);
-        assertThat(firstFlowSummary.getKey(), notNullValue());
-        assertThat(firstFlowSummary.getId(), containsString(firstFlowSummary.getKey()));
+        assertThat(firstFlowSummary.getGroupedByKey(), notNullValue());
+        assertThat(firstFlowSummary.getId(), containsString(firstFlowSummary.getGroupedByKey()));
         assertThat(firstFlowSummary.getRangeEndMs(), greaterThanOrEqualTo(firstFlowSummary.getRangeStartMs()));
         assertThat(firstFlowSummary.getRanking(), greaterThanOrEqualTo(0));
 
@@ -215,8 +221,7 @@ public class FlowAnalyzerIT {
         SearchRequest searchRequest = new SearchRequest(options.getElasticFlowIndex() + "-*");
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
         sourceBuilder.size(numDocs);
-        // We can't sort, since there is no template
-        // sourceBuilder.sort("@timestamp", SortOrder.ASC);
+        sourceBuilder.sort("@timestamp", SortOrder.ASC);
         searchRequest.source(sourceBuilder);
         elasticClient.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
         return future.thenApply(s -> Arrays.stream(s.getHits().getHits())
@@ -247,6 +252,13 @@ public class FlowAnalyzerIT {
                 .build())) {
             admin.createTopics(newTopics);
         }
+    }
+
+    private void insertIndexMapping() throws IOException {
+        Request request = new Request("PUT", "_template/netflow_agg");
+        request.setJsonEntity(Resources.toString(Resources.getResource("netflow_agg-template.json"), StandardCharsets.UTF_8));
+        Response response = elasticClient.getLowLevelClient().performRequest(request);
+        assertThat(response.getWarnings(), hasSize(0));
     }
 
     private static <T> ActionListener<T> toFuture(CompletableFuture<T> future) {

@@ -37,19 +37,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public class FlowSummary {
 
     public static final String UNKNOWN_APPLICATION_NAME_KEY = "__unknown";
-    public static final String UNKNOWN_APPLICATION_NAME_DISPLAY = "Unknown";
-
-    public static final String OTHER_APPLICATION_NAME_KEY = "__other";
-    public static final String OTHER_APPLICATION_NAME_DISPLAY = "Other";
 
     @JsonProperty("_id")
     private String id;
 
     @JsonProperty("@timestamp")
     private long timestamp;
-
-    @JsonProperty("@key")
-    private String key;
 
     @JsonProperty("range_start")
     private long rangeStartMs;
@@ -62,6 +55,9 @@ public class FlowSummary {
 
     @JsonProperty("grouped_by")
     private GroupedBy groupedBy;
+
+    @JsonProperty("grouped_by_key")
+    private String groupedByKey;
 
     @JsonProperty("aggregation_type")
     private AggregationType aggregationType;
@@ -101,12 +97,12 @@ public class FlowSummary {
         this.id = id;
     }
 
-    public String getKey() {
-        return key;
+    public String getGroupedByKey() {
+        return groupedByKey;
     }
 
-    public void setKey(String key) {
-        this.key = key;
+    public void setGroupedByKey(String groupedByKey) {
+        this.groupedByKey = groupedByKey;
     }
 
     public long getTimestamp() {
@@ -239,7 +235,7 @@ public class FlowSummary {
                 rangeEndMs == that.rangeEndMs &&
                 ranking == that.ranking &&
                 Objects.equals(id, that.id) &&
-                Objects.equals(key, that.key) &&
+                Objects.equals(groupedByKey, that.groupedByKey) &&
                 groupedBy == that.groupedBy &&
                 aggregationType == that.aggregationType &&
                 Objects.equals(bytesIngress, that.bytesIngress) &&
@@ -255,7 +251,7 @@ public class FlowSummary {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, timestamp, key, rangeStartMs, rangeEndMs, ranking, groupedBy, aggregationType, bytesIngress, bytesEgress, bytesTotal, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
+        return Objects.hash(id, timestamp, groupedByKey, rangeStartMs, rangeEndMs, ranking, groupedBy, aggregationType, bytesIngress, bytesEgress, bytesTotal, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
     }
 
     @Override
@@ -263,7 +259,7 @@ public class FlowSummary {
         return "FlowSummary{" +
                 "id='" + id + '\'' +
                 ", timestamp=" + timestamp +
-                ", key='" + key + '\'' +
+                ", groupedByKey='" + groupedByKey + '\'' +
                 ", rangeStartMs=" + rangeStartMs +
                 ", rangeEndMs=" + rangeEndMs +
                 ", ranking=" + ranking +

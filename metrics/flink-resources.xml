@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<resource-types>
+   <resourceType name="flinkJobManager" label="Flink Job Manager" resourceLabel="Flink Job Manager: ${host}">
+      <persistenceSelectorStrategy class="org.opennms.netmgt.collection.support.PersistAllSelectorStrategy"/>
+      <storageStrategy class="org.opennms.netmgt.collection.support.IndexStorageStrategy"/>
+   </resourceType>
+   <resourceType name="flinkJob" label="Flink Job" resourceLabel="Flink Job: ${job_name}">
+      <persistenceSelectorStrategy class="org.opennms.netmgt.collection.support.PersistAllSelectorStrategy"/>
+      <storageStrategy class="org.opennms.netmgt.collection.support.IndexStorageStrategy"/>
+   </resourceType>
+   <resourceType name="flinkTaskManager" label="Flink Task Manager" resourceLabel="Flink Task Manager: ${host}">
+      <persistenceSelectorStrategy class="org.opennms.netmgt.collection.support.PersistAllSelectorStrategy"/>
+      <storageStrategy class="org.opennms.netmgt.collection.support.IndexStorageStrategy"/>
+   </resourceType>
+   <resourceType name="flinkTask" label="Flink Task" resourceLabel="Flink Task: ${task_name}">
+      <persistenceSelectorStrategy class="org.opennms.netmgt.collection.support.PersistAllSelectorStrategy"/>
+      <storageStrategy class="org.opennms.netmgt.collection.support.IndexStorageStrategy"/>
+   </resourceType>
+</resource-types>

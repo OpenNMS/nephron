@@ -28,7 +28,7 @@ Run on Flink
 ./bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/target/nephron-bundled-1.0.0-SNAPSHOT.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false
 ```
 
-### Upgradine the code
+### Upgrading the code
 
 Stopping the job with a savepoint hangs currently, so we need to cancel the job and re-run a new one.
 
@@ -47,8 +47,6 @@ metrics.reporter.prom.port: 9250-9260
 metrics.reporter.slf4j.class: org.apache.flink.metrics.slf4j.Slf4jReporter
 metrics.reporter.slf4j.interval: 60 SECONDS
 ```
-
-TODO: Finish Prometheus collector and write DC definitions for it -> good use case
 
 #### Using savepoints
 
@@ -77,7 +75,7 @@ Now restart the job with:
 
 Install the template using:
 ```
-curl -XPUT -H 'Content-Type: application/json' http://localhost:9200/_template/netflow_agg -d@./src/main/resources/aggregated-flows-template.json
+curl -XPUT -H 'Content-Type: application/json' http://localhost:9200/_template/netflow_agg -d@./src/main/resources/netflow_agg-template.json
 ```
 
 ### OpenNMS Configuration

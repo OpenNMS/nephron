@@ -1,0 +1,84 @@
+<?xml version="1.0"?>
+<prometheus-datacollection-config>
+   <collection name="flink">
+     <rrd step="60">
+       <rra>RRA:AVERAGE:0.5:1:2016</rra>
+       <rra>RRA:AVERAGE:0.5:12:1488</rra>
+       <rra>RRA:AVERAGE:0.5:288:366</rra>
+       <rra>RRA:MAX:0.5:288:366</rra>
+       <rra>RRA:MIN:0.5:288:366</rra>
+     </rrd>
+
+     <group-ref>flink_jobmanager</group-ref>
+     <group-ref>flink_jobmanager_jvm</group-ref>
+     <group-ref>flink_jobmanager_job</group-ref>
+     <group-ref>flink_taskmanager_jvm</group-ref>
+     <group-ref>flink_taskmanager_task</group-ref>
+   </collection>
+
+   <!--
+      flink_jobmanager_taskSlotsAvailable{host="localhost",} 0.0
+   -->
+   <group name="flink_jobmanager"
+     resource-type="flinkJobManager"
+     filter-exp="name matches 'flink_jobmanager_[a-zA-Z]+'"
+     group-by-exp="labels[host]">
+
+     <numeric-attribute alias-exp="name.substring('flink_jobmanager_'.length())"/>
+     <string-attribute alias="host" value-exp="labels[host]"/>
+   </group>
+
+   <!--
+      flink_jobmanager_Status_JVM_GarbageCollector_PS_MarkSweep_Count{host="localhost",} 2.0
+      flink_jobmanager_Status_JVM_Memory_Heap_Max{host="localhost",} 1.071644672E9
+   -->
+   <group name="flink_jobmanager_jvm"
+     resource-type="flinkJobManager"
+     filter-exp="name matches 'flink_jobmanager_Status_JVM_.*'"
+     group-by-exp="labels[host]">
+
+     <numeric-attribute alias-exp="name.substring('flink_jobmanager_Status_JVM_'.length())"/>
+     <string-attribute alias="host" value-exp="labels[host]"/>
+   </group>
+
+   <!--
+      flink_jobmanager_job_uptime{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 1.56527124E8
+      flink_jobmanager_job_uptime{job_id="857f2ef61afd94034a6cab713a05df98",host="localhost",job_name="nephron",} 1.56527124E8
+    -->
+   <group name="flink_jobmanager_job"
+     resource-type="flinkJob"
+     filter-exp="name matches 'flink_jobmanager_job_.*'"
+     group-by-exp="labels[job_id]">
+
+     <numeric-attribute alias-exp="name.substring('flink_jobmanager_job_'.length())"/>
+     <string-attribute alias="job_id" value-exp="labels[job_id]"/>
+     <string-attribute alias="job_name" value-exp="labels[job_name]"/>
+   </group>
+
+   <!--
+      flink_taskmanager_Status_JVM_Memory_Mapped_MemoryUsed{tm_id="42bb6e71af3820977305d89635f47dbf",host="jw_dev_2",} 0.0
+   -->
+   <group name="flink_taskmanager_jvm"
+     resource-type="flinkTaskManager"
+     filter-exp="name matches 'flink_taskmanager_Status_JVM_.*'"
+     group-by-exp="labels[tm_id]">
+
+     <numeric-attribute alias-exp="name.substring('flink_taskmanager_Status_JVM_'.length())"/>
+     <string-attribute alias="tm_id" value-exp="labels[tm_id]"/>
+     <string-attribute alias="host" value-exp="labels[host]"/>
+   </group>
+
+   <!--
+      flink_taskmanager_job_task_buffers_inputQueueLength{job_id="857f2ef61afd94034a6cab713a05df98",task_id="f95b7a2724c0aab28071a01560e37ff5",task_attempt_id="fb1695219b469d5150d688c066a04577",host="jw_dev_2",task_name="FlowAnalyzer_CalculateFlowStatistics_CalculateTopAppsByExporterAndInterface_CalculateTopAppsByExporterAndInterface_top_k_per_key____FlowAnalyzer_CalculateFlowStatistics_CalculateTopAppsByExporterAndInterface_CalculateTopAppsByExporterAndInterface_flatten_Values_Map_ParMultiDo_Anonymous_____FlowAnalyzer_CalculateFlowStatistics_CalculateTopAppsByExporterAndInterface_CalculateTopAppsByExporterAndInterface_top_k_for_window_ParMultiDo_Anonymous_",task_attempt_num="0",job_name="nephron",tm_id="42bb6e71af3820977305d89635f47dbf",subtask_index="0",} 1.
+    -->
+   <group name="flink_taskmanager_task"
+     resource-type="flinkTask"
+     filter-exp="name matches 'flink_taskmanager_job_task_.*' and !(name matches 'flink_taskmanager_job_task_operator_.*')"
+     group-by-exp="labels[task_id]">
+
+     <numeric-attribute alias-exp="name.substring(name.lastIndexOf('_') + 1).replaceAll('PerSecond', '') "/>
+     <string-attribute alias="task_id" value-exp="labels[task_id]"/>
+     <string-attribute alias="task_name" value-exp="labels[task_name]"/>
+     <string-attribute alias="job_id" value-exp="labels[job_name]"/>
+   </group>
+</prometheus-datacollection-config>
