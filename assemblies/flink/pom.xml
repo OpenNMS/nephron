@@ -7,7 +7,7 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>flink-runner</artifactId>
-    <packaging>pom</packaging>
+    <packaging>jar</packaging>
     <name>Nephron :: Assemblies :: Flink Runner</name>
 
     <build>
@@ -19,7 +19,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.2.2</version>
                 <executions>
                     <execution>
                         <phase>package</phase>
