@@ -44,8 +44,8 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 @DefaultCoder(BytesInOut.BytesInOutCoder.class)
 public class BytesInOut implements Comparable<BytesInOut> {
-    final long bytesIn;
-    final long bytesOut;
+    long bytesIn;
+    long bytesOut;
 
     public BytesInOut(long bytesIn, long bytesOut) {
         this.bytesIn = bytesIn;
@@ -54,12 +54,20 @@ public class BytesInOut implements Comparable<BytesInOut> {
 
     public BytesInOut(FlowDocument flow, double multiplier) {
         // TODO: FIXME: Add test for sampling interval
+        double effectiveMultiplier = multiplier;
+        if (flow.hasSamplingInterval()) {
+            double samplingInterval = flow.getSamplingInterval().getValue();
+            if (samplingInterval > 0) {
+                effectiveMultiplier *= samplingInterval;
+            }
+        }
+
         if (Direction.INGRESS.equals(flow.getDirection())) {
-            bytesIn =  (long)(flow.getNumBytes().getValue() * flow.getSamplingInterval().getValue() * multiplier);
+            bytesIn =  (long)(flow.getNumBytes().getValue() * effectiveMultiplier);
             bytesOut = 0;
         } else {
             bytesIn = 0;
-            bytesOut = (long)(flow.getNumBytes().getValue() * flow.getSamplingInterval().getValue() * multiplier);
+            bytesOut = (long)(flow.getNumBytes().getValue() * effectiveMultiplier);
         }
     }
 
