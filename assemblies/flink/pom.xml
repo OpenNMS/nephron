@@ -47,6 +47,8 @@
                                     <mainClass>org.opennms.nephron.Nephron</mainClass>
                                 </transformer>
                             </transformers>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>shaded</shadedClassifierName>
                         </configuration>
                     </execution>
                 </executions>
