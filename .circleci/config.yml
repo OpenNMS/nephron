@@ -55,8 +55,41 @@ jobs:
       - store_test_results:
           path: ~/junit
 
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - project
+
+  deploy:
+    machine: true
+
+    steps:
+      - attach_workspace:
+          at: ~/
+
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+          - v1-dependencies-{{ checksum "pom.xml" }}
+          # fallback to using the latest cache if no exact match is found
+          - v1-dependencies-
+
+      - run:
+          name: Deploy the artifacts
+          command: |
+            mvn -s .circleci.settings.xml -DskipTests deploy
+
+
 workflows:
   version: 2
   build-deploy:
     jobs:
       - build
+      - deploy:
+          context: OSSRH Principal
+          requires:
+            - build
+          filters:
+            branches:
+              only:
+               - master
