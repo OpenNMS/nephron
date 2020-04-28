@@ -35,6 +35,7 @@
   "annotations": {
     "list": [
       {
+        "$$hashKey": "object:1909",
         "builtIn": 1,
         "datasource": "-- Grafana --",
         "enable": true,
@@ -50,7 +51,7 @@
   "gnetId": null,
   "graphTooltip": 0,
   "id": null,
-  "iteration": 1587174622856,
+  "iteration": 1588043386645,
   "links": [],
   "panels": [
     {
@@ -134,7 +135,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Traffic derived from sFlow (raw)",
+      "title": "Traffic derived from flows (raw)",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -150,6 +151,7 @@
       },
       "yaxes": [
         {
+          "$$hashKey": "object:5498",
           "format": "decbytes",
           "label": null,
           "logBase": 1,
@@ -158,6 +160,7 @@
           "show": true
         },
         {
+          "$$hashKey": "object:5499",
           "format": "short",
           "label": null,
           "logBase": 1,
@@ -597,6 +600,7 @@
           "alias": "Ingress",
           "bucketAggs": [
             {
+              "$$hashKey": "object:3786",
               "field": "@timestamp",
               "id": "2",
               "settings": {
@@ -609,6 +613,7 @@
           ],
           "metrics": [
             {
+              "$$hashKey": "object:3784",
               "field": "bytes_ingress",
               "id": "1",
               "meta": {},
@@ -616,7 +621,7 @@
               "type": "sum"
             }
           ],
-          "query": "grouped_by:EXPORTER_INTERFACE AND context:TOTAL AND exporter.foreign_source:$nodefs AND exporter.foreign_id:$nodefid AND if_index:$ifindex",
+          "query": "grouped_by:EXPORTER_INTERFACE AND aggregation_type:TOTAL AND exporter.foreign_source:$nodefs AND exporter.foreign_id:$nodefid AND if_index:$ifindex",
           "refId": "A",
           "timeField": "@timestamp"
         }
@@ -625,7 +630,7 @@
       "timeFrom": null,
       "timeRegions": [],
       "timeShift": null,
-      "title": "Traffic derived from sFlow (aggregated)",
+      "title": "Traffic derived from flows (aggregated)",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -641,6 +646,7 @@
       },
       "yaxes": [
         {
+          "$$hashKey": "object:5602",
           "format": "decbytes",
           "label": null,
           "logBase": 1,
@@ -649,6 +655,7 @@
           "show": true
         },
         {
+          "$$hashKey": "object:5603",
           "format": "short",
           "label": null,
           "logBase": 1,
@@ -754,6 +761,7 @@
         {
           "bucketAggs": [
             {
+              "$$hashKey": "object:3810",
               "fake": true,
               "field": "application",
               "id": "3",
@@ -768,6 +776,7 @@
           ],
           "metrics": [
             {
+              "$$hashKey": "object:3806",
               "field": "bytes_ingress",
               "id": "4",
               "meta": {},
@@ -775,6 +784,7 @@
               "type": "sum"
             },
             {
+              "$$hashKey": "object:3807",
               "field": "bytes_egress",
               "id": "5",
               "meta": {},
@@ -782,7 +792,7 @@
               "type": "sum"
             }
           ],
-          "query": "grouped_by:EXPORTER_INTERFACE_APPLICATION AND context:TOPK AND exporter.foreign_source:$nodefs AND exporter.foreign_id:$nodefid AND if_index:$ifindex",
+          "query": "grouped_by:EXPORTER_INTERFACE_APPLICATION AND aggregation_type:TOPK AND exporter.foreign_source:$nodefs AND exporter.foreign_id:$nodefid AND if_index:$ifindex",
           "refId": "B",
           "timeField": "@timestamp"
         }
@@ -884,6 +894,7 @@
         {
           "bucketAggs": [
             {
+              "$$hashKey": "object:3864",
               "fake": true,
               "field": "host_address",
               "id": "3",
@@ -898,6 +909,7 @@
           ],
           "metrics": [
             {
+              "$$hashKey": "object:3860",
               "field": "bytes_ingress",
               "id": "4",
               "meta": {},
@@ -905,6 +917,7 @@
               "type": "sum"
             },
             {
+              "$$hashKey": "object:3861",
               "field": "bytes_egress",
               "id": "5",
               "meta": {},
@@ -912,7 +925,7 @@
               "type": "sum"
             }
           ],
-          "query": "grouped_by:EXPORTER_INTERFACE_HOST AND context:TOPK AND exporter.foreign_source:$nodefs AND exporter.foreign_id:$nodefid AND if_index:$ifindex",
+          "query": "grouped_by:EXPORTER_INTERFACE_HOST AND aggregation_type:TOPK AND exporter.foreign_source:$nodefs AND exporter.foreign_id:$nodefid AND if_index:$ifindex",
           "refId": "B",
           "timeField": "@timestamp"
         }
@@ -997,6 +1010,7 @@
         {
           "bucketAggs": [
             {
+              "$$hashKey": "object:3918",
               "field": "conversation_key",
               "id": "2",
               "settings": {
@@ -1010,6 +1024,7 @@
           ],
           "metrics": [
             {
+              "$$hashKey": "object:3914",
               "field": "bytes_ingress",
               "id": "6",
               "meta": {},
@@ -1018,6 +1033,7 @@
               "type": "sum"
             },
             {
+              "$$hashKey": "object:3915",
               "field": "bytes_egress",
               "id": "7",
               "meta": {},
@@ -1025,7 +1041,7 @@
               "type": "sum"
             }
           ],
-          "query": "grouped_by:EXPORTER_INTERFACE_CONVERSATION AND context:TOPK AND exporter.foreign_source:$nodefs AND exporter.foreign_id:$nodefid AND if_index:$ifindex",
+          "query": "grouped_by:EXPORTER_INTERFACE_CONVERSATION AND aggregation_type:TOPK AND exporter.foreign_source:$nodefs AND exporter.foreign_id:$nodefid AND if_index:$ifindex",
           "refId": "B",
           "timeField": "@timestamp"
         }
@@ -1115,6 +1131,7 @@
           "bucketAggs": [],
           "metrics": [
             {
+              "$$hashKey": "object:4108",
               "field": "select field",
               "id": "1",
               "meta": {},
@@ -1219,6 +1236,7 @@
           "bucketAggs": [],
           "metrics": [
             {
+              "$$hashKey": "object:3968",
               "field": "select field",
               "id": "1",
               "meta": {},
@@ -1228,7 +1246,7 @@
               "type": "raw_document"
             }
           ],
-          "query": "grouped_by:EXPORTER_INTERFACE AND context:TOTAL AND exporter.foreign_source:$nodefs AND exporter.foreign_id:$nodefid AND if_index:$ifindex",
+          "query": "grouped_by:EXPORTER_INTERFACE AND aggregation_type:TOTAL AND exporter.foreign_source:$nodefs AND exporter.foreign_id:$nodefid AND if_index:$ifindex",
           "refId": "A",
           "timeField": "@timestamp"
         }
@@ -1240,7 +1258,7 @@
       "type": "table"
     }
   ],
-  "refresh": false,
+  "refresh": "5s",
   "schemaVersion": 22,
   "style": "dark",
   "tags": [],
@@ -1267,7 +1285,6 @@
       {
         "current": {
           "selected": false,
-          "tags": [],
           "text": "ES - Netflow Agg",
           "value": "ES - Netflow Agg"
         },
@@ -1286,7 +1303,6 @@
       {
         "current": {
           "selected": false,
-          "tags": [],
           "text": "ES NetFlow Raw",
           "value": "ES NetFlow Raw"
         },
@@ -1388,5 +1404,5 @@
   "variables": {
     "list": []
   },
-  "version": 17
+  "version": 20
 }
