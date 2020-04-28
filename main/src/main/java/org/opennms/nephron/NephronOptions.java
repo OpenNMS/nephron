@@ -113,29 +113,29 @@ public interface NephronOptions extends PipelineOptions {
             " by no more than this duration when compared to the latest timestamp observed, or the current time if " +
             "there is no backlog.")
     @Default.Long(2 * 60 * 1000L) // 2 minutes
-    Long getDefaultMaxInputDelayMs();
+    long getDefaultMaxInputDelayMs();
 
-    void setDefaultMaxInputDelayMs(Long value);
+    void setDefaultMaxInputDelayMs(long value);
 
     @Description("Max amount of time a flow is expected to last (last_switched - delta_switched). " +
             "Flows that last longer than this duration will be ignored and a warning will be logged.")
     @Default.Long(15 * 60 * 1000L) // 15 minutes
-    Long getMaxFlowDurationMs();
+    long getMaxFlowDurationMs();
 
-    void setMaxFlowDurationMs(Long value);
+    void setMaxFlowDurationMs(long value);
 
     @Description("Amount of time to wait before firing the pane after late data has arrived." +
             "Decrease this value for faster updates, at the cost of more update being fired.")
     @Default.Long(60 * 1000L) // 1 minute
-    Long getLateProcessingDelayMs();
+    long getLateProcessingDelayMs();
 
-    void setLateProcessingDelayMs(Long value);
+    void setLateProcessingDelayMs(long value);
 
     @Description("Max amount of time to wait for late flows to appear. " +
             "Changing this value will affect state size (less state to keep for smaller values) and the ability to process late data.")
     @Default.Long(4 * 60 * 60 * 1000L) // 4 hours
-    Long getAllowedLatenessMs();
+    long getAllowedLatenessMs();
 
-    void setAllowedLatenessMs(Long value);
+    void setAllowedLatenessMs(long value);
 
 }

@@ -114,11 +114,7 @@ public class Pipeline {
                 options.getFlowSourceTopic(), kafkaConsumerConfig));
 
         // Calculate the flow summary statistics
-        PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options.getTopK(),
-                Duration.millis(options.getFixedWindowSizeMs()),
-                Duration.millis(options.getMaxFlowDurationMs()),
-                Duration.millis(options.getLateProcessingDelayMs()),
-                Duration.millis(options.getAllowedLatenessMs())));
+        PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
 
         // Write the results out to Elasticsearch
         flowSummaries.apply(new WriteToElasticsearch(options));
@@ -153,6 +149,14 @@ public class Pipeline {
             this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
             this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
             this.allowedLateness = Objects.requireNonNull(allowedLateness);
+        }
+
+        public CalculateFlowStatistics(NephronOptions options) {
+            this(options.getTopK(),
+                    Duration.millis(options.getFixedWindowSizeMs()),
+                    Duration.millis(options.getMaxFlowDurationMs()),
+                    Duration.millis(options.getLateProcessingDelayMs()),
+                    Duration.millis(options.getAllowedLatenessMs()));
         }
 
         @Override

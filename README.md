@@ -1,6 +1,6 @@
 # Nephron [![CircleCI](https://circleci.com/gh/OpenNMS/nephron/tree/master.svg?style=svg)](https://circleci.com/gh/OpenNMS/nephron/tree/master)
 
-Streaming analytics for telemetry & flows.
+Streaming analytics for flows.
 
 ## Architecture
 
@@ -25,7 +25,7 @@ mvn clean package -Pflink-runner
 
 Run on Flink
 ```
-./bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/target/nephron-bundled-1.0.0-SNAPSHOT.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false
+./bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/assemblies/flink/target/nephron-flink-bundled-1.0.0-SNAPSHOT.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false
 ```
 
 ### Upgrading the code
@@ -75,7 +75,7 @@ Now restart the job with:
 
 Install the template using:
 ```
-curl -XPUT -H 'Content-Type: application/json' http://localhost:9200/_template/netflow_agg -d@./src/main/resources/netflow_agg-template.json
+curl -XPUT -H 'Content-Type: application/json' http://localhost:9200/_template/netflow_agg -d@./main/src/main/resources/netflow_agg-template.json
 ```
 
 ### OpenNMS Configuration
@@ -91,46 +91,6 @@ config:edit org.opennms.features.flows.persistence.elastic
 config:property-set enableForwarding true
 config:update
 ```
-
-and enable the Kafka exporter for telemetry:
-```
-config:edit org.opennms.features.kafka.producer.client
-config:property-set bootstrap.servers 127.0.0.1:9092
-config:update
-
-config:edit org.opennms.features.kafka.producer
-config:property-set eventTopic ""
-config:property-set alarmTopic ""
-config:property-set nodeTopic "opennms-nodes"
-config:property-set metricTopic "opennms-metrics"
-config:property-set forward.metrics true
-config:update
-
-feature:install opennms-kafka-producer
-```
-
-## Telemetry
-
-* Top K interfaces system wide
-* Top K interfaces per location
-* Top K interfaces per category
-* Top K interfaces per type
-
-* System with highest load average
-...
-
-## Flows
-
-* Top K applications system wide
-* Top K applications per device
-...
-
-## Other workloads to consider
-
-* [events] Top K event types
-* [events] Top K devices sending events
-* [alarms] Top K affected components by alarms
-* [bmp] Top K updates by prefix
 
 # References
 

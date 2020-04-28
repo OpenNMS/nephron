@@ -8,7 +8,7 @@
     <modelVersion>4.0.0</modelVersion>
     <artifactId>flink-runner</artifactId>
     <packaging>jar</packaging>
-    <name>Nephron :: Flink Runner</name>
+    <name>Nephron :: Assemblies :: Flink Runner</name>
 
     <build>
         <plugins>
@@ -31,7 +31,7 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
-                            <finalName>${project.artifactId}-bundled-${project.version}</finalName>
+                            <finalName>nephron-flink-bundled-${project.version}</finalName>
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>
@@ -63,6 +63,16 @@
             <groupId>org.opennms.nephron</groupId>
             <artifactId>nephron-main</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j-impl</artifactId>
+            <version>${log4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>${log4j.version}</version>
         </dependency>
     </dependencies>
 </project>
