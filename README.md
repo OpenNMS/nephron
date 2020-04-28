@@ -6,22 +6,16 @@ Streaming analytics for flows.
 
 Sentinel -> Kafka -> Nephron / Beam / Flink -> Elasticsearch
 
-## Run directly
+## Building
 
 Build & run:
 ```
-mvn package
-java -jar target/nephron-bundled-1.0.0-SNAPSHOT.jar
+mvn clean package
 ```
 
 ## Run on Flink
 
 >  We require Flink 1.9.x since Apache Beam is not yet compatible with Flink 1.10.x.
-
-Build for Flink
-```
-mvn clean package -Pflink-runner
-```
 
 Run on Flink
 ```
