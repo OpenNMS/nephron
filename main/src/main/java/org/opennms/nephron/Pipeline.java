@@ -540,8 +540,8 @@ public class Pipeline {
         // Use the range end as the timestamp
         flowSummary.setTimestamp(flowSummary.getRangeEndMs());
 
-        flowSummary.setBytesEgress(el.getValue().bytesOut);
-        flowSummary.setBytesIngress(el.getValue().bytesIn);
+        flowSummary.setBytesEgress(el.getValue().getBytesOut());
+        flowSummary.setBytesIngress(el.getValue().getBytesIn());
         flowSummary.setBytesTotal(flowSummary.getBytesIngress() + flowSummary.getBytesEgress());
         return flowSummary;
     }

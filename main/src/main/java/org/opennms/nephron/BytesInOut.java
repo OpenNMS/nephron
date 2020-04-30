@@ -44,8 +44,8 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 @DefaultCoder(BytesInOut.BytesInOutCoder.class)
 public class BytesInOut implements Comparable<BytesInOut> {
-    long bytesIn;
-    long bytesOut;
+    private long bytesIn;
+    private long bytesOut;
 
     public BytesInOut(long bytesIn, long bytesOut) {
         this.bytesIn = bytesIn;

@@ -399,6 +399,10 @@ public class Groupings {
             return conversationRef;
         }
 
+        public static ConversationRef of(FlowDocument flow) {
+            return of(flow.getConvoKey());
+        }
+
         public String getConversationKey() {
             return conversationKey;
         }
@@ -752,7 +756,7 @@ public class Groupings {
 
             final NodeRef nodeRef = NodeRef.of(flow);
             final InterfaceRef interfaceRef = InterfaceRef.of(flow);
-            final ConversationRef conversationRef = ConversationRef.of(flow.getConvoKey());
+            final ConversationRef conversationRef = ConversationRef.of(flow);
             return of(nodeRef, interfaceRef, conversationRef);
         }
 

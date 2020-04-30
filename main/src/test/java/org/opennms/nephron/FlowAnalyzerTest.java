@@ -124,7 +124,7 @@ public class FlowAnalyzerTest {
     }
 
     @Test
-    public void canHandleLateData() throws JsonProcessingException {
+    public void canHandleLateData() {
         Instant start = Instant.ofEpochMilli(1500000000000L);
         List<Long> flowTimestampOffsets =
                 ImmutableList.of(
@@ -133,7 +133,8 @@ public class FlowAnalyzerTest {
                         -3540_000L, // 59m ago
                         // ...
                         -2400_000L, // 40m ago
-                        -3600_000L  // 1 hour ago - late data
+                        -3600_000L,  // 1 hour ago - late data
+                        -24 * 3600_000L // 24 hours ago - late - should be discarded
                         );
 
         TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowDocumentProtobufCoder());
