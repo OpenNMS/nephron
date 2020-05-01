@@ -3,7 +3,7 @@
     <parent>
       <groupId>org.opennms.nephron</groupId>
       <artifactId>nephron-parent</artifactId>
-      <version>1.0.0-SNAPSHOT</version>
+      <version>0.1.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.opennms.nephron</groupId>
