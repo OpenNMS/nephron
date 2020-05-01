@@ -7,6 +7,7 @@
     <version>0.1.0</version>
     <name>Nephron :: Parent</name>
     <url>https://github.com/OpenNMS/nephron</url>
+    <description>Streaming analytics for OpenNMS</description>
 
     <licenses>
         <license>
@@ -14,6 +15,20 @@
             <url>http://www.gnu.org/licenses/agpl.html</url>
         </license>
     </licenses>
+
+    <scm>
+        <url>https://github.com/OpenNMS/nephron</url>
+        <connection>scm:git:git@github.com:OpenNMS/nephron.git</connection>
+        <tag>HEAD</tag>
+    </scm>
+
+    <developers>
+        <developer>
+            <id>j-white</id>
+            <name>Jesse White</name>
+            <email>jesse@opennms.com</email>
+        </developer>
+    </developers>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
