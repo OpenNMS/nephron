@@ -171,21 +171,6 @@
                 </dependency>
             </dependencies>
         </profile>
-        <profile>
-            <id>flink-runner</id>
-            <!-- Makes the FlinkRunner available when running a pipeline. -->
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.beam</groupId>
-                    <!-- Please see the Flink Runner page for an up-to-date list
-                         of supported Flink versions and their artifact names:
-                         https://beam.apache.org/documentation/runners/flink/ -->
-                    <artifactId>${flink.artifact.name}</artifactId>
-                    <version>${beam.version}</version>
-                    <scope>runtime</scope>
-                </dependency>
-            </dependencies>
-        </profile>
     </profiles>
 
     <repositories>
