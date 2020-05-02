@@ -19,7 +19,7 @@ mvn clean package
 
 Run on Flink
 ```
-./bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/assemblies/flink/target/nephron-flink-bundled-1.0.0-SNAPSHOT.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false
+./bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/assemblies/flink/target/nephron-flink-bundled-*.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false
 ```
 
 ### Upgrading the code
