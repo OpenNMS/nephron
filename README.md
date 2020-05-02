@@ -19,12 +19,14 @@ mvn clean package
 
 Run on Flink
 ```
-./bin/flink run -c org.opennms.nephron.Nephron /root/git/nephron/assemblies/flink/target/nephron-flink-bundled-*.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false
+./bin/flink run --parallelism 1 --class org.opennms.nephron.Nephron /root/git/nephron/assemblies/flink/target/nephron-flink-bundled-*.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false
 ```
 
 ### Upgrading the code
 
-Stopping the job with a savepoint hangs currently, so we need to cancel the job and re-run a new one.
+To restart the job and keep the current state, see the instructions belllow.
+
+To restart the job without keeping the state, cancel the job and re-run a new one.
 
 ### Metrics
 
@@ -53,9 +55,7 @@ metrics.reporter.slf4j.class: org.apache.flink.metrics.slf4j.Slf4jReporter
 metrics.reporter.slf4j.interval: 60 SECONDS
 ```
 
-### Using savepoints
-
-Here's what the procedure *should* be when applying patches.
+### Restart job w/ savepoints
 
 Rebuild the artifact in place.
 
@@ -69,11 +69,9 @@ Stop the job with a savepoint:
 ./bin/flink stop 99d87bc4d3a271a72f3f89dfe5a904d7 -p /tmp/state
 ```
 
-> TODO: This hangs.
-
 Now restart the job with:
 ```
-???
+./bin/flink run --parallelism 1 --fromSavepoint /tmp/state/savepoint-5cfdc5-00788010255a --class org.opennms.nephron.Nephron /root/git/nephron/assemblies/flink/target/nephron-flink-bundled-*.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false
 ```
 
 ## Elasticsearch
