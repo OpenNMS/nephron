@@ -158,8 +158,9 @@ public class Groupings {
         private String foreignId;
         private Integer nodeId;
 
-        public static NodeRef of(String foreignSource, String foreignId) {
+        public static NodeRef of(int nodeId, String foreignSource, String foreignId) {
             NodeRef nodeRef = new NodeRef();
+            nodeRef.setNodeId(nodeId);
             nodeRef.setForeignSource(foreignSource);
             nodeRef.setForeignId(foreignId);
             return nodeRef;
@@ -178,7 +179,7 @@ public class Groupings {
             final NodeInfo exporterNode = flow.getExporterNode();
             if (!Strings.isNullOrEmpty(exporterNode.getForeignSource())
                     && !Strings.isNullOrEmpty(exporterNode.getForeginId())) {
-                return NodeRef.of(exporterNode.getForeignSource(), exporterNode.getForeginId());
+                return NodeRef.of(exporterNode.getNodeId(), exporterNode.getForeignSource(), exporterNode.getForeginId());
             } else {
                 return NodeRef.of(exporterNode.getNodeId());
             }

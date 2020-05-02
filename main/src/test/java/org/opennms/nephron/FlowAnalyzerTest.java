@@ -113,6 +113,7 @@ public class FlowAnalyzerTest {
         ExporterNode exporterNode = new ExporterNode();
         exporterNode.setForeignSource("SomeFs");
         exporterNode.setForeignId("SomeFid");
+        exporterNode.setNodeId(99);
         summary.setExporter(exporterNode);
 
         PAssert.that(output)
@@ -189,6 +190,7 @@ public class FlowAnalyzerTest {
         ExporterNode exporterNode = new ExporterNode();
         exporterNode.setForeignSource("SomeFs");
         exporterNode.setForeignId("SomeFid");
+        exporterNode.setNodeId(99);
         summaryFromOnTimePane.setExporter(exporterNode);
 
         IntervalWindow windowWithLateArrival = new IntervalWindow(
