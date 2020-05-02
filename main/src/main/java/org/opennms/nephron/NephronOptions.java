@@ -98,7 +98,7 @@ public interface NephronOptions extends PipelineOptions {
     void setElasticPassword(String value);
 
     @Description("Elasticsearch Index Strategy")
-    @Default.Enum("DAILY")
+    @Default.Enum("MONTHLY")
     IndexStrategy getElasticIndexStrategy();
 
     void setElasticIndexStrategy(IndexStrategy value);
