@@ -34,14 +34,21 @@ import static org.opennms.nephron.flowgen.FlowGenerator.GIGABYTE;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
+import org.apache.beam.sdk.transforms.Create;
+import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.joda.time.Duration;
 import org.junit.Before;
@@ -58,6 +65,7 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 
 public class FlowAnalyzerTest {
 
@@ -92,10 +100,13 @@ public class FlowAnalyzerTest {
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
+        final PCollectionView<Map<String, String>> hostnames = p.apply(Create.<KV<String, String>>of(KV.of("1.2.3.4", "example.com")))
+                                                                     .apply(View.asMap());
+
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(new Pipeline.WindowedFlows(Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface(), hostnames));
 
         FlowSummary summary = new FlowSummary();
         summary.setGroupedByKey("SomeFs:SomeFid-98");
@@ -169,10 +180,13 @@ public class FlowAnalyzerTest {
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
+        final PCollectionView<Map<String, String>> hostnames = p.apply(Create.<KV<String, String>>of(KV.of("1.2.3.4", "example.com")))
+                                                                .apply(View.asMap());
+
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(new Pipeline.WindowedFlows(Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface(), hostnames));
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();
         summaryFromOnTimePane.setGroupedByKey("SomeFs:SomeFid-98");
