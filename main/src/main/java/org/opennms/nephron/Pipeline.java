@@ -454,8 +454,12 @@ public class Pipeline {
             @ProcessElement
             public void processElement(ProcessContext c) {
                 final FlowDocument flowDocument = c.element();
-                Optional.ofNullable(flowDocument.getSrcHostname()).ifPresent(hostname -> c.output(KV.of(flowDocument.getSrcAddress(), hostname)));
-                Optional.ofNullable(flowDocument.getDstHostname()).ifPresent(hostname -> c.output(KV.of(flowDocument.getDstAddress(), hostname)));
+                if (!Strings.isNullOrEmpty(flowDocument.getSrcHostname())) {
+                    c.output(KV.of(flowDocument.getSrcAddress(), flowDocument.getSrcHostname()));
+                }
+                if (!Strings.isNullOrEmpty(flowDocument.getDstHostname())) {
+                    c.output(KV.of(flowDocument.getDstAddress(), flowDocument.getDstHostname()));
+                }
             }
         });
     }
