@@ -137,8 +137,8 @@ public class Groupings {
         public Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException {
             final NodeRef nodeRef = NodeRef.of(flow);
             final InterfaceRef interfaceRef = InterfaceRef.of(flow);
-            return Arrays.asList(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getSrcAddress(), flow.getSrcHostname())),
-                    ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getDstAddress(), flow.getDstHostname())));
+            return Arrays.asList(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getSrcAddress())),
+                    ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getDstAddress())));
         }
     }
 
@@ -338,12 +338,10 @@ public class Groupings {
 
     public static class HostRef implements Ref {
         private String address;
-        private String hostname;
 
-        public static HostRef of(String address, String hostname) {
+        public static HostRef of(String address) {
             HostRef hostRef = new HostRef();
             hostRef.setAddress(address);
-            hostRef.setHostname(hostname);
             return hostRef;
         }
 
@@ -355,33 +353,23 @@ public class Groupings {
             this.address = address;
         }
 
-        public String getHostname() {
-            return hostname;
-        }
-
-        public void setHostname(String hostname) {
-            this.hostname = hostname;
-        }
-
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             HostRef hostRef = (HostRef) o;
-            return Objects.equals(address, hostRef.address) &&
-                    Objects.equals(hostname, hostRef.hostname);
+            return Objects.equals(address, hostRef.address);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(address, hostname);
+            return Objects.hash(address);
         }
 
         @Override
         public String toString() {
             return "HostRef{" +
                     "address='" + address + '\'' +
-                    ", hostname='" + hostname + '\'' +
                     '}';
         }
 
@@ -860,7 +848,6 @@ public class Groupings {
             flow.setExporter(toExporterNode(key.nodeRef));
             flow.setIfIndex(key.interfaceRef.ifIndex);
             flow.setHostAddress(key.hostRef.address);
-            flow.setHostName(key.hostRef.hostname);
         }
 
         @Override
@@ -929,7 +916,6 @@ public class Groupings {
                         NODE_REF_KEY_CODER.encode(key.nodeRef, os);
                         INT_CODER.encode(key.interfaceRef.ifIndex, os);
                         STRING_CODER.encode(key.hostRef.address, os);
-                        STRING_CODER.encode(key.hostRef.hostname, os);
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
@@ -980,7 +966,6 @@ public class Groupings {
 
                 key.hostRef = new HostRef();
                 key.hostRef.address = STRING_CODER.decode(is);
-                key.hostRef.hostname = STRING_CODER.decode(is);
                 return key;
             } else if (type == 4) {
                 ExporterInterfaceConversationKey key = new ExporterInterfaceConversationKey();

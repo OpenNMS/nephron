@@ -30,18 +30,26 @@ package org.opennms.nephron;
 
 import static org.opennms.nephron.Pipeline.ReadFromKafka.getTimestamp;
 import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE;
+import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE_APPLICATION;
+import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE_CONVERSATION;
+import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE_HOST;
 import static org.opennms.nephron.flowgen.FlowGenerator.GIGABYTE;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
+import org.apache.beam.sdk.transforms.Create;
+import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.joda.time.Duration;
 import org.junit.Before;
@@ -92,10 +100,13 @@ public class FlowAnalyzerTest {
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
+        final PCollectionView<Map<String, String>> hostnames = p.apply(Create.<KV<String, String>>of(KV.of("1.2.3.4", "example.com")))
+                                                                     .apply(View.asMap());
+
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(new Pipeline.WindowedFlows(Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface(), hostnames));
 
         FlowSummary summary = new FlowSummary();
         summary.setGroupedByKey("SomeFs:SomeFid-98");
@@ -169,10 +180,13 @@ public class FlowAnalyzerTest {
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
+        final PCollectionView<Map<String, String>> hostnames = p.apply(Create.<KV<String, String>>of(KV.of("1.2.3.4", "example.com")))
+                                                                .apply(View.asMap());
+
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(new Pipeline.WindowedFlows(Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface(), hostnames));
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();
         summaryFromOnTimePane.setGroupedByKey("SomeFs:SomeFid-98");
@@ -214,6 +228,193 @@ public class FlowAnalyzerTest {
         p.run();
     }
 
+    @Test
+    public void canAssociateHostnames() {
+        TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowDocumentProtobufCoder());
+
+        flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(new SyntheticFlowBuilder()
+                                                                                      .withExporter("SomeFs", "SomeFid", 99)
+                                                                                      .withSnmpInterfaceId(98)
+                                                                                      .withApplication("SomeApplication")
+                                                                                      .withHostnames("first.src.example.com", "second.dst.example.com")
+                                                                                      .withFlow(Instant.ofEpochMilli(1500000000000L), Instant.ofEpochMilli(1500000000100L),
+                                                                                                "10.0.0.1", 88,
+                                                                                                "10.0.0.2", 99,
+                                                                                                42)
+                                                                                      .build().get(0),
+                                                                              org.joda.time.Instant.ofEpochMilli(1500000000000L)));
+
+        flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(new SyntheticFlowBuilder()
+                                                                                      .withExporter("SomeFs", "SomeFid", 99)
+                                                                                      .withSnmpInterfaceId(98)
+                                                                                      .withApplication("SomeApplication")
+                                                                                      .withHostnames("second.src.example.com", null)
+                                                                                      .withFlow(Instant.ofEpochMilli(1500000001000L), Instant.ofEpochMilli(1500000001100L),
+                                                                                                "10.0.0.2", 88,
+                                                                                                "10.0.0.3", 99,
+                                                                                                23)
+                                                                                      .build().get(0),
+                                                                              org.joda.time.Instant.ofEpochMilli(1500000001000L)));
+
+        flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(new SyntheticFlowBuilder()
+                                                                                      .withExporter("SomeFs", "SomeFid", 99)
+                                                                                      .withSnmpInterfaceId(98)
+                                                                                      .withApplication("SomeApplication")
+                                                                                      .withHostnames(null, "third.dst.example.com")
+                                                                                      .withFlow(Instant.ofEpochMilli(1500000002000L), Instant.ofEpochMilli(1500000002100L),
+                                                                                                "10.0.0.1", 88,
+                                                                                                "10.0.0.3", 99,
+                                                                                                1337)
+                                                                                      .build().get(0),
+                                                                              org.joda.time.Instant.ofEpochMilli(1500000002000L)));
+
+        final TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
+        final PCollection<FlowSummary> output = p.apply(flowStream)
+                                                 .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)));
+
+        final ExporterNode exporterNode = new ExporterNode();
+        exporterNode.setForeignSource("SomeFs");
+        exporterNode.setForeignId("SomeFid");
+        exporterNode.setNodeId(99);
+
+        final FlowSummary[] summaries = new FlowSummary[]{
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(0);
+                    this.setGroupedBy(EXPORTER_INTERFACE);
+                    this.setAggregationType(AggregationType.TOTAL);
+                    this.setBytesIngress(1402L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(1402L);
+                    this.setIfIndex(98);
+                    this.setExporter(exporterNode);
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.1\",\"10.0.0.3\",\"SomeApplication\"]");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(1);
+                    this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(1337L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(1337L);
+                    this.setIfIndex(98);
+                    this.setExporter(exporterNode);
+                    this.setConversationKey("[\"\",6,\"10.0.0.1\",\"10.0.0.3\",\"SomeApplication\"]");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.1\",\"10.0.0.2\",\"SomeApplication\"]");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(2);
+                    this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(42L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(42L);
+                    this.setIfIndex(98);
+                    this.setExporter(exporterNode);
+                    this.setConversationKey("[\"\",6,\"10.0.0.1\",\"10.0.0.2\",\"SomeApplication\"]");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.2\",\"10.0.0.3\",\"SomeApplication\"]");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(3);
+                    this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(23L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(23L);
+                    this.setIfIndex(98);
+                    this.setExporter(exporterNode);
+                    this.setConversationKey("[\"\",6,\"10.0.0.2\",\"10.0.0.3\",\"SomeApplication\"]");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-SomeApplication");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(1);
+                    this.setGroupedBy(EXPORTER_INTERFACE_APPLICATION);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(1402L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(1402L);
+                    this.setIfIndex(98);
+                    this.setExporter(exporterNode);
+                    this.setApplication("SomeApplication");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.1");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(1);
+                    this.setGroupedBy(EXPORTER_INTERFACE_HOST);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(1379L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(1379L);
+                    this.setIfIndex(98);
+                    this.setExporter(exporterNode);
+                    this.setHostAddress("10.0.0.1");
+                    this.setHostName("first.src.example.com");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.2");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(3);
+                    this.setGroupedBy(EXPORTER_INTERFACE_HOST);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(65L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(65L);
+                    this.setIfIndex(98);
+                    this.setExporter(exporterNode);
+                    this.setHostAddress("10.0.0.2");
+                    this.setHostName("second.dst.example.com");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.3");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(2);
+                    this.setGroupedBy(EXPORTER_INTERFACE_HOST);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(1360L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(1360L);
+                    this.setIfIndex(98);
+                    this.setExporter(exporterNode);
+                    this.setHostAddress("10.0.0.3");
+                    this.setHostName("third.dst.example.com");
+                }}
+        };
+
+        PAssert.that(output)
+               .containsInAnyOrder(summaries);
+
+        p.run();
+    }
+
     private static org.joda.time.Instant toJoda(Instant instant) {
         return org.joda.time.Instant.ofEpochMilli(instant.toEpochMilli());
     }
@@ -226,5 +427,4 @@ public class FlowAnalyzerTest {
             throw new RuntimeException(e);
         }
     }
-
 }
