@@ -138,4 +138,27 @@ public interface NephronOptions extends PipelineOptions {
 
     void setAllowedLatenessMs(long value);
 
+    @Description("Elasticsearch Connection Timeout in milliseconds")
+    @Default.Integer(30 * 1000) // 30 seconds
+    int getElasticConnectTimeout();
+
+    void setElasticConnectTimeout(int value);
+
+    @Description("Elasticsearch Socket Timeout in milliseconds")
+    @Default.Integer(30 * 1000) // 30 seconds
+    int getElasticSocketTimeout();
+
+    void setElasticSocketTimeout(int value);
+
+    @Description("Elasticsearch Retry Count")
+    @Default.Integer(3) // 3 Retries
+    int getElasticRetryCount();
+
+    void setElasticRetryCount(int value);
+
+    @Description("Elasticsearch Retry Duration")
+    @Default.Long(3 * 1000L) // 3 Seconds
+    long getElasticRetryDuration();
+
+    void setElasticRetryDuration(long value);
 }
