@@ -38,45 +38,28 @@ import java.util.Objects;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.DefaultCoder;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarLongCoder;
-import org.opennms.netmgt.flows.persistence.model.Direction;
-import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
-@DefaultCoder(BytesInOut.BytesInOutCoder.class)
-public class BytesInOut implements Comparable<BytesInOut> {
+import com.google.common.base.Strings;
+
+@DefaultCoder(Aggregate.AggregateCoder.class)
+public class Aggregate {
     private long bytesIn;
     private long bytesOut;
 
-    public BytesInOut(long bytesIn, long bytesOut) {
+    private String hostname;
+
+    public Aggregate(long bytesIn, long bytesOut,
+                     final String hostname) {
         this.bytesIn = bytesIn;
         this.bytesOut = bytesOut;
+        this.hostname = hostname;
     }
 
-    public BytesInOut(FlowDocument flow, double multiplier) {
-        // TODO: FIXME: Add test for sampling interval
-        double effectiveMultiplier = multiplier;
-        if (flow.hasSamplingInterval()) {
-            double samplingInterval = flow.getSamplingInterval().getValue();
-            if (samplingInterval > 0) {
-                effectiveMultiplier *= samplingInterval;
-            }
-        }
-
-        if (Direction.INGRESS.equals(flow.getDirection())) {
-            bytesIn =  (long)(flow.getNumBytes().getValue() * effectiveMultiplier);
-            bytesOut = 0;
-        } else {
-            bytesIn = 0;
-            bytesOut = (long)(flow.getNumBytes().getValue() * effectiveMultiplier);
-        }
-    }
-
-    public BytesInOut(FlowDocument flow) {
-        this(flow, 1.0d);
-    }
-
-    public static BytesInOut sum(BytesInOut a, BytesInOut b) {
-        return new BytesInOut(a.bytesIn + b.bytesIn, a.bytesOut + b.bytesOut);
+    public static Aggregate merge(final Aggregate a, final Aggregate b) {
+        return new Aggregate(a.bytesIn + b.bytesIn, a.bytesOut + b.bytesOut,
+                             a.hostname != null ? a.hostname : b.hostname);
     }
 
     public long getBytesIn() {
@@ -87,18 +70,22 @@ public class BytesInOut implements Comparable<BytesInOut> {
         return bytesOut;
     }
 
-    @Override
-    public int compareTo(BytesInOut other) {
-        return Long.compare(bytesIn + bytesOut, other.bytesIn + other.bytesOut);
+    public String getHostname() {
+        return this.hostname;
+    }
+
+    public long getBytes() {
+        return this.bytesIn + this.bytesOut;
     }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof BytesInOut)) return false;
-        BytesInOut flowBytes = (BytesInOut) o;
+        if (!(o instanceof Aggregate)) return false;
+        Aggregate flowBytes = (Aggregate) o;
         return bytesIn == flowBytes.bytesIn &&
-                bytesOut == flowBytes.bytesOut;
+                bytesOut == flowBytes.bytesOut &&
+                Objects.equals(hostname, flowBytes.hostname);
     }
 
     @Override
@@ -108,17 +95,19 @@ public class BytesInOut implements Comparable<BytesInOut> {
 
     @Override
     public String toString() {
-        return "FlowBytes{" +
+        return "Aggregate{" +
                 "bytesIn=" + bytesIn +
                 ", bytesOut=" + bytesOut +
-                '}';
+                ", hostname=" + hostname +
+               '}';
     }
 
-    public static class BytesInOutCoder extends AtomicCoder<BytesInOut> {
+    public static class AggregateCoder extends AtomicCoder<Aggregate> {
         private final Coder<Long> LONG_CODER = VarLongCoder.of();
+        private final Coder<String> STRING_CODER = StringUtf8Coder.of();
 
         @Override
-        public void encode(BytesInOut value, OutputStream outStream) throws IOException {
+        public void encode(Aggregate value, OutputStream outStream) throws IOException {
             // TODO: FIXME: Hack for NPEs
             // Caused by: java.lang.NullPointerException
             //	at org.opennms.nephron.FlowBytes$FlowBytesCoder.encode(FlowBytes.java:112)
@@ -132,17 +121,20 @@ public class BytesInOut implements Comparable<BytesInOut> {
                 RATE_LIMITED_LOG.error("Got null FlowBytes value. Encoding as 0s.");
                 LONG_CODER.encode(0L, outStream);
                 LONG_CODER.encode(0L, outStream);
+                STRING_CODER.encode("", outStream);
                 return;
             }
             LONG_CODER.encode(value.bytesIn, outStream);
             LONG_CODER.encode(value.bytesOut, outStream);
+            STRING_CODER.encode(Strings.nullToEmpty(value.hostname), outStream);
         }
 
         @Override
-        public BytesInOut decode(InputStream inStream) throws IOException {
+        public Aggregate decode(InputStream inStream) throws IOException {
             final long bytesIn = LONG_CODER.decode(inStream);
             final long bytesOut = LONG_CODER.decode(inStream);
-            return new BytesInOut(bytesIn, bytesOut);
+            final String hostname = STRING_CODER.decode(inStream);
+            return new Aggregate(bytesIn, bytesOut, Strings.emptyToNull(hostname));
         }
     }
 }

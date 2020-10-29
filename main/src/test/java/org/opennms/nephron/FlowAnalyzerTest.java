@@ -100,13 +100,10 @@ public class FlowAnalyzerTest {
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
-        final PCollectionView<Map<String, String>> hostnames = p.apply(Create.<KV<String, String>>of(KV.of("1.2.3.4", "example.com")))
-                                                                     .apply(View.asMap());
-
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(new Pipeline.WindowedFlows(Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface(), hostnames));
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
         FlowSummary summary = new FlowSummary();
         summary.setGroupedByKey("SomeFs:SomeFid-98");
@@ -180,13 +177,10 @@ public class FlowAnalyzerTest {
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
-        final PCollectionView<Map<String, String>> hostnames = p.apply(Create.<KV<String, String>>of(KV.of("1.2.3.4", "example.com")))
-                                                                .apply(View.asMap());
-
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(new Pipeline.WindowedFlows(Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface(), hostnames));
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();
         summaryFromOnTimePane.setGroupedByKey("SomeFs:SomeFid-98");

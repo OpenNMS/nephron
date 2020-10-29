@@ -34,7 +34,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
@@ -50,10 +49,8 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.transforms.SerializableBiFunction;
 import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
-import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
@@ -63,7 +60,6 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
-import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -137,7 +133,7 @@ public class Pipeline {
         coderRegistry.registerCoderForClass(FlowSummary.class, new JacksonJsonCoder<>(FlowSummary.class));
         coderRegistry.registerCoderForClass(Groupings.ExporterInterfaceApplicationKey.class, new Groupings.CompoundKeyCoder());
         coderRegistry.registerCoderForClass(Groupings.CompoundKey.class, new Groupings.CompoundKeyCoder());
-        coderRegistry.registerCoderForClass(BytesInOut.class, new BytesInOut.BytesInOutCoder());
+        coderRegistry.registerCoderForClass(Aggregate.class, new Aggregate.AggregateCoder());
     }
 
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
@@ -168,29 +164,17 @@ public class Pipeline {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
                     new WindowedFlows(fixedWindowSize, maxFlowDuration, lateProcessingDelay, allowedLateness));
 
-            // Extract hostnames collected by address
-            final PCollectionView<Map<String, String>> hostnames = windowedStreamOfFlows
-                    .apply(extractHostname())
-                    .apply(Combine.perKey(new SerializableBiFunction<String, String, String>() {
-                        @Override
-                        public String apply(final String o1, final String o2) {
-                            // Always use the first input
-                            return o1;
-                        }
-                    }))
-                    .apply(View.asMap());
-
             PCollection<FlowSummary> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
-                    new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface(), hostnames));
+                    new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
             PCollection<FlowSummary> topKAppsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopAppsByExporterAndInterface",
-                    new CalculateTopKGroups("CalculateTopAppsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceApplication(), hostnames));
+                    new CalculateTopKGroups("CalculateTopAppsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceApplication()));
 
             PCollection<FlowSummary> topKHostsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopHostsByExporterAndInterface",
-                    new CalculateTopKGroups("CalculateTopHostsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceHost(), hostnames));
+                    new CalculateTopKGroups("CalculateTopHostsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceHost()));
 
             PCollection<FlowSummary> topKConversationsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopConversationsByExporterAndInterface",
-                    new CalculateTopKGroups("CalculateTopConversationsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceConversation(), hostnames));
+                    new CalculateTopKGroups("CalculateTopConversationsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceConversation()));
 
             // Merge all the collections
             PCollectionList<FlowSummary> flowSummaries = PCollectionList.of(totalBytesByExporterAndInterface)
@@ -228,44 +212,38 @@ public class Pipeline {
     public static class CalculateTopKGroups extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
         private final String transformPrefix;
         private final int topK;
-        private final DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> groupingBy;
-        private final PCollectionView<Map<String, String>> hostnames;
+        private final DoFn<FlowDocument, KV<Groupings.CompoundKey, Aggregate>> groupingBy;
 
-        public CalculateTopKGroups(String transformPrefix, int topK, DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> groupingBy,
-                                   final PCollectionView<Map<String, String>> hostnames) {
+        public CalculateTopKGroups(String transformPrefix, int topK, DoFn<FlowDocument, KV<Groupings.CompoundKey, Aggregate>> groupingBy) {
             this.transformPrefix = Objects.requireNonNull(transformPrefix);
             this.topK = topK;
             this.groupingBy = Objects.requireNonNull(groupingBy);
-            this.hostnames = Objects.requireNonNull(hostnames);
         }
 
         @Override
         public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
-            return input.apply(transformPrefix + "group_by_key", ParDo.of(groupingBy))
-                    .apply(transformPrefix + "compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
+            return input.apply(transformPrefix + "group_by_key_in_window", ParDo.of(groupingBy))
                     .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply(transformPrefix + "group_by_outer_key", ParDo.of(new DoFn<KV<Groupings.CompoundKey, BytesInOut>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, BytesInOut>>>() {
+                    .apply(transformPrefix + "group_by_outer_key", ParDo.of(new DoFn<KV<Groupings.CompoundKey, Aggregate>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, Aggregate>>>() {
                         @ProcessElement
                         public void processElement(ProcessContext c) {
-                            KV<Groupings.CompoundKey, BytesInOut> el = c.element();
+                            KV<Groupings.CompoundKey, Aggregate> el = c.element();
                             c.output(KV.of(el.getKey().getOuterKey(), el));
                         }
                     }))
                     .apply(transformPrefix + "top_k_per_key", Top.perKey(topK, new FlowBytesValueComparator()))
                     .apply(transformPrefix + "flatten", Values.create())
-                    .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, BytesInOut>>, FlowSummary>() {
+                    .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, Aggregate>>, FlowSummary>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, IntervalWindow window) {
-                            final Map<String, String> hostnames = c.sideInput(CalculateTopKGroups.this.hostnames);
-
                             int ranking = 1;
-                            for (KV<Groupings.CompoundKey, BytesInOut> el : c.element()) {
-                                FlowSummary flowSummary = toFlowSummary(AggregationType.TOPK, window, el, hostnames);
+                            for (KV<Groupings.CompoundKey, Aggregate> el : c.element()) {
+                                FlowSummary flowSummary = toFlowSummary(AggregationType.TOPK, window, el);
                                 flowSummary.setRanking(ranking++);
                                 c.output(flowSummary);
                             }
                         }
-                    }).withSideInputs(hostnames));
+                    }));
         }
     }
 
@@ -275,28 +253,23 @@ public class Pipeline {
      */
     public static class CalculateTotalBytes extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
         private final String transformPrefix;
-        private final DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> groupingBy;
-        private final PCollectionView<Map<String, String>> hostnames;
+        private final DoFn<FlowDocument, KV<Groupings.CompoundKey, Aggregate>> groupingBy;
 
-        public CalculateTotalBytes(String transformPrefix, DoFn<FlowDocument, KV<Groupings.CompoundKey, FlowDocument>> groupingBy,
-                                   final PCollectionView<Map<String, String>> hostnames) {
+        public CalculateTotalBytes(String transformPrefix, DoFn<FlowDocument, KV<Groupings.CompoundKey, Aggregate>> groupingBy) {
             this.transformPrefix = Objects.requireNonNull(transformPrefix);
             this.groupingBy = Objects.requireNonNull(groupingBy);
-            this.hostnames = Objects.requireNonNull(hostnames);
         }
 
         @Override
         public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
-            return input.apply(transformPrefix + "group_by_key", ParDo.of(groupingBy))
-                    .apply(transformPrefix + "compute_bytes_in_window", ParDo.of(new ToWindowedBytes()))
+            return input.apply(transformPrefix + "group_by_key_in_window", ParDo.of(groupingBy))
                     .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, BytesInOut>, FlowSummary>() {
+                    .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, Aggregate>, FlowSummary>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, IntervalWindow window) {
-                            final Map<String, String> hostnames = c.sideInput(CalculateTotalBytes.this.hostnames);
-                            c.output(toFlowSummary(AggregationType.TOTAL, window, c.element(), hostnames));
+                            c.output(toFlowSummary(AggregationType.TOTAL, window, c.element()));
                         }
-                    }).withSideInputs(hostnames));
+                    }));
         }
     }
 
@@ -449,76 +422,17 @@ public class Pipeline {
         });
     }
 
-    private static ParDo.SingleOutput<FlowDocument, KV<String, String>> extractHostname() {
-        return ParDo.of(new DoFn<FlowDocument, KV<String, String>>() {
-            @ProcessElement
-            public void processElement(ProcessContext c) {
-                final FlowDocument flowDocument = c.element();
-                if (!Strings.isNullOrEmpty(flowDocument.getSrcHostname())) {
-                    c.output(KV.of(flowDocument.getSrcAddress(), flowDocument.getSrcHostname()));
-                }
-                if (!Strings.isNullOrEmpty(flowDocument.getDstHostname())) {
-                    c.output(KV.of(flowDocument.getDstAddress(), flowDocument.getDstHostname()));
-                }
-            }
-        });
-    }
-
-    static class SumBytes extends Combine.BinaryCombineFn<BytesInOut> {
+    static class SumBytes extends Combine.BinaryCombineFn<Aggregate> {
         @Override
-        public BytesInOut apply(BytesInOut left, BytesInOut right) {
-            return BytesInOut.sum(left, right);
+        public Aggregate apply(Aggregate left, Aggregate right) {
+            return Aggregate.merge(left, right);
         }
     }
 
-    static class ToWindowedBytes extends DoFn<KV<Groupings.CompoundKey, FlowDocument>, KV<Groupings.CompoundKey, BytesInOut>> {
-
-        private final Counter flowsInWindow = Metrics.counter("flows", "in_window");
-
-        @ProcessElement
-        public void processElement(ProcessContext c, IntervalWindow window) {
-            final KV<? extends Groupings.CompoundKey, FlowDocument> keyedFlow = c.element();
-            final FlowDocument flow = keyedFlow.getValue();
-
-            // The flow duration ranges [delta_switched, last_switched]
-            long flowDurationMs = flow.getLastSwitched().getValue() - flow.getDeltaSwitched().getValue();
-            if (flowDurationMs < 0) {
-                // Negative duration, pass
-                LOG.warn("Ignoring flow with negative duration: {}. Flow: {}", flowDurationMs, flow);
-                return;
-            }
-
-            if (flowDurationMs == 0) {
-                // Double check that the flow is in fact in this window
-                if (flow.getDeltaSwitched().getValue() >= window.start().getMillis()
-                        && flow.getLastSwitched().getValue() <= window.end().getMillis()) {
-                    // Use the entirety of the flow bytes
-                    c.output(KV.of(keyedFlow.getKey(), new BytesInOut(flow)));
-                }
-                return;
-            }
-
-            // Now determine how many milliseconds the flow overlaps with the window bounds
-            long flowWindowOverlapMs = Math.min(flow.getLastSwitched().getValue(), window.end().getMillis())
-                    - Math.max(flow.getDeltaSwitched().getValue(), window.start().getMillis());
-            if (flowWindowOverlapMs < 0) {
-                // Flow should not be in this windows! pass
-                return;
-            }
-
-            // Track
-            flowsInWindow.inc();
-
-            // Output value proportional to the overlap with the window
-            double multiplier = flowWindowOverlapMs / (double) flowDurationMs;
-            c.output(KV.of(keyedFlow.getKey(), new BytesInOut(keyedFlow.getValue(), multiplier)));
-        }
-    }
-
-    static class FlowBytesValueComparator implements Comparator<KV<Groupings.CompoundKey, BytesInOut>>, Serializable {
+    static class FlowBytesValueComparator implements Comparator<KV<Groupings.CompoundKey, Aggregate>>, Serializable {
         @Override
-        public int compare(KV<Groupings.CompoundKey, BytesInOut> a, KV<Groupings.CompoundKey, BytesInOut> b) {
-            return a.getValue().compareTo(b.getValue());
+        public int compare(KV<Groupings.CompoundKey, Aggregate> a, KV<Groupings.CompoundKey, Aggregate> b) {
+            return Long.compare(a.getValue().getBytes(), b.getValue().getBytes());
         }
     }
 
@@ -570,7 +484,7 @@ public class Pipeline {
         });
     }
 
-    public static FlowSummary toFlowSummary(AggregationType aggregationType, IntervalWindow window, KV<Groupings.CompoundKey, BytesInOut> el, Map<String, String> hostnames) {
+    public static FlowSummary toFlowSummary(AggregationType aggregationType, IntervalWindow window, KV<Groupings.CompoundKey, Aggregate> el) {
         FlowSummary flowSummary = new FlowSummary();
         el.getKey().visit(new Groupings.FlowPopulatingVisitor(flowSummary));
         flowSummary.setAggregationType(aggregationType);
@@ -584,7 +498,7 @@ public class Pipeline {
         flowSummary.setBytesIngress(el.getValue().getBytesIn());
         flowSummary.setBytesTotal(flowSummary.getBytesIngress() + flowSummary.getBytesEgress());
 
-        Optional.ofNullable(hostnames.get(flowSummary.getHostAddress())).ifPresent(flowSummary::setHostName);
+        flowSummary.setHostName(el.getValue().getHostname());
 
         return flowSummary;
     }
