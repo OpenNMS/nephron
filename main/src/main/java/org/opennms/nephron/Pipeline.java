@@ -312,8 +312,8 @@ public class Pipeline {
         private long elasticRetryDuration;
 
         public WriteToElasticsearch(String elasticUrl, String elasticUser, String elasticPassword, String elasticIndex,
-                                    IndexStrategy indexStrategy, int elasticConnectTimeout,
-                                    int elasticSocketTimeout) {
+                                    IndexStrategy indexStrategy, int elasticConnectTimeout, int elasticSocketTimeout,
+                                    int elasticRetryCount, long elasticRetryDuration) {
             Objects.requireNonNull(elasticUrl);
             this.elasticIndex = Objects.requireNonNull(elasticIndex);
             this.indexStrategy = Objects.requireNonNull(indexStrategy);
@@ -326,14 +326,15 @@ public class Pipeline {
             thisEsConfig = thisEsConfig.withConnectTimeout(elasticConnectTimeout)
                                        .withSocketTimeout(elasticSocketTimeout);
             this.esConfig = thisEsConfig;
+            this.elasticRetryCount = elasticRetryCount;
+            this.elasticRetryDuration = elasticRetryDuration;
         }
 
         public WriteToElasticsearch(NephronOptions options) {
             this(options.getElasticUrl(), options.getElasticUser(), options.getElasticPassword(),
                     options.getElasticFlowIndex(), options.getElasticIndexStrategy(),
-                    options.getElasticConnectTimeout(), options.getElasticSocketTimeout());
-            this.elasticRetryCount = options.getElasticRetryCount();
-            this.elasticRetryDuration = options.getElasticRetryDuration();
+                    options.getElasticConnectTimeout(), options.getElasticSocketTimeout(),
+                    options.getElasticRetryCount(), options.getElasticRetryDuration());
         }
 
         @Override
