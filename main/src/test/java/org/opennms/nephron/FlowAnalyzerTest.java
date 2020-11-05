@@ -421,7 +421,8 @@ public class FlowAnalyzerTest {
 
         final Pipeline.WindowedFlows windowed = new Pipeline.WindowedFlows(WS, Duration.standardMinutes(5), Duration.standardMinutes(5), Duration.standardMinutes(5));
 
-        final FlowDocument flow = new SyntheticFlowBuilder()
+        // Does not align with window
+        final FlowDocument flow1 = new SyntheticFlowBuilder()
                 .withExporter("SomeFs", "SomeFid", 99)
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
@@ -433,17 +434,59 @@ public class FlowAnalyzerTest {
                 .build()
                 .get(0);
 
+        // Start aligns with window
+        final FlowDocument flow2 = new SyntheticFlowBuilder()
+                .withExporter("SomeFs", "SomeFid", 99)
+                .withSnmpInterfaceId(98)
+                .withApplication("SomeApplication")
+                .withHostnames("first.src.example.com", "second.dst.example.com")
+                .withFlow(Instant.ofEpochSecond(10), Instant.ofEpochSecond(32),
+                          "10.0.0.1", 88,
+                          "10.0.0.2", 99,
+                          42)
+                .build()
+                .get(0);
+
+        // Start and end aligns with window
+        final FlowDocument flow3 = new SyntheticFlowBuilder()
+                .withExporter("SomeFs", "SomeFid", 99)
+                .withSnmpInterfaceId(98)
+                .withApplication("SomeApplication")
+                .withHostnames("first.src.example.com", "second.dst.example.com")
+                .withFlow(Instant.ofEpochSecond(10), Instant.ofEpochSecond(40),
+                          "10.0.0.1", 88,
+                          "10.0.0.2", 99,
+                          42)
+                .build()
+                .get(0);
+
+        // Does not align with window but spans one more bucket with wrong alignment
+        final FlowDocument flow4 = new SyntheticFlowBuilder()
+                .withExporter("SomeFs", "SomeFid", 99)
+                .withSnmpInterfaceId(98)
+                .withApplication("SomeApplication")
+                .withHostnames("first.src.example.com", "second.dst.example.com")
+                .withFlow(Instant.ofEpochSecond(12), Instant.ofEpochSecond(37),
+                          "10.0.0.1", 88,
+                          "10.0.0.2", 99,
+                          42)
+                .build()
+                .get(0);
+
         final TestStream<FlowDocument> flows = TestStream.create(new FlowDocumentProtobufCoder())
-                                                         .addElements(TimestampedValue.of(flow, org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(5))))
+                                                         .addElements(TimestampedValue.of(flow1, org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(5))),
+                                                                      TimestampedValue.of(flow2, org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(5))),
+                                                                      TimestampedValue.of(flow3, org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(5))),
+                                                                      TimestampedValue.of(flow4, org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(5))))
                                                          .advanceWatermarkToInfinity();
 
         final PCollection<FlowDocument> output = p.apply(flows)
                                                   .apply(windowed);
 
         PAssert.that("Bucket 0", output).inWindow(window.apply(0)).containsInAnyOrder();
-        PAssert.that("Bucket 1", output).inWindow(window.apply(1)).containsInAnyOrder(flow);
-        PAssert.that("Bucket 2", output).inWindow(window.apply(2)).containsInAnyOrder(flow);
-        PAssert.that("Bucket 3", output).inWindow(window.apply(3)).containsInAnyOrder(flow);
+        PAssert.that("Bucket 1", output).inWindow(window.apply(1)).containsInAnyOrder(flow1, flow2, flow3, flow4);
+        PAssert.that("Bucket 2", output).inWindow(window.apply(2)).containsInAnyOrder(flow1, flow2, flow3, flow4);
+        PAssert.that("Bucket 3", output).inWindow(window.apply(3)).containsInAnyOrder(flow1, flow2, flow3, flow4);
         PAssert.that("Bucket 4", output).inWindow(window.apply(4)).containsInAnyOrder();
 
         p.run();

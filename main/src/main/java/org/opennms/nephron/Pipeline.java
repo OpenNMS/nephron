@@ -461,15 +461,19 @@ public class Pipeline {
         return ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
             @ProcessElement
             public void processElement(ProcessContext c) {
-                final long windowSizeMs = fixedWindowSize.getMillis();
+                final long windowSize = fixedWindowSize.getMillis();
 
                 // We want to dispatch the flow to all the windows it may be a part of
                 // The flow ranges from [delta_switched, last_switched]
                 final FlowDocument flow = c.element();
-                long flowStart = flow.getDeltaSwitched().getValue();
+
+                final long flowStart = flow.getDeltaSwitched().getValue();
+                final long flowEnd = flow.getLastSwitched().getValue();
+
+                final long lastBucket = (flowEnd + windowSize - 1) / windowSize * windowSize;
 
                 long timestamp = flowStart;
-                while ((timestamp - windowSizeMs) < flow.getLastSwitched().getValue()) {
+                while (timestamp < lastBucket) {
                     if (timestamp <= c.timestamp().minus(maxFlowDuration).getMillis()) {
                         // Caused by: java.lang.IllegalArgumentException: Cannot output with timestamp 1970-01-01T00:00:00.000Z. Output timestamps must be no earlier than the timestamp of the current input (2020-
                         //                            04-14T15:33:11.302Z) minus the allowed skew (30 minutes). See the DoFn#getAllowedTimestampSkew() Javadoc for details on changing the allowed skew.
@@ -479,12 +483,12 @@ public class Pipeline {
                         RATE_LIMITED_LOG.warn("Skipping output for flow w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
                                 Instant.ofEpochMilli(flowStart), Instant.ofEpochMilli(flow.getLastSwitched().getValue()), Instant.ofEpochMilli(timestamp), c.timestamp(),
                                 flow);
-                        timestamp += windowSizeMs;
+                        timestamp += windowSize;
                         continue;
                     }
 
                     c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
-                    timestamp += windowSizeMs;
+                    timestamp += windowSize;
                 }
             }
 
