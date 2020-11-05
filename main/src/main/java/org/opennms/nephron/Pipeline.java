@@ -308,7 +308,12 @@ public class Pipeline {
         private final Counter flowsToEs = Metrics.counter("flows", "to_es");
         private final Distribution flowsToEsDrift = Metrics.distribution("flows", "to_es_drift");
 
-        public WriteToElasticsearch(String elasticUrl, String elasticUser, String elasticPassword, String elasticIndex, IndexStrategy indexStrategy) {
+        private int elasticRetryCount;
+        private long elasticRetryDuration;
+
+        public WriteToElasticsearch(String elasticUrl, String elasticUser, String elasticPassword, String elasticIndex,
+                                    IndexStrategy indexStrategy, int elasticConnectTimeout, int elasticSocketTimeout,
+                                    int elasticRetryCount, long elasticRetryDuration) {
             Objects.requireNonNull(elasticUrl);
             this.elasticIndex = Objects.requireNonNull(elasticIndex);
             this.indexStrategy = Objects.requireNonNull(indexStrategy);
@@ -318,17 +323,28 @@ public class Pipeline {
             if (!Strings.isNullOrEmpty(elasticUser) && !Strings.isNullOrEmpty(elasticPassword)) {
                 thisEsConfig = thisEsConfig.withUsername(elasticUser).withPassword(elasticPassword);
             }
+            thisEsConfig = thisEsConfig.withConnectTimeout(elasticConnectTimeout)
+                                       .withSocketTimeout(elasticSocketTimeout);
             this.esConfig = thisEsConfig;
+            this.elasticRetryCount = elasticRetryCount;
+            this.elasticRetryDuration = elasticRetryDuration;
         }
 
         public WriteToElasticsearch(NephronOptions options) {
-            this(options.getElasticUrl(), options.getElasticUser(), options.getElasticPassword(), options.getElasticFlowIndex(), options.getElasticIndexStrategy());
+            this(options.getElasticUrl(), options.getElasticUser(), options.getElasticPassword(),
+                    options.getElasticFlowIndex(), options.getElasticIndexStrategy(),
+                    options.getElasticConnectTimeout(), options.getElasticSocketTimeout(),
+                    options.getElasticRetryCount(), options.getElasticRetryDuration());
         }
 
         @Override
         public PDone expand(PCollection<FlowSummary> input) {
             return input.apply("SerializeToJson", toJson())
                     .apply("WriteToElasticsearch", ElasticsearchIO.write().withConnectionConfiguration(esConfig)
+                            .withRetryConfiguration(
+                                    ElasticsearchIO.RetryConfiguration.create(this.elasticRetryCount,
+                                            Duration.millis(this.elasticRetryDuration))
+                            )
                             .withUsePartialUpdate(true)
                             .withIndexFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
                                 @Override
