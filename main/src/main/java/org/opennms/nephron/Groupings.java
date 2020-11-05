@@ -36,7 +36,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Function;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.apache.beam.sdk.coders.AtomicCoder;
@@ -48,6 +48,7 @@ import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.KV;
 import org.opennms.nephron.elastic.ExporterNode;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -55,6 +56,8 @@ import org.opennms.nephron.elastic.GroupedBy;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.opennms.netmgt.flows.persistence.model.NodeInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Strings;
 
@@ -71,6 +74,7 @@ import com.google.common.base.Strings;
  * @author jwhite
  */
 public class Groupings {
+    private static final Logger LOG = LoggerFactory.getLogger(Pipeline.class);
 
     @DefaultCoder(CompoundKeyCoder.class)
     public static abstract class CompoundKey {
@@ -100,52 +104,142 @@ public class Groupings {
         void visit(ExporterInterfaceConversationKey key);
     }
 
-    public static abstract class KeyFlowBy extends DoFn<FlowDocument, KV<CompoundKey, FlowDocument>> {
+    public static abstract class KeyFlowBy extends DoFn<FlowDocument, KV<CompoundKey, Aggregate>> {
+
+        public static class WithHostname<T> {
+            public final T value;
+            public final String hostname;
+
+            public WithHostname(final T value, final String hostname) {
+                this.value = value;
+                this.hostname = hostname;
+            }
+
+            public static class Builder<T> {
+                private final T value;
+
+                private Builder(final T value) {
+                    this.value = value;
+                }
+
+                public WithHostname<T> withoutHostname() {
+                    return new WithHostname<>(this.value, null);
+                }
+
+                public WithHostname<T> andHostname(final String hostname) {
+                    return new WithHostname<>(this.value, hostname);
+                }
+            }
+
+            public static <T> Builder<T> having(final T value) {
+                return new Builder<>(value);
+            }
+        }
+
         private final Counter flowsWithMissingFields = Metrics.counter(Groupings.class, "flowsWithMissingFields");
+        private final Counter flowsInWindow = Metrics.counter("flows", "in_window");
+
+        private Optional<Aggregate> aggregatize(final IntervalWindow window, final FlowDocument flow, final String hostname) {
+            // The flow duration ranges [delta_switched, last_switched]
+            long flowDurationMs = flow.getLastSwitched().getValue() - flow.getDeltaSwitched().getValue();
+            if (flowDurationMs < 0) {
+                // Negative duration, pass
+                LOG.warn("Ignoring flow with negative duration: {}. Flow: {}", flowDurationMs, flow);
+                return Optional.empty();
+            }
+
+            final double multiplier;
+            if (flowDurationMs == 0) {
+                // Double check that the flow is in fact in this window
+                if (flow.getDeltaSwitched().getValue() >= window.start().getMillis()
+                    && flow.getLastSwitched().getValue() <= window.end().getMillis()) {
+                    // Use the entirety of the flow bytes
+                    multiplier = 1.0;
+                } else {
+                    return Optional.empty();
+                }
+
+            } else {
+                // Now determine how many milliseconds the flow overlaps with the window bounds
+                long flowWindowOverlapMs = Math.min(flow.getLastSwitched().getValue(), window.end().getMillis())
+                                           - Math.max(flow.getDeltaSwitched().getValue(), window.start().getMillis());
+                if (flowWindowOverlapMs < 0) {
+                    // Flow should not be in this windows! pass
+                    return Optional.empty();
+                }
+
+                // Output value proportional to the overlap with the window
+                multiplier = flowWindowOverlapMs / (double) flowDurationMs;
+            }
+
+            // Track
+            flowsInWindow.inc();
+
+            double effectiveMultiplier = multiplier;
+            if (flow.hasSamplingInterval()) {
+                double samplingInterval = flow.getSamplingInterval().getValue();
+                if (samplingInterval > 0) {
+                    effectiveMultiplier *= samplingInterval;
+                }
+            }
+
+            final long bytesIn;
+            final long bytesOut;
+            if (Direction.INGRESS.equals(flow.getDirection())) {
+                bytesIn =  (long)(flow.getNumBytes().getValue() * effectiveMultiplier);
+                bytesOut = 0;
+            } else {
+                bytesIn = 0;
+                bytesOut = (long)(flow.getNumBytes().getValue() * effectiveMultiplier);
+            }
+
+            return Optional.of(new Aggregate(bytesIn, bytesOut, hostname));
+        }
 
         @ProcessElement
-        public void processElement(ProcessContext c) {
+        public void processElement(ProcessContext c, IntervalWindow window) {
             final FlowDocument flow = c.element();
             try {
-                for (CompoundKey key: key(flow)) {
-                    c.output(KV.of(key, flow));
+                for (final WithHostname<? extends CompoundKey> key: key(flow)) {
+                    aggregatize(window, flow, key.hostname).ifPresent(aggregate -> c.output(KV.of(key.value, aggregate)));
                 }
             } catch (MissingFieldsException mfe) {
                 flowsWithMissingFields.inc();
             }
         }
 
-        public abstract Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException;
+        public abstract Collection<WithHostname<? extends CompoundKey>> key(FlowDocument flow) throws MissingFieldsException;
     }
 
     public static class KeyByExporterInterface extends KeyFlowBy {
         @Override
-        public Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException {
-            return Collections.singleton(ExporterInterfaceKey.from(flow));
+        public Collection<WithHostname<? extends CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
+            return Collections.singleton(WithHostname.having(ExporterInterfaceKey.from(flow)).withoutHostname());
         }
     }
 
     public static class KeyByExporterInterfaceApplication extends KeyFlowBy {
         @Override
-        public Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException {
-            return Collections.singleton(ExporterInterfaceApplicationKey.from(flow));
+        public Collection<WithHostname<? extends CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
+            return Collections.singleton(WithHostname.having(ExporterInterfaceApplicationKey.from(flow)).withoutHostname());
         }
     }
 
     public static class KeyByExporterInterfaceHost extends KeyFlowBy {
         @Override
-        public Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException {
+        public Collection<WithHostname<? extends CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
             final NodeRef nodeRef = NodeRef.of(flow);
             final InterfaceRef interfaceRef = InterfaceRef.of(flow);
-            return Arrays.asList(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getSrcAddress())),
-                    ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getDstAddress())));
+            return Arrays.asList(
+                    WithHostname.having(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getSrcAddress()))).andHostname(flow.getSrcHostname()),
+                    WithHostname.having(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getDstAddress()))).andHostname(flow.getDstHostname()));
         }
     }
 
     public static class KeyByExporterInterfaceConversation extends KeyFlowBy {
         @Override
-        public Collection<CompoundKey> key(FlowDocument flow) throws MissingFieldsException {
-            return Collections.singleton(ExporterInterfaceConversationKey.from(flow));
+        public Collection<WithHostname<? extends CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
+            return Collections.singleton(WithHostname.having(ExporterInterfaceConversationKey.from(flow)).withoutHostname());
         }
     }
 
