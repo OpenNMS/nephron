@@ -200,7 +200,7 @@ public class Pipeline {
 
         @Override
         public PCollection<FlowDocument> expand(PCollection<FlowDocument> input) {
-            return input.apply("attach_timestamp", attachTimestamps(maxFlowDuration))
+            return input.apply("attach_timestamp", attachTimestamps(fixedWindowSize, maxFlowDuration))
                     .apply("to_windows", toWindow(fixedWindowSize, lateProcessingDelay, allowedLateness));
         }
     }
@@ -457,23 +457,19 @@ public class Pipeline {
      *
      * @return transform
      */
-    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps(Duration maxFlowDuration) {
+    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps(Duration fixedWindowSize, Duration maxFlowDuration) {
         return ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
             @ProcessElement
             public void processElement(ProcessContext c) {
-                final long windowSizeMs = c.getPipelineOptions().as(NephronOptions.class).getFixedWindowSizeMs();
+                final long windowSizeMs = fixedWindowSize.getMillis();
 
                 // We want to dispatch the flow to all the windows it may be a part of
                 // The flow ranges from [delta_switched, last_switched]
                 final FlowDocument flow = c.element();
                 long flowStart = flow.getDeltaSwitched().getValue();
-                long timestamp = flowStart - windowSizeMs;
 
-                // If we're exactly on the window boundary, then don't go back
-                if (timestamp % windowSizeMs == 0) {
-                    timestamp += windowSizeMs;
-                }
-                while (timestamp <= flow.getLastSwitched().getValue()) {
+                long timestamp = flowStart;
+                while ((timestamp - windowSizeMs) < flow.getLastSwitched().getValue()) {
                     if (timestamp <= c.timestamp().minus(maxFlowDuration).getMillis()) {
                         // Caused by: java.lang.IllegalArgumentException: Cannot output with timestamp 1970-01-01T00:00:00.000Z. Output timestamps must be no earlier than the timestamp of the current input (2020-
                         //                            04-14T15:33:11.302Z) minus the allowed skew (30 minutes). See the DoFn#getAllowedTimestampSkew() Javadoc for details on changing the allowed skew.

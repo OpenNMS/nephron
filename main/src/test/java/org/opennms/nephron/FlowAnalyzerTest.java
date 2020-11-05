@@ -40,6 +40,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongFunction;
 
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
@@ -405,6 +406,45 @@ public class FlowAnalyzerTest {
 
         PAssert.that(output)
                .containsInAnyOrder(summaries);
+
+        p.run();
+    }
+
+    @Test
+    public void testAttachedTimestamps() {
+        final org.joda.time.Instant start = org.joda.time.Instant.EPOCH;
+        final Duration WS = Duration.standardSeconds(10);
+
+        final LongFunction<IntervalWindow> window = (n) -> new IntervalWindow(
+                org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(n + 0)),
+                org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(n + 1)));
+
+        final Pipeline.WindowedFlows windowed = new Pipeline.WindowedFlows(WS, Duration.standardMinutes(5), Duration.standardMinutes(5), Duration.standardMinutes(5));
+
+        final FlowDocument flow = new SyntheticFlowBuilder()
+                .withExporter("SomeFs", "SomeFid", 99)
+                .withSnmpInterfaceId(98)
+                .withApplication("SomeApplication")
+                .withHostnames("first.src.example.com", "second.dst.example.com")
+                .withFlow(Instant.ofEpochSecond(17), Instant.ofEpochSecond(32),
+                          "10.0.0.1", 88,
+                          "10.0.0.2", 99,
+                          42)
+                .build()
+                .get(0);
+
+        final TestStream<FlowDocument> flows = TestStream.create(new FlowDocumentProtobufCoder())
+                                                         .addElements(TimestampedValue.of(flow, org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(5))))
+                                                         .advanceWatermarkToInfinity();
+
+        final PCollection<FlowDocument> output = p.apply(flows)
+                                                  .apply(windowed);
+
+        PAssert.that("Bucket 0", output).inWindow(window.apply(0)).containsInAnyOrder();
+        PAssert.that("Bucket 1", output).inWindow(window.apply(1)).containsInAnyOrder(flow);
+        PAssert.that("Bucket 2", output).inWindow(window.apply(2)).containsInAnyOrder(flow);
+        PAssert.that("Bucket 3", output).inWindow(window.apply(3)).containsInAnyOrder(flow);
+        PAssert.that("Bucket 4", output).inWindow(window.apply(4)).containsInAnyOrder();
 
         p.run();
     }
