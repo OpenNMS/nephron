@@ -39,9 +39,10 @@ public class NephronOptionsTest {
     @Test
     public void canParseOptions() {
         NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=127.0.0.2:2181",
-                "--fixedWindowSizeMs=30000")
+                "--fixedWindowSizeMs=30000", "--earlyProcessingDelayMs=2000")
                 .as(NephronOptions.class);
         assertThat(options.getBootstrapServers(), equalTo("127.0.0.2:2181"));
         assertThat(options.getFixedWindowSizeMs(), equalTo(30000L));
+        assertThat(options.getEarlyProcessingDelayMs(), equalTo(2000L));
     }
 }
