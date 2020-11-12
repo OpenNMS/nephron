@@ -30,14 +30,18 @@ package org.opennms.nephron;
 
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -53,6 +57,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.testing.PAssert;
 import org.apache.http.HttpHost;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -62,6 +67,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -74,14 +80,21 @@ import org.elasticsearch.client.Response;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.index.query.MatchQueryBuilder;
+import org.elasticsearch.index.query.QueryBuilder;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.opennms.nephron.elastic.AggregationType;
+import org.opennms.nephron.elastic.ExporterNode;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.flowgen.KafkaFlowGenerator;
+import org.opennms.nephron.flowgen.SyntheticFlowBuilder;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
@@ -217,12 +230,216 @@ public class FlowAnalyzerIT {
         t.join();
     }
 
+    @Test
+    public void canScreamIt() throws InterruptedException, ExecutionException {
+        NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
+                                                                 "--fixedWindowSizeMs=10000",
+                                                                 "--allowedLatenessMs=300000",
+                                                                 "--lateProcessingDelayMs=2000",
+                                                                 "--flowDestTopic=opennms-flows-aggregated")
+                                                       .as(NephronOptions.class);
+        options.setElasticUrl("http://" + elastic.getHttpHostAddress());
+
+        // Create the topic
+        createTopics(options.getFlowSourceTopic(), options.getFlowDestTopic());
+
+        // Fire up the pipeline
+        final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(options);
+        Thread t = new Thread(() -> {
+            try {
+                pipeline.run();
+            } catch (RuntimeException ex) {
+                if (ex.getCause() instanceof InterruptedException) {
+                    return;
+                }
+                ex.printStackTrace();
+            }
+        });
+        t.start();
+        // Wait until the pipeline's Kafka consumer has started
+        Thread.sleep(10*1000);
+
+        final Instant almostNow = Instant.ofEpochMilli(Instant.now().toEpochMilli() / 10_000L * 10_000L);
+        final Instant now = almostNow.minus(1, ChronoUnit.HOURS);
+        final Instant timestamp1 = now.minus(5, ChronoUnit.SECONDS);
+        final Instant timestamp2 = now.minus(5, ChronoUnit.SECONDS);
+
+        // Now write some flows
+        Map<String, Object> producerProps = new HashMap<>();
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+        KafkaProducer<String,byte[]> producer = new KafkaProducer<>(producerProps);
+//        executor.execute(() -> {
+            final SyntheticFlowBuilder builder = new SyntheticFlowBuilder()
+                    .withSnmpInterfaceId(98)
+                    .withApplication("SomeApplication");
+
+            builder.withExporter("Test", "Router1", 1)
+                   .withFlow(timestamp1.plus(5, ChronoUnit.SECONDS), timestamp1.plus(10, ChronoUnit.SECONDS),
+                             "10.0.0.1", 88,
+                             "10.0.0.3", 99,
+                             100);
+
+            builder.withExporter("Test", "Router2", 2)
+                   .withFlow(timestamp2.plus(5, ChronoUnit.SECONDS), timestamp2.plus(10, ChronoUnit.SECONDS),
+                             "10.0.0.1", 88,
+                             "10.0.0.3", 99,
+                             100);
+
+            builder.withExporter("Test", "Router1", 1)
+                   .withFlow(timestamp1.plus(7, ChronoUnit.SECONDS), timestamp1.plus(12, ChronoUnit.SECONDS),
+                             "10.0.0.1", 88,
+                             "10.0.0.3", 99,
+                             100);
+
+            builder.withExporter("Test", "Router2", 2)
+                   .withFlow(timestamp2.plus(7, ChronoUnit.SECONDS), timestamp2.plus(12, ChronoUnit.SECONDS),
+                             "10.0.0.1", 88,
+                             "10.0.0.3", 99,
+                             100);
+
+            builder.withExporter("Test", "Router1", 1)
+                   .withFlow(timestamp1.plus(9, ChronoUnit.SECONDS), timestamp1.plus(14, ChronoUnit.SECONDS),
+                             "10.0.0.1", 88,
+                             "10.0.0.3", 99,
+                             100);
+
+            builder.withExporter("Test", "Router2", 2)
+                   .withFlow(timestamp2.plus(9, ChronoUnit.SECONDS), timestamp2.plus(14, ChronoUnit.SECONDS),
+                             "10.0.0.1", 88,
+                             "10.0.0.3", 99,
+                             100);
+
+        builder.withExporter("Test", "Buzz", 0)
+               .withFlow(now.minus(5, ChronoUnit.MINUTES), now.minus(6, ChronoUnit.MINUTES),
+                         "0.0.0.0", 0,
+                         "0.0.0.0", 0,
+                         1);
+
+            for (final FlowDocument flow : builder.build()) {
+                producer.send(new ProducerRecord<>(options.getFlowSourceTopic(), flow.toByteArray()), (metadata, exception) -> {
+                    System.out.println(metadata);
+                    if (exception != null) {
+                        exception.printStackTrace();
+                    }
+                });
+
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+//        });
+
+        final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE");
+
+        await().atMost(30, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+               .ignoreExceptions()
+               .until(() -> getFirstNFlowSummmariesFromES(10, options, query).get(), hasSize(2));
+
+        List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(10, options, query).get();
+        assertThat(flowSummaries, hasSize(2));
+
+        // Basic sanity check on the flow summary
+        FlowSummary firstFlowSummary = flowSummaries.get(0);
+        assertThat(firstFlowSummary.getGroupedByKey(), notNullValue());
+        assertThat(firstFlowSummary.getId(), containsString(firstFlowSummary.getGroupedByKey()));
+        assertThat(firstFlowSummary.getRangeEndMs(), greaterThanOrEqualTo(firstFlowSummary.getRangeStartMs()));
+        assertThat(firstFlowSummary.getRanking(), greaterThanOrEqualTo(0));
+
+        final ExporterNode node1 = new ExporterNode();
+        node1.setForeignSource("Test");
+        node1.setForeignId("Router1");
+        node1.setNodeId(1);
+
+        final ExporterNode node2 = new ExporterNode();
+        node2.setForeignSource("Test");
+        node2.setForeignId("Router2");
+        node2.setNodeId(2);
+
+        for (final FlowSummary flowSummary: flowSummaries) {
+            flowSummary.setId(null);
+        }
+
+        assertThat(flowSummaries, containsInAnyOrder(
+            new FlowSummary() {{
+                this.setGroupedByKey("Test:Router1-98");
+                this.setTimestamp(timestamp1.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRangeStartMs(timestamp1.plus(0, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRangeEndMs(timestamp1.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRanking(0);
+                this.setGroupedBy(EXPORTER_INTERFACE);
+                this.setAggregationType(AggregationType.TOTAL);
+                this.setBytesIngress(180L);
+                this.setBytesEgress(0L);
+                this.setBytesTotal(180L);
+                this.setIfIndex(98);
+                this.setExporter(node1);
+            }},
+
+            new FlowSummary() {{
+                this.setGroupedByKey("Test:Router1-98");
+                this.setTimestamp(timestamp1.plus(20, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRangeStartMs(timestamp1.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRangeEndMs(timestamp1.plus(20, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRanking(0);
+                this.setGroupedBy(EXPORTER_INTERFACE);
+                this.setAggregationType(AggregationType.TOTAL);
+                this.setBytesIngress(120L);
+                this.setBytesEgress(0L);
+                this.setBytesTotal(120L);
+                this.setIfIndex(98);
+                this.setExporter(node1);
+            }},
+
+            new FlowSummary() {{
+                this.setGroupedByKey("Test:Router2-98");
+                this.setTimestamp(timestamp2.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRangeStartMs(timestamp2.plus(0, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRangeEndMs(timestamp2.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRanking(0);
+                this.setGroupedBy(EXPORTER_INTERFACE);
+                this.setAggregationType(AggregationType.TOTAL);
+                this.setBytesIngress(180L);
+                this.setBytesEgress(0L);
+                this.setBytesTotal(180L);
+                this.setIfIndex(98);
+                this.setExporter(node2);
+            }},
+
+            new FlowSummary() {{
+                this.setGroupedByKey("Test:Router2-98");
+                this.setTimestamp(timestamp2.plus(20, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRangeStartMs(timestamp2.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRangeEndMs(timestamp2.plus(20, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
+                this.setRanking(0);
+                this.setGroupedBy(EXPORTER_INTERFACE);
+                this.setAggregationType(AggregationType.TOTAL);
+                this.setBytesIngress(120L);
+                this.setBytesEgress(0L);
+                this.setBytesTotal(120L);
+                this.setIfIndex(98);
+                this.setExporter(node2);
+            }}
+        ));
+
+        t.interrupt();
+        t.join();
+    }
+
     public CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options) {
+        return getFirstNFlowSummmariesFromES(numDocs, options, QueryBuilders.matchAllQuery());
+    }
+
+    public CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options, QueryBuilder query) {
         CompletableFuture<SearchResponse> future = new CompletableFuture<>();
         SearchRequest searchRequest = new SearchRequest(options.getElasticFlowIndex() + "-*");
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
         sourceBuilder.size(numDocs);
         sourceBuilder.sort("@timestamp", SortOrder.ASC);
+        sourceBuilder.query(query);
         searchRequest.source(sourceBuilder);
         elasticClient.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
         return future.thenApply(s -> Arrays.stream(s.getHits().getHits())

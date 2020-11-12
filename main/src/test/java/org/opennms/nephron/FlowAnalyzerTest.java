@@ -38,26 +38,16 @@ import static org.opennms.nephron.flowgen.FlowGenerator.GIGABYTE;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongFunction;
 
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
-import org.apache.beam.sdk.transforms.Combine;
-import org.apache.beam.sdk.transforms.Create;
-import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.sdk.transforms.MapElements;
-import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.transforms.SimpleFunction;
-import org.apache.beam.sdk.transforms.View;
-import org.apache.beam.sdk.transforms.WithKeys;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
-import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.joda.time.Duration;
 import org.junit.Before;
@@ -141,17 +131,157 @@ public class FlowAnalyzerTest {
     }
 
     @Test
+    public void canHandleClockSkewLate() {
+        Instant now = Instant.ofEpochMilli(1500000000000L);
+
+        final SyntheticFlowBuilder builder = new SyntheticFlowBuilder()
+                .withSnmpInterfaceId(98)
+                .withApplication("SomeApplication");
+
+        final Instant timestamp1 = now;
+        final Instant timestamp2 = now.minus(2, ChronoUnit.HOURS);
+
+        builder.withExporter("Test", "Router1", 1)
+               .withFlow(timestamp1.plus(5, ChronoUnit.SECONDS), timestamp1.plus(10, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         100);
+
+        builder.withExporter("Test", "Router2", 2)
+               .withFlow(timestamp2.plus(5, ChronoUnit.SECONDS), timestamp2.plus(10, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         100);
+
+        builder.withExporter("Test", "Router1", 1)
+               .withFlow(timestamp1.plus(7, ChronoUnit.SECONDS), timestamp1.plus(12, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         100);
+
+        builder.withExporter("Test", "Router2", 2)
+               .withFlow(timestamp2.plus(7, ChronoUnit.SECONDS), timestamp2.plus(12, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         100);
+
+        builder.withExporter("Test", "Router1", 1)
+               .withFlow(timestamp1.plus(9, ChronoUnit.SECONDS), timestamp1.plus(14, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         100);
+
+        builder.withExporter("Test", "Router2", 2)
+               .withFlow(timestamp2.plus(9, ChronoUnit.SECONDS), timestamp2.plus(14, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         100);
+
+        TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowDocumentProtobufCoder());
+        for (final FlowDocument flow : builder.build()) {
+            flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(flow, getTimestamp(flow).plus(Duration.standardSeconds(5))));
+        }
+
+        final TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
+
+        final PCollection<FlowSummary> output = p.apply(flowStream)
+                                           .apply(new Pipeline.WindowedFlows(
+                                                   Duration.standardSeconds(10),
+                                                   Duration.standardMinutes(15),
+                                                   Duration.standardSeconds(2), // Fire often for late data to check correct aggregation
+                                                   Duration.standardMinutes(5) // Clock skew of router2 is higher than allowed lateness
+                                           ))
+                                           .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
+
+        final ExporterNode node1 = new ExporterNode();
+        node1.setForeignSource("Test");
+        node1.setForeignId("Router1");
+        node1.setNodeId(1);
+
+        final ExporterNode node2 = new ExporterNode();
+        node2.setForeignSource("Test");
+        node2.setForeignId("Router2");
+        node2.setNodeId(2);
+
+        final FlowSummary[] summaries = new FlowSummary[]{
+                new FlowSummary() {{
+                    this.setGroupedByKey("Test:Router1-98");
+                    this.setTimestamp(timestamp1.plus(10, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRangeStartMs(timestamp1.plus(0, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRangeEndMs(timestamp1.plus(10, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRanking(0);
+                    this.setGroupedBy(EXPORTER_INTERFACE);
+                    this.setAggregationType(AggregationType.TOTAL);
+                    this.setBytesIngress(180L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(180L);
+                    this.setIfIndex(98);
+                    this.setExporter(node1);
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("Test:Router1-98");
+                    this.setTimestamp(timestamp1.plus(20, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRangeStartMs(timestamp1.plus(10, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRangeEndMs(timestamp1.plus(20, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRanking(0);
+                    this.setGroupedBy(EXPORTER_INTERFACE);
+                    this.setAggregationType(AggregationType.TOTAL);
+                    this.setBytesIngress(120L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(120L);
+                    this.setIfIndex(98);
+                    this.setExporter(node1);
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("Test:Router2-98");
+                    this.setTimestamp(timestamp2.plus(10, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRangeStartMs(timestamp2.plus(0, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRangeEndMs(timestamp2.plus(10, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRanking(0);
+                    this.setGroupedBy(EXPORTER_INTERFACE);
+                    this.setAggregationType(AggregationType.TOTAL);
+                    this.setBytesIngress(180L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(180L);
+                    this.setIfIndex(98);
+                    this.setExporter(node2);
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("Test:Router2-98");
+                    this.setTimestamp(timestamp2.plus(20, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRangeStartMs(timestamp2.plus(10, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRangeEndMs(timestamp2.plus(20, ChronoUnit.SECONDS).toEpochMilli());
+                    this.setRanking(0);
+                    this.setGroupedBy(EXPORTER_INTERFACE);
+                    this.setAggregationType(AggregationType.TOTAL);
+                    this.setBytesIngress(120L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(120L);
+                    this.setIfIndex(98);
+                    this.setExporter(node2);
+                }},
+        };
+
+        PAssert.that(output).containsInAnyOrder(summaries);
+
+        p.run();
+    }
+
+    @Test
     public void canHandleLateData() {
         Instant start = Instant.ofEpochMilli(1500000000000L);
         List<Long> flowTimestampOffsets =
                 ImmutableList.of(
-                        -3600_000L, // 1 hour ago
-                        -3570_000L, // 59m30s ago
-                        -3540_000L, // 59m ago
+                        -3600_000L, // 1 hour ago - 100b
+                        -3570_000L, // 59m30s ago - 103b
+                        -3540_000L, // 59m ago - 106b
                         // ...
-                        -2400_000L, // 40m ago
-                        -3600_000L,  // 1 hour ago - late data
-                        -24 * 3600_000L // 24 hours ago - late - should be discarded
+                        -2400_000L, // 40m ago - 109b
+                        -3600_000L,  // 1 hour ago - 112b - late data
+                        -24 * 3600_000L // 24 hours ago - 115b - late - should be discarded
                         );
 
         TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowDocumentProtobufCoder());
