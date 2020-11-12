@@ -30,19 +30,24 @@ package org.opennms.nephron;
 
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.LongSummaryStatistics;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -62,6 +67,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -74,6 +80,8 @@ import org.elasticsearch.client.Response;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.index.query.QueryBuilder;
+import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.junit.After;
@@ -82,6 +90,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.flowgen.KafkaFlowGenerator;
+import org.opennms.nephron.flowgen.SyntheticFlowBuilder;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
@@ -217,12 +226,165 @@ public class FlowAnalyzerIT {
         t.join();
     }
 
+    @Test
+    public void canHandleClockSkewIt() throws InterruptedException, ExecutionException {
+        NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
+                                                                 "--fixedWindowSizeMs=10000",
+                                                                 "--allowedLatenessMs=300000",
+                                                                 "--earlyProcessingDelayMs=2000",
+                                                                 "--lateProcessingDelayMs=2000",
+                                                                 "--flowDestTopic=opennms-flows-aggregated")
+                                                       .as(NephronOptions.class);
+        options.setElasticUrl("http://" + elastic.getHttpHostAddress());
+
+        // Create the topic
+        createTopics(options.getFlowSourceTopic(), options.getFlowDestTopic());
+
+        // Fire up the pipeline
+        final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(options);
+
+        Thread t = new Thread(() -> {
+            try {
+                pipeline.run();
+            } catch (RuntimeException ex) {
+                if (ex.getCause() instanceof InterruptedException) {
+                    return;
+                }
+                ex.printStackTrace();
+            }
+        });
+        t.start();
+
+        // Wait until the pipeline's Kafka consumer has started
+        Thread.sleep(10_000);
+
+        // Shift start to a controlled point in window (3 secs after window start) to avoid flapping test
+        final Instant almostNow = Instant.ofEpochMilli(Instant.now().toEpochMilli() / 10_000L * 10_000L + 3_000L);
+
+        final Instant timestamp1 = almostNow.plus(1, ChronoUnit.HOURS);
+        final Instant timestamp2 = almostNow;
+        final Instant timestamp3 = almostNow.minus(1, ChronoUnit.HOURS);
+
+        // Now write some flows
+        final Map<String, Object> producerProps = new HashMap<>();
+        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+        final KafkaProducer<String,byte[]> producer = new KafkaProducer<>(producerProps);
+
+        final SyntheticFlowBuilder builder = new SyntheticFlowBuilder()
+                .withSnmpInterfaceId(98)
+                .withApplication("SomeApplication");
+
+        builder.withExporter("Test", "Router1", 1)
+               .withFlow(timestamp1.plus(5, ChronoUnit.SECONDS), timestamp1.plus(11, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         50);
+
+        builder.withExporter("Test", "Router2", 2)
+               .withFlow(timestamp2.plus(5, ChronoUnit.SECONDS), timestamp2.plus(11, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         50);
+
+        builder.withExporter("Test", "Router3", 3)
+               .withFlow(timestamp3.plus(5, ChronoUnit.SECONDS), timestamp3.plus(11, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         50);
+
+        builder.withExporter("Test", "Router1", 1)
+               .withFlow(timestamp1.plus(7, ChronoUnit.SECONDS), timestamp1.plus(12, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         100);
+
+        builder.withExporter("Test", "Router2", 2)
+               .withFlow(timestamp2.plus(7, ChronoUnit.SECONDS), timestamp2.plus(12, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         100);
+
+        builder.withExporter("Test", "Router3", 3)
+               .withFlow(timestamp3.plus(7, ChronoUnit.SECONDS), timestamp3.plus(12, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         100);
+
+        builder.withExporter("Test", "Router1", 1)
+               .withFlow(timestamp1.plus(9, ChronoUnit.SECONDS), timestamp1.plus(14, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         150);
+
+        builder.withExporter("Test", "Router2", 2)
+               .withFlow(timestamp2.plus(9, ChronoUnit.SECONDS), timestamp2.plus(14, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         150);
+
+        builder.withExporter("Test", "Router3", 3)
+               .withFlow(timestamp3.plus(9, ChronoUnit.SECONDS), timestamp3.plus(14, ChronoUnit.SECONDS),
+                         "10.0.0.1", 88,
+                         "10.0.0.3", 99,
+                         150);
+
+        builder.withExporter("Test", "Buzz", 0)
+               .withFlow(timestamp1.plus(1, ChronoUnit.MINUTES), almostNow.plus(1, ChronoUnit.MINUTES),
+                         "0.0.0.0", 0,
+                         "0.0.0.0", 0,
+                         2000);
+
+        for (final FlowDocument flow : builder.build()) {
+            producer.send(new ProducerRecord<>(options.getFlowSourceTopic(), flow.toByteArray()), (metadata, exception) -> {
+                if (exception != null) {
+                    exception.printStackTrace();
+                }
+            });
+        }
+
+        final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE");
+
+        await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
+               .ignoreExceptions()
+               .until(() -> getFirstNFlowSummmariesFromES(20, options, query).get(), hasSize(6));
+
+        Thread.sleep(10_000);
+
+        List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(20, options, query).get();
+        assertThat(flowSummaries, hasSize(6));
+
+        final Map<String, LongSummaryStatistics> summaries = flowSummaries.stream()
+                                                                          .collect(Collectors.groupingBy(FlowSummary::getGroupedByKey,
+                                                                                                         Collectors.summarizingLong(FlowSummary::getBytesTotal)));
+
+        assertThat(summaries, is(aMapWithSize(3)));
+
+        assertThat(summaries.get("Test:Router1-98").getCount(), is(2L));
+        assertThat(summaries.get("Test:Router1-98").getSum(), is(300L));
+
+        assertThat(summaries.get("Test:Router2-98").getCount(), is(2L));
+        assertThat(summaries.get("Test:Router2-98").getSum(), is(300L));
+
+        assertThat(summaries.get("Test:Router3-98").getCount(), is(2L));
+        assertThat(summaries.get("Test:Router3-98").getSum(), is(300L));
+
+        t.interrupt();
+        t.join();
+    }
+
     public CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options) {
+        return getFirstNFlowSummmariesFromES(numDocs, options, QueryBuilders.matchAllQuery());
+    }
+
+    public CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options, QueryBuilder query) {
         CompletableFuture<SearchResponse> future = new CompletableFuture<>();
         SearchRequest searchRequest = new SearchRequest(options.getElasticFlowIndex() + "-*");
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
         sourceBuilder.size(numDocs);
         sourceBuilder.sort("@timestamp", SortOrder.ASC);
+        sourceBuilder.query(query);
         searchRequest.source(sourceBuilder);
         elasticClient.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
         return future.thenApply(s -> Arrays.stream(s.getHits().getHits())
