@@ -350,7 +350,7 @@ public class Pipeline {
     }
 
     public static TimestampPolicyFactory<String, FlowDocument> getKafkaInputTimestampPolicyFactory(Duration maxDelay) {
-        return (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<>(
+        return (tp, previousWatermark) -> new MyCustomTimestampPolicyWithLimitedDelay<>(
                 ReadFromKafka::getRecordTimestamp, maxDelay, previousWatermark);
     }
 
@@ -525,10 +525,18 @@ public class Pipeline {
                 .triggering(AfterWatermark
                         // On Beam’s estimate that all the data has arrived (the watermark passes the end of the window)
                         .pastEndOfWindow()
-                        // Any time late data arrives, after a one-minute delay
+                        // During the window, get near real-time estimates
+                        .withEarlyFirings(
+                                AfterProcessingTime
+                                        .pastFirstElementInPane()
+                                        // TODO: Make configurable, on/off + delay, will cause documents to get re-indexed when enabled
+                                        .plusDelayOf(Duration.standardSeconds(5)))
+                        // Any time late data arrives, after a delay - (wait and see if more late data shows up before firing)
                         .withLateFirings(AfterProcessingTime
                                 .pastFirstElementInPane()
                                 .plusDelayOf(lateProcessingDelay)))
+
+
                 // After 4 hours, we assume no more data of interest will arrive, and the trigger stops executing
                 .withAllowedLateness(allowedLateness)
                 .accumulatingFiredPanes();
