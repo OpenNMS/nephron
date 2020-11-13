@@ -329,7 +329,7 @@ public class Pipeline {
     }
 
     public static TimestampPolicyFactory<String, FlowDocument> getKafkaInputTimestampPolicyFactory(Duration maxDelay) {
-        return (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<>(
+        return (tp, previousWatermark) -> new MyCustomTimestampPolicyWithLimitedDelay<>(
                 ReadFromKafka::getTimestamp, maxDelay, previousWatermark);
     }
 

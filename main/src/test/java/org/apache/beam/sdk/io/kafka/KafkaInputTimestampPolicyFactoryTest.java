@@ -33,6 +33,7 @@ import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Test;
+import org.opennms.nephron.MyCustomTimestampPolicyWithLimitedDelay;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 import com.google.common.collect.ImmutableList;
@@ -49,8 +50,8 @@ public class KafkaInputTimestampPolicyFactoryTest {
         Duration maxDelay = Duration.standardMinutes(2);
 
         TimestampPolicyFactory<String, FlowDocument> factory = getKafkaInputTimestampPolicyFactory(maxDelay);
-        CustomTimestampPolicyWithLimitedDelay<String, FlowDocument> policy =
-                (CustomTimestampPolicyWithLimitedDelay)factory.createTimestampPolicy(new TopicPartition("flows", 0), Optional.empty());
+        MyCustomTimestampPolicyWithLimitedDelay<String, FlowDocument> policy =
+                (MyCustomTimestampPolicyWithLimitedDelay)factory.createTimestampPolicy(new TopicPartition("flows", 0), Optional.empty());
 
         // Base condition, we're at the current timestamp, there's no watermark yet (min value) and there is a backlog in the topic
         Instant now = Instant.now();
@@ -81,7 +82,7 @@ public class KafkaInputTimestampPolicyFactoryTest {
         assertThat(getTimestampsForMyRecords(policy, now, input), is(input));
 
         // Watermark should be now - max_delay (backlog in context still non zero)
-        assertThat(policy.getWatermark(ctx, now), is(now.minus(maxDelay)));
+        assertThat(policy.getWatermark(ctx), is(now.minus(maxDelay)));
 
         // (3) Verify that Watermark advances when there is no backlog
 
@@ -92,7 +93,7 @@ public class KafkaInputTimestampPolicyFactoryTest {
         when(ctx.getMessageBacklog()).thenReturn(0L);
         when(ctx.getBacklogCheckTime()).thenReturn(backlogCheckTime);
 
-        assertThat(policy.getWatermark(ctx, now), is(backlogCheckTime.minus(maxDelay)));
+        assertThat(policy.getWatermark(ctx), is(backlogCheckTime.minus(maxDelay)));
     }
 
     // Takes offsets of timestamps from now returns the results as offsets from 'now'.
