@@ -264,7 +264,7 @@ public class FlowAnalyzerIT {
 //        final Instant almostNow = Instant.ofEpochMilli(Instant.now().toEpochMilli() / 10_000L * 10_000L);
         final Instant almostNow = Instant.now();
         final Instant now = almostNow.minus(1, ChronoUnit.HOURS);
-        final Instant timestamp1 = now.minus(5, ChronoUnit.SECONDS);
+        final Instant timestamp1 = now.minus(1, ChronoUnit.HOURS);
         final Instant timestamp2 = now.minus(5, ChronoUnit.SECONDS);
 
         // Now write some flows

@@ -37,8 +37,6 @@ public class MyCustomTimestampPolicyWithLimitedDelay<K, V> extends TimestampPoli
 
     @Override
     public Instant getWatermark(PartitionContext ctx) {
-        Instant wm = maxEventTimestamp.minus(this.maxDelay);
-        System.out.printf("MOO: System clock at: %s, watermark at: %s num messages in backlog: %d\n", Instant.now(), wm, ctx.getMessageBacklog());
-        return wm;
+        return maxEventTimestamp.minus(this.maxDelay);
     }
 }

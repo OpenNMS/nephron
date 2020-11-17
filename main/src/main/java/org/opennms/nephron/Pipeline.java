@@ -37,7 +37,6 @@ import java.util.Objects;
 
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
-import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
@@ -53,8 +52,7 @@ import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
-import org.apache.beam.sdk.transforms.windowing.FixedWindows;
-import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
+import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PBegin;
@@ -200,7 +198,7 @@ public class Pipeline {
 
         @Override
         public PCollection<FlowDocument> expand(PCollection<FlowDocument> input) {
-            return input.apply("attach_timestamp", attachTimestamps(fixedWindowSize, maxFlowDuration))
+            return input //.apply("attach_timestamp", attachTimestamps(fixedWindowSize, maxFlowDuration))
                     .apply("to_windows", toWindow(fixedWindowSize, lateProcessingDelay, allowedLateness));
         }
     }
@@ -235,7 +233,7 @@ public class Pipeline {
                     .apply(transformPrefix + "flatten", Values.create())
                     .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, Aggregate>>, FlowSummary>() {
                         @ProcessElement
-                        public void processElement(ProcessContext c, IntervalWindow window) {
+                        public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
                             int ranking = 1;
                             for (KV<Groupings.CompoundKey, Aggregate> el : c.element()) {
                                 FlowSummary flowSummary = toFlowSummary(AggregationType.TOPK, window, el);
@@ -266,7 +264,7 @@ public class Pipeline {
                     .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
                     .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, Aggregate>, FlowSummary>() {
                         @ProcessElement
-                        public void processElement(ProcessContext c, IntervalWindow window) {
+                        public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
                             c.output(toFlowSummary(AggregationType.TOTAL, window, c.element()));
                         }
                     }));
@@ -500,7 +498,7 @@ public class Pipeline {
         });
     }
 
-    public static FlowSummary toFlowSummary(AggregationType aggregationType, IntervalWindow window, KV<Groupings.CompoundKey, Aggregate> el) {
+    public static FlowSummary toFlowSummary(AggregationType aggregationType, FlowWindows.FlowWindow window, KV<Groupings.CompoundKey, Aggregate> el) {
         FlowSummary flowSummary = new FlowSummary();
         el.getKey().visit(new Groupings.FlowPopulatingVisitor(flowSummary));
         flowSummary.setAggregationType(aggregationType);
@@ -520,7 +518,8 @@ public class Pipeline {
     }
 
     public static Window<FlowDocument> toWindow(Duration fixedWindowSize, Duration lateProcessingDelay, Duration allowedLateness) {
-        return Window.<FlowDocument>into(FixedWindows.of(fixedWindowSize))
+        return Window.<FlowDocument>into(FlowWindows.of(fixedWindowSize))
+                .withTimestampCombiner(TimestampCombiner.END_OF_WINDOW)
                 // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
                 .triggering(AfterWatermark
                         // On Beam’s estimate that all the data has arrived (the watermark passes the end of the window)

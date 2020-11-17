@@ -48,7 +48,6 @@ import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.KV;
 import org.opennms.nephron.elastic.ExporterNode;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -139,7 +138,7 @@ public class Groupings {
         private final Counter flowsWithMissingFields = Metrics.counter(Groupings.class, "flowsWithMissingFields");
         private final Counter flowsInWindow = Metrics.counter("flows", "in_window");
 
-        private Optional<Aggregate> aggregatize(final IntervalWindow window, final FlowDocument flow, final String hostname) {
+        private Optional<Aggregate> aggregatize(final FlowWindows.FlowWindow window, final FlowDocument flow, final String hostname) {
             // The flow duration ranges [delta_switched, last_switched]
             long flowDurationMs = flow.getLastSwitched().getValue() - flow.getDeltaSwitched().getValue();
             if (flowDurationMs < 0) {
@@ -201,7 +200,7 @@ public class Groupings {
         }
 
         @ProcessElement
-        public void processElement(ProcessContext c, IntervalWindow window) {
+        public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
             final FlowDocument flow = c.element();
             try {
                 for (final WithHostname<? extends CompoundKey> key: key(flow)) {
