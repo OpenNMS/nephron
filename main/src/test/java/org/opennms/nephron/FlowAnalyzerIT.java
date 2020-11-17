@@ -34,6 +34,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE;
 
@@ -47,6 +48,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.LongSummaryStatistics;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -259,7 +261,8 @@ public class FlowAnalyzerIT {
         // Wait until the pipeline's Kafka consumer has started
         Thread.sleep(10*1000);
 
-        final Instant almostNow = Instant.ofEpochMilli(Instant.now().toEpochMilli() / 10_000L * 10_000L);
+//        final Instant almostNow = Instant.ofEpochMilli(Instant.now().toEpochMilli() / 10_000L * 10_000L);
+        final Instant almostNow = Instant.now();
         final Instant now = almostNow.minus(1, ChronoUnit.HOURS);
         final Instant timestamp1 = now.minus(5, ChronoUnit.SECONDS);
         final Instant timestamp2 = now.minus(5, ChronoUnit.SECONDS);
@@ -276,13 +279,13 @@ public class FlowAnalyzerIT {
                     .withApplication("SomeApplication");
 
             builder.withExporter("Test", "Router1", 1)
-                   .withFlow(timestamp1.plus(5, ChronoUnit.SECONDS), timestamp1.plus(10, ChronoUnit.SECONDS),
+                   .withFlow(timestamp1.plus(5, ChronoUnit.SECONDS), timestamp1.plus(11, ChronoUnit.SECONDS),
                              "10.0.0.1", 88,
                              "10.0.0.3", 99,
                              100);
 
             builder.withExporter("Test", "Router2", 2)
-                   .withFlow(timestamp2.plus(5, ChronoUnit.SECONDS), timestamp2.plus(10, ChronoUnit.SECONDS),
+                   .withFlow(timestamp2.plus(5, ChronoUnit.SECONDS), timestamp2.plus(11, ChronoUnit.SECONDS),
                              "10.0.0.1", 88,
                              "10.0.0.3", 99,
                              100);
@@ -337,10 +340,10 @@ public class FlowAnalyzerIT {
 
         await().atMost(30, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
                .ignoreExceptions()
-               .until(() -> getFirstNFlowSummmariesFromES(10, options, query).get(), hasSize(2));
+               .until(() -> getFirstNFlowSummmariesFromES(10, options, query).get(), hasSize(4));
 
         List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(10, options, query).get();
-        assertThat(flowSummaries, hasSize(2));
+        assertThat(flowSummaries, hasSize(4));
 
         // Basic sanity check on the flow summary
         FlowSummary firstFlowSummary = flowSummaries.get(0);
@@ -359,73 +362,15 @@ public class FlowAnalyzerIT {
         node2.setForeignId("Router2");
         node2.setNodeId(2);
 
-        for (final FlowSummary flowSummary: flowSummaries) {
-            flowSummary.setId(null);
-        }
+        final Map<String, LongSummaryStatistics> summaries = flowSummaries.stream()
+                                                                          .collect(Collectors.groupingBy(FlowSummary::getGroupedByKey,
+                                                                                                         Collectors.summarizingLong(FlowSummary::getBytesTotal)));
 
-        /*
-        assertThat(flowSummaries, containsInAnyOrder(
-            new FlowSummary() {{
-                this.setGroupedByKey("Test:Router1-98");
-                this.setTimestamp(timestamp1.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRangeStartMs(timestamp1.plus(0, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRangeEndMs(timestamp1.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRanking(0);
-                this.setGroupedBy(EXPORTER_INTERFACE);
-                this.setAggregationType(AggregationType.TOTAL);
-                this.setBytesIngress(180L);
-                this.setBytesEgress(0L);
-                this.setBytesTotal(180L);
-                this.setIfIndex(98);
-                this.setExporter(node1);
-            }},
+        assertThat(summaries.get("Test:Router1-98").getCount(), is(2L));
+        assertThat(summaries.get("Test:Router1-98").getSum(), is(300L));
 
-            new FlowSummary() {{
-                this.setGroupedByKey("Test:Router1-98");
-                this.setTimestamp(timestamp1.plus(20, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRangeStartMs(timestamp1.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRangeEndMs(timestamp1.plus(20, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRanking(0);
-                this.setGroupedBy(EXPORTER_INTERFACE);
-                this.setAggregationType(AggregationType.TOTAL);
-                this.setBytesIngress(120L);
-                this.setBytesEgress(0L);
-                this.setBytesTotal(120L);
-                this.setIfIndex(98);
-                this.setExporter(node1);
-            }},
-
-            new FlowSummary() {{
-                this.setGroupedByKey("Test:Router2-98");
-                this.setTimestamp(timestamp2.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRangeStartMs(timestamp2.plus(0, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRangeEndMs(timestamp2.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRanking(0);
-                this.setGroupedBy(EXPORTER_INTERFACE);
-                this.setAggregationType(AggregationType.TOTAL);
-                this.setBytesIngress(180L);
-                this.setBytesEgress(0L);
-                this.setBytesTotal(180L);
-                this.setIfIndex(98);
-                this.setExporter(node2);
-            }},
-
-            new FlowSummary() {{
-                this.setGroupedByKey("Test:Router2-98");
-                this.setTimestamp(timestamp2.plus(20, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRangeStartMs(timestamp2.plus(10, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRangeEndMs(timestamp2.plus(20, ChronoUnit.SECONDS).toEpochMilli() / 10_000L * 10_000L);
-                this.setRanking(0);
-                this.setGroupedBy(EXPORTER_INTERFACE);
-                this.setAggregationType(AggregationType.TOTAL);
-                this.setBytesIngress(120L);
-                this.setBytesEgress(0L);
-                this.setBytesTotal(120L);
-                this.setIfIndex(98);
-                this.setExporter(node2);
-            }}
-        ));
-         */
+        assertThat(summaries.get("Test:Router2-98").getCount(), is(2L));
+        assertThat(summaries.get("Test:Router2-98").getSum(), is(300L));
 
         t.interrupt();
         t.join();

@@ -183,14 +183,18 @@ public class Groupings {
                 }
             }
 
+            // Rounding to whole numbers to avoid loosing some bytes on window bounds. This, in theory, shifts the
+            // window bound a little bit but makes sums correct.
+            final long bytes = Math.round(flow.getNumBytes().getValue() * effectiveMultiplier);
+
             final long bytesIn;
             final long bytesOut;
             if (Direction.INGRESS.equals(flow.getDirection())) {
-                bytesIn =  (long)(flow.getNumBytes().getValue() * effectiveMultiplier);
+                bytesIn = bytes;
                 bytesOut = 0;
             } else {
                 bytesIn = 0;
-                bytesOut = (long)(flow.getNumBytes().getValue() * effectiveMultiplier);
+                bytesOut = bytes;
             }
 
             return Optional.of(new Aggregate(bytesIn, bytesOut, hostname));
