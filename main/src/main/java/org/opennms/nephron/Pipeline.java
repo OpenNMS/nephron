@@ -52,6 +52,7 @@ import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
+import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
@@ -199,7 +200,14 @@ public class Pipeline {
         @Override
         public PCollection<FlowDocument> expand(PCollection<FlowDocument> input) {
             return input //.apply("attach_timestamp", attachTimestamps(fixedWindowSize, maxFlowDuration))
-                    .apply("to_windows", toWindow(fixedWindowSize, lateProcessingDelay, allowedLateness));
+                    .apply("to_windows", toWindow(fixedWindowSize, lateProcessingDelay, allowedLateness))
+                    .apply("dbg", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
+                        @ProcessElement
+                        public void processElement(ProcessContext c) {
+                            System.err.println("BAAAAAAA: " + c.timestamp() + " " + c.element().getFirstSwitched() + " " + c.pane().getTiming());
+                            c.output(c.element());
+                        }
+                    }));
         }
     }
 
@@ -261,13 +269,34 @@ public class Pipeline {
         @Override
         public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
             return input.apply(transformPrefix + "group_by_key_in_window", ParDo.of(groupingBy))
+                        .apply("dbg", ParDo.of(new DoFn<KV<Groupings.CompoundKey, Aggregate>, KV<Groupings.CompoundKey, Aggregate>>() {
+                            @ProcessElement
+                            public void processElement(ProcessContext c) {
+                                System.err.println("BXXXXXXX: " + c.timestamp() + " " + c.element().getKey() + " " + c.element().getValue().getBytes() + " " + c.pane().getTiming());
+                                c.output(c.element());
+                            }
+                        }))
                     .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
+                        .apply("dbg", ParDo.of(new DoFn<KV<Groupings.CompoundKey, Aggregate>, KV<Groupings.CompoundKey, Aggregate>>() {
+                            @ProcessElement
+                            public void processElement(ProcessContext c) {
+                                System.err.println("BYYYYYYY: " + c.timestamp() + " " + c.element().getKey() + " " + c.element().getValue().getBytes() + " " + c.pane().getTiming());
+                                c.output(c.element());
+                            }
+                        }))
                     .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, Aggregate>, FlowSummary>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
                             c.output(toFlowSummary(AggregationType.TOTAL, window, c.element()));
                         }
-                    }));
+                    }))
+                        .apply("dbg", ParDo.of(new DoFn<FlowSummary, FlowSummary>() {
+                            @ProcessElement
+                            public void processElement(ProcessContext c) {
+                                System.err.println("BZZZZZZZ: " + c.timestamp() + " " + c.element().getGroupedByKey() + " " + c.element().getBytesTotal() + " " + c.pane().getTiming());
+                                c.output(c.element());
+                            }
+                        }));
         }
     }
 
@@ -381,6 +410,8 @@ public class Pipeline {
                     .apply("init", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
                         @ProcessElement
                         public void processElement(ProcessContext c) {
+                            System.err.println("FOOOOOOO: " + c.timestamp() + " " + c.element().getFirstSwitched() + " " + c.pane().getTiming());
+
                             // Add deltaSwitched if missing, was observed a few times
                             FlowDocument flow = c.element();
                             if (!flow.hasDeltaSwitched()) {
@@ -398,7 +429,8 @@ public class Pipeline {
         }
 
         private static Instant getRecordTimestamp(KafkaRecord<String, FlowDocument> record) {
-            return getTimestamp(record.getKV().getValue());
+            final FlowDocument doc = record.getKV().getValue();
+            return Instant.ofEpochMilli(doc.getFirstSwitched().getValue());
         }
 
         public static Instant getTimestamp(FlowDocument doc) {

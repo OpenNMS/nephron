@@ -30,10 +30,13 @@ package org.opennms.nephron;
 
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE;
@@ -58,6 +61,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.http.HttpHost;
@@ -88,6 +92,7 @@ import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.TermQueryBuilder;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
+import org.hamcrest.Matchers;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -236,7 +241,7 @@ public class FlowAnalyzerIT {
     public void canScreamIt() throws InterruptedException, ExecutionException {
         NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
                                                                  "--fixedWindowSizeMs=10000",
-                                                                 "--allowedLatenessMs=30000",
+                                                                 "--allowedLatenessMs=4000000",
                                                                  "--lateProcessingDelayMs=2000",
                                                                  "--flowDestTopic=opennms-flows-aggregated")
                                                        .as(NephronOptions.class);
@@ -247,6 +252,7 @@ public class FlowAnalyzerIT {
 
         // Fire up the pipeline
         final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(options);
+
         Thread t = new Thread(() -> {
             try {
                 pipeline.run();
@@ -258,14 +264,16 @@ public class FlowAnalyzerIT {
             }
         });
         t.start();
+
         // Wait until the pipeline's Kafka consumer has started
-        Thread.sleep(10*1000);
+        Thread.sleep(10_000);
 
 //        final Instant almostNow = Instant.ofEpochMilli(Instant.now().toEpochMilli() / 10_000L * 10_000L);
         final Instant almostNow = Instant.now();
-        final Instant now = almostNow.minus(1, ChronoUnit.HOURS);
-        final Instant timestamp1 = now.minus(1, ChronoUnit.HOURS);
-        final Instant timestamp2 = now.minus(5, ChronoUnit.SECONDS);
+        final Instant now = almostNow.minus(30, ChronoUnit.SECONDS);
+        final Instant timestamp1 = now.plus(1, ChronoUnit.HOURS);
+        final Instant timestamp2 = now;
+        final Instant timestamp3 = now.minus(1, ChronoUnit.HOURS);
 
         // Now write some flows
         Map<String, Object> producerProps = new HashMap<>();
@@ -282,13 +290,19 @@ public class FlowAnalyzerIT {
                    .withFlow(timestamp1.plus(5, ChronoUnit.SECONDS), timestamp1.plus(11, ChronoUnit.SECONDS),
                              "10.0.0.1", 88,
                              "10.0.0.3", 99,
-                             100);
+                             50);
 
             builder.withExporter("Test", "Router2", 2)
                    .withFlow(timestamp2.plus(5, ChronoUnit.SECONDS), timestamp2.plus(11, ChronoUnit.SECONDS),
                              "10.0.0.1", 88,
                              "10.0.0.3", 99,
-                             100);
+                             50);
+
+            builder.withExporter("Test", "Router3", 3)
+                   .withFlow(timestamp3.plus(5, ChronoUnit.SECONDS), timestamp3.plus(11, ChronoUnit.SECONDS),
+                             "10.0.0.1", 88,
+                             "10.0.0.3", 99,
+                             50);
 
             builder.withExporter("Test", "Router1", 1)
                    .withFlow(timestamp1.plus(7, ChronoUnit.SECONDS), timestamp1.plus(12, ChronoUnit.SECONDS),
@@ -302,37 +316,42 @@ public class FlowAnalyzerIT {
                              "10.0.0.3", 99,
                              100);
 
+            builder.withExporter("Test", "Router3", 3)
+                   .withFlow(timestamp3.plus(7, ChronoUnit.SECONDS), timestamp3.plus(12, ChronoUnit.SECONDS),
+                             "10.0.0.1", 88,
+                             "10.0.0.3", 99,
+                             100);
+
             builder.withExporter("Test", "Router1", 1)
                    .withFlow(timestamp1.plus(9, ChronoUnit.SECONDS), timestamp1.plus(14, ChronoUnit.SECONDS),
                              "10.0.0.1", 88,
                              "10.0.0.3", 99,
-                             100);
+                             150);
 
             builder.withExporter("Test", "Router2", 2)
                    .withFlow(timestamp2.plus(9, ChronoUnit.SECONDS), timestamp2.plus(14, ChronoUnit.SECONDS),
                              "10.0.0.1", 88,
                              "10.0.0.3", 99,
-                             100);
+                             150);
 
-        builder.withExporter("Test", "Buzz", 0)
-               .withFlow(now.minus(5, ChronoUnit.MINUTES), now.minus(6, ChronoUnit.MINUTES),
-                         "0.0.0.0", 0,
-                         "0.0.0.0", 0,
-                         1);
+            builder.withExporter("Test", "Router3", 3)
+                   .withFlow(timestamp3.plus(9, ChronoUnit.SECONDS), timestamp3.plus(14, ChronoUnit.SECONDS),
+                             "10.0.0.1", 88,
+                             "10.0.0.3", 99,
+                             150);
+
+            builder.withExporter("Test", "Buzz", 0)
+                   .withFlow(timestamp1.plus(1, ChronoUnit.MINUTES), now.plus(1, ChronoUnit.MINUTES),
+                             "0.0.0.0", 0,
+                             "0.0.0.0", 0,
+                             2000);
 
             for (final FlowDocument flow : builder.build()) {
                 producer.send(new ProducerRecord<>(options.getFlowSourceTopic(), flow.toByteArray()), (metadata, exception) -> {
-                    System.out.println("MOO: Output flow with timestamp: " + flow.getFirstSwitched() + " to partition: " + metadata.partition());
                     if (exception != null) {
                         exception.printStackTrace();
                     }
                 });
-
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
             }
 //        });
 
@@ -340,37 +359,31 @@ public class FlowAnalyzerIT {
 
         await().atMost(30, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
                .ignoreExceptions()
-               .until(() -> getFirstNFlowSummmariesFromES(10, options, query).get(), hasSize(4));
+               .until(() -> getFirstNFlowSummmariesFromES(20, options, query).get(), is(not(empty())));
 
-        List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(10, options, query).get();
-        assertThat(flowSummaries, hasSize(4));
+        await().atMost(30, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
+               .ignoreExceptions()
+               .until(() -> getFirstNFlowSummmariesFromES(20, options, query).get(), hasSize(6));
 
-        // Basic sanity check on the flow summary
-        FlowSummary firstFlowSummary = flowSummaries.get(0);
-        assertThat(firstFlowSummary.getGroupedByKey(), notNullValue());
-        assertThat(firstFlowSummary.getId(), containsString(firstFlowSummary.getGroupedByKey()));
-        assertThat(firstFlowSummary.getRangeEndMs(), greaterThanOrEqualTo(firstFlowSummary.getRangeStartMs()));
-        assertThat(firstFlowSummary.getRanking(), greaterThanOrEqualTo(0));
+        Thread.sleep(10_000);
 
-        final ExporterNode node1 = new ExporterNode();
-        node1.setForeignSource("Test");
-        node1.setForeignId("Router1");
-        node1.setNodeId(1);
-
-        final ExporterNode node2 = new ExporterNode();
-        node2.setForeignSource("Test");
-        node2.setForeignId("Router2");
-        node2.setNodeId(2);
+        List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(20, options, query).get();
+        assertThat(flowSummaries, hasSize(6));
 
         final Map<String, LongSummaryStatistics> summaries = flowSummaries.stream()
                                                                           .collect(Collectors.groupingBy(FlowSummary::getGroupedByKey,
                                                                                                          Collectors.summarizingLong(FlowSummary::getBytesTotal)));
+
+        assertThat(summaries, is(aMapWithSize(3)));
 
         assertThat(summaries.get("Test:Router1-98").getCount(), is(2L));
         assertThat(summaries.get("Test:Router1-98").getSum(), is(300L));
 
         assertThat(summaries.get("Test:Router2-98").getCount(), is(2L));
         assertThat(summaries.get("Test:Router2-98").getSum(), is(300L));
+
+        assertThat(summaries.get("Test:Router3-98").getCount(), is(2L));
+        assertThat(summaries.get("Test:Router3-98").getSum(), is(300L));
 
         t.interrupt();
         t.join();
