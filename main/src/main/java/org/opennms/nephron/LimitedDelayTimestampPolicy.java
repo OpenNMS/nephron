@@ -13,13 +13,13 @@ import org.joda.time.Instant;
  * Maintain the watermark at the (largest event time - acceptable delay) and ignore event times that are in the future
  * relative to the system clock.
  */
-public class MyCustomTimestampPolicyWithLimitedDelay<K, V> extends TimestampPolicy<K, V> {
+public class LimitedDelayTimestampPolicy<K, V> extends TimestampPolicy<K, V> {
     private final Duration maxDelay;
     private final SerializableFunction<KafkaRecord<K, V>, Instant> timestampFunction;
     private Instant maxEventTimestamp;
 
-    public MyCustomTimestampPolicyWithLimitedDelay(SerializableFunction<KafkaRecord<K, V>, Instant> timestampFunction,
-                                                   Duration maxDelay, Optional<Instant> previousWatermark) {
+    public LimitedDelayTimestampPolicy(SerializableFunction<KafkaRecord<K, V>, Instant> timestampFunction,
+                                       Duration maxDelay, Optional<Instant> previousWatermark) {
         this.maxDelay = maxDelay;
         this.timestampFunction = timestampFunction;
         this.maxEventTimestamp = previousWatermark.orElse(BoundedWindow.TIMESTAMP_MIN_VALUE).plus(maxDelay);
