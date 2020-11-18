@@ -241,7 +241,7 @@ public class FlowAnalyzerIT {
     public void canScreamIt() throws InterruptedException, ExecutionException {
         NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
                                                                  "--fixedWindowSizeMs=10000",
-                                                                 "--allowedLatenessMs=4000000",
+                                                                 "--allowedLatenessMs=300000",
                                                                  "--lateProcessingDelayMs=2000",
                                                                  "--flowDestTopic=opennms-flows-aggregated")
                                                        .as(NephronOptions.class);
