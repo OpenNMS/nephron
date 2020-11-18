@@ -117,6 +117,13 @@ public interface NephronOptions extends PipelineOptions {
 
     void setDefaultMaxInputDelayMs(long value);
 
+    @Description("Amount of time to wait before firing the pane for early updates." +
+                 "Decrease this value for faster updates, at the cost of more update being fired. Set to 0 to disable.")
+    @Default.Long(0) // Disabled
+    long getEarlyProcessingDelayMs();
+
+    void setEarlyProcessingDelayMs(long value);
+
     @Description("Amount of time to wait before firing the pane after late data has arrived." +
             "Decrease this value for faster updates, at the cost of more update being fired.")
     @Default.Long(60 * 1000L) // 1 minute

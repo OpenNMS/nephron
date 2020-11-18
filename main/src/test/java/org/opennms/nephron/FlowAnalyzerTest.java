@@ -99,7 +99,7 @@ public class FlowAnalyzerTest {
 
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
                 .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
         FlowSummary summary = new FlowSummary();
@@ -177,7 +177,7 @@ public class FlowAnalyzerTest {
 
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
                 .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();
@@ -263,7 +263,7 @@ public class FlowAnalyzerTest {
 
         final TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
         final PCollection<FlowSummary> output = p.apply(flowStream)
-                                                 .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)));
+                                                 .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)));
 
         final ExporterNode exporterNode = new ExporterNode();
         exporterNode.setForeignSource("SomeFs");
@@ -420,7 +420,7 @@ public class FlowAnalyzerTest {
                 org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(n + 1)),
                 NODE_ID);
 
-        final Window<FlowDocument> windowed = Pipeline.toWindow(WS, Duration.standardMinutes(5), Duration.standardMinutes(5));
+        final Window<FlowDocument> windowed = Pipeline.toWindow(WS, Duration.standardMinutes(1), Duration.standardMinutes(5), Duration.standardMinutes(5));
 
         // Does not align with window
         final FlowDocument flow1 = new SyntheticFlowBuilder()

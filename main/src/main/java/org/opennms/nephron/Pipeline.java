@@ -53,6 +53,7 @@ import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
+import org.apache.beam.sdk.transforms.windowing.Trigger;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PBegin;
@@ -137,12 +138,14 @@ public class Pipeline {
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
         private final int topK;
         private final Duration fixedWindowSize;
+        private final Duration earlyProcessingDelay;
         private final Duration lateProcessingDelay;
         private final Duration allowedLateness;
 
-        public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration lateProcessingDelay, Duration allowedLateness) {
+        public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration earlyProcessingDelay, Duration lateProcessingDelay, Duration allowedLateness) {
             this.topK = topK;
             this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
+            this.earlyProcessingDelay = Objects.requireNonNull(earlyProcessingDelay);
             this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
             this.allowedLateness = Objects.requireNonNull(allowedLateness);
         }
@@ -150,13 +153,14 @@ public class Pipeline {
         public CalculateFlowStatistics(NephronOptions options) {
             this(options.getTopK(),
                  Duration.millis(options.getFixedWindowSizeMs()),
+                 Duration.millis(options.getEarlyProcessingDelayMs()),
                  Duration.millis(options.getLateProcessingDelayMs()),
                  Duration.millis(options.getAllowedLatenessMs()));
         }
 
         @Override
         public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
-            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("to_windows", toWindow(fixedWindowSize, lateProcessingDelay, allowedLateness));
+            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("to_windows", toWindow(fixedWindowSize, earlyProcessingDelay, lateProcessingDelay, allowedLateness));
 
             PCollection<FlowSummary> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
                     new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
@@ -445,24 +449,26 @@ public class Pipeline {
         return flowSummary;
     }
 
-    public static Window<FlowDocument> toWindow(Duration fixedWindowSize, Duration lateProcessingDelay, Duration allowedLateness) {
+    public static Window<FlowDocument> toWindow(Duration fixedWindowSize, Duration earlyProcessingDelay,  Duration lateProcessingDelay, Duration allowedLateness) {
+        AfterWatermark.AfterWatermarkEarlyAndLate trigger = AfterWatermark
+                // On Beam’s estimate that all the data has arrived (the watermark passes the end of the window)
+                .pastEndOfWindow()
+
+                // Any time late data arrives, after a delay - (wait and see if more late data shows up before firing)
+                .withLateFirings(AfterProcessingTime
+                                         .pastFirstElementInPane()
+                                         .plusDelayOf(lateProcessingDelay));
+
+        if (earlyProcessingDelay != null && !earlyProcessingDelay.isEqual(Duration.ZERO)) {
+            // During the window, get near real-time estimates
+            trigger = trigger.withEarlyFirings(AfterProcessingTime
+                            .pastFirstElementInPane()
+                            .plusDelayOf(earlyProcessingDelay));
+        }
+
         return Window.<FlowDocument>into(FlowWindows.of(fixedWindowSize))
                 .withTimestampCombiner(TimestampCombiner.END_OF_WINDOW)
-                // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
-                .triggering(AfterWatermark
-                        // On Beam’s estimate that all the data has arrived (the watermark passes the end of the window)
-                        .pastEndOfWindow()
-                        // During the window, get near real-time estimates
-                        .withEarlyFirings(
-                                AfterProcessingTime
-                                        .pastFirstElementInPane()
-                                        // TODO: Make configurable, on/off + delay, will cause documents to get re-indexed when enabled
-                                        .plusDelayOf(Duration.standardSeconds(5)))
-                        // Any time late data arrives, after a delay - (wait and see if more late data shows up before firing)
-                        .withLateFirings(AfterProcessingTime
-                                .pastFirstElementInPane()
-                                .plusDelayOf(lateProcessingDelay)))
-
+                .triggering(trigger)
 
                 // After 4 hours, we assume no more data of interest will arrive, and the trigger stops executing
                 .withAllowedLateness(allowedLateness)
