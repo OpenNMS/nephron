@@ -15,7 +15,7 @@ mvn clean package
 
 ## Run on Flink
 
->  We require Flink 1.9.x since Apache Beam is not yet compatible with Flink 1.10.x.
+>  We require Flink 1.10.x 
 
 Run on Flink
 ```
