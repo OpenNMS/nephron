@@ -57,7 +57,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.apache.beam.runners.flink.FlinkPipelineOptions;
+import org.apache.beam.runners.flink.TestFlinkRunner;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration;
+import org.apache.flink.test.util.MiniClusterWithClientResource;
 import org.apache.http.HttpHost;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -86,6 +90,7 @@ import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -103,8 +108,13 @@ import com.google.common.io.Resources;
  * Complete end-to-end test - reading & writing to/from Kafka
  */
 public class FlowAnalyzerIT {
-
     private ObjectMapper objectMapper = new ObjectMapper();
+
+    @ClassRule
+    public static MiniClusterWithClientResource miniClusterResource = new MiniClusterWithClientResource(new MiniClusterResourceConfiguration.Builder()
+                                                                                                                    .setNumberTaskManagers(2)
+                                                                                                                    .setNumberSlotsPerTaskManager(3)
+                                                                                                                    .build());
 
     @Rule
     public KafkaContainer kafka = new KafkaContainer();
@@ -227,25 +237,31 @@ public class FlowAnalyzerIT {
     }
 
     @Test
-    public void canHandleClockSkewIt() throws InterruptedException, ExecutionException {
-        NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
+    public void canHandleClockSkewIt() throws Exception {
+        NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + this.kafka.getBootstrapServers(),
+                                                                 "--parallelism=6",
                                                                  "--fixedWindowSizeMs=10000",
                                                                  "--allowedLatenessMs=300000",
                                                                  "--earlyProcessingDelayMs=2000",
                                                                  "--lateProcessingDelayMs=2000",
                                                                  "--flowDestTopic=opennms-flows-aggregated")
-                                                       .as(NephronOptions.class);
+                .as(NephronOptions.class);
         options.setElasticUrl("http://" + elastic.getHttpHostAddress());
+        options.as(FlinkPipelineOptions.class).setStreaming(true);
 
         // Create the topic
         createTopics(options.getFlowSourceTopic(), options.getFlowDestTopic());
 
+        final TestFlinkRunner runner = TestFlinkRunner.fromOptions(options);
+//        final PipelineRunner<?> runner = FlinkRunner.fromOptions(options);
+//        final PipelineRunner<?> runner = DirectRunner.fromOptions(options);
+
         // Fire up the pipeline
-        final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(options);
+        final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(runner.getPipelineOptions().as(NephronOptions.class));
 
         Thread t = new Thread(() -> {
             try {
-                pipeline.run();
+                runner.run(pipeline);
             } catch (RuntimeException ex) {
                 if (ex.getCause() instanceof InterruptedException) {
                     return;
@@ -254,6 +270,7 @@ public class FlowAnalyzerIT {
             }
         });
         t.start();
+
 
         // Wait until the pipeline's Kafka consumer has started
         Thread.sleep(10_000);
