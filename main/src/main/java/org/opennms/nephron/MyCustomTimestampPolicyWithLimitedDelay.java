@@ -6,6 +6,7 @@ import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.io.kafka.TimestampPolicy;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 
@@ -26,10 +27,15 @@ public class MyCustomTimestampPolicyWithLimitedDelay<K, V> extends TimestampPoli
     }
 
     @Override
-    public Instant getTimestampForRecord(PartitionContext ctx, KafkaRecord<K, V> record) {
+    public Instant getTimestampForRecord(final PartitionContext ctx, final KafkaRecord<K, V> record) {
+        return getTimestampForRecord(ctx, record, Instant.now());
+    }
+
+    @VisibleForTesting
+    public Instant getTimestampForRecord(final PartitionContext ctx, final KafkaRecord<K, V> record, final Instant now) {
         Instant ts = this.timestampFunction.apply(record);
         // Ignore future timestamps
-        if (ts.isAfter(this.maxEventTimestamp) && ts.isBeforeNow()) {
+        if (ts.isAfter(this.maxEventTimestamp) && ts.isBefore(now)) {
             this.maxEventTimestamp = ts;
         }
         return ts;
@@ -37,8 +43,6 @@ public class MyCustomTimestampPolicyWithLimitedDelay<K, V> extends TimestampPoli
 
     @Override
     public Instant getWatermark(PartitionContext ctx) {
-        Instant wm = maxEventTimestamp.minus(this.maxDelay);
-        System.out.printf("MOO: System clock at: %s, watermark at: %s num messages in backlog: %d\n", Instant.now(), wm, ctx.getMessageBacklog());
-        return wm;
+        return maxEventTimestamp.minus(this.maxDelay);
     }
 }

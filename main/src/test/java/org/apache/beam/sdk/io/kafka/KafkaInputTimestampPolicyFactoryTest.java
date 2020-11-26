@@ -81,24 +81,13 @@ public class KafkaInputTimestampPolicyFactoryTest {
 
         assertThat(getTimestampsForMyRecords(policy, now, input), is(input));
 
-        // Watermark should be now - max_delay (backlog in context still non zero)
-        assertThat(policy.getWatermark(ctx), is(now.minus(maxDelay)));
-
-        // (3) Verify that Watermark advances when there is no backlog
-
-        // advance current time by 5 minutes
-        now = now.plus(Duration.standardMinutes(5));
-        Instant backlogCheckTime = now.minus(Duration.standardSeconds(10));
-
-        when(ctx.getMessageBacklog()).thenReturn(0L);
-        when(ctx.getBacklogCheckTime()).thenReturn(backlogCheckTime);
-
-        assertThat(policy.getWatermark(ctx), is(backlogCheckTime.minus(maxDelay)));
+        // Watermark should be the latest timestamp before now - max_delay (backlog in context still non zero)
+        assertThat(policy.getWatermark(ctx), is(now.minus(maxDelay).minus(100_000L)));
     }
 
     // Takes offsets of timestamps from now returns the results as offsets from 'now'.
     private static List<Long> getTimestampsForMyRecords(
-            TimestampPolicy<String, FlowDocument> policy, Instant now, List<Long> timestampOffsets) {
+            MyCustomTimestampPolicyWithLimitedDelay<String, FlowDocument> policy, Instant now, List<Long> timestampOffsets) {
         return timestampOffsets.stream()
                 .map(
                         ts -> {
@@ -115,7 +104,7 @@ public class KafkaInputTimestampPolicyFactoryTest {
                                                     "key",
                                                     FlowDocument.newBuilder()
                                                             .setFirstSwitched(UInt64Value.of(now.getMillis() + ts))
-                                                            .build()));
+                                                            .build()), now);
                             return result.getMillis() - now.getMillis();
                         })
                 .collect(Collectors.toList());
