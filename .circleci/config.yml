@@ -1,8 +1,9 @@
-version: 2
+version: 2.1
 
 jobs:
   build:
-    machine: true
+    machine:
+      image: ubuntu-2004:202010-01
 
     environment:
       MAVEN_OPTS: -Xmx1024m
@@ -61,7 +62,8 @@ jobs:
             - project
 
   deploy:
-    machine: true
+    docker:
+      - image: maven:3-openjdk-11
 
     steps:
       - attach_workspace:
