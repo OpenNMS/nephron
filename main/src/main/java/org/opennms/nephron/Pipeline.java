@@ -404,7 +404,9 @@ public class Pipeline {
         }
 
         public static Instant getTimestamp(FlowDocument doc) {
-            return Instant.ofEpochMilli(doc.getLastSwitched().getValue());
+            long epochMilli = doc.getDeltaSwitched() != null ?
+                              doc.getDeltaSwitched().getValue() : doc.getFirstSwitched().getValue();
+            return Instant.ofEpochMilli(epochMilli);
         }
     }
 
@@ -466,36 +468,10 @@ public class Pipeline {
                 // We want to dispatch the flow to all the windows it may be a part of
                 // The flow ranges from [delta_switched, last_switched]
                 final FlowDocument flow = c.element();
-                long flowStart = flow.getDeltaSwitched().getValue();
-                long timestamp = flowStart - windowSizeMs;
-
-                // If we're exactly on the window boundary, then don't go back
-                if (timestamp % windowSizeMs == 0) {
-                    timestamp += windowSizeMs;
-                }
-                while (timestamp <= flow.getLastSwitched().getValue()) {
-                    if (timestamp <= c.timestamp().minus(maxFlowDuration).getMillis()) {
-                        // Caused by: java.lang.IllegalArgumentException: Cannot output with timestamp 1970-01-01T00:00:00.000Z. Output timestamps must be no earlier than the timestamp of the current input (2020-
-                        //                            04-14T15:33:11.302Z) minus the allowed skew (30 minutes). See the DoFn#getAllowedTimestampSkew() Javadoc for details on changing the allowed skew.
-                        //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
-                        //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.outputWithTimestamp(SimpleDoFnRunner.java:573)
-                        //                    at org.opennms.nephron.FlowAnalyzer$1.processElement(FlowAnalyzer.java:96)
-                        RATE_LIMITED_LOG.warn("Skipping output for flow w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
-                                Instant.ofEpochMilli(flowStart), Instant.ofEpochMilli(flow.getLastSwitched().getValue()), Instant.ofEpochMilli(timestamp), c.timestamp(),
-                                flow);
-                        timestamp += windowSizeMs;
-                        continue;
-                    }
-
+                long flowEnd = flow.getLastSwitched().getValue();
+                for (long timestamp = flow.getDeltaSwitched().getValue(); timestamp <= flowEnd; timestamp += windowSizeMs) {
                     c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
-                    timestamp += windowSizeMs;
                 }
-            }
-
-            @Override
-            public Duration getAllowedTimestampSkew() {
-                // Max flow duration
-                return maxFlowDuration;
             }
         });
     }
