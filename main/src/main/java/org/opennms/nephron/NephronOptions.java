@@ -117,6 +117,13 @@ public interface NephronOptions extends PipelineOptions {
 
     void setDefaultMaxInputDelayMs(long value);
 
+    @Description("Max amount of time a flow is expected to last (last_switched - delta_switched). " +
+                 "Flows that last longer than this duration will be ignored and a warning will be logged.")
+    @Default.Long(15 * 60 * 1000L) // 15 minutes
+    long getMaxFlowDurationMs();
+
+    void setMaxFlowDurationMs(long value);
+
     @Description("Amount of time to wait before firing the pane for early updates." +
                  "Decrease this value for faster updates, at the cost of more update being fired. Set to 0 to disable.")
     @Default.Long(0) // Disabled
