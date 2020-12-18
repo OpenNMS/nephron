@@ -113,7 +113,7 @@ public class KafkaInputTimestampPolicyFactoryTest {
                                                     new RecordHeaders(),
                                                     "key",
                                                     FlowDocument.newBuilder()
-                                                            .setLastSwitched(UInt64Value.of(now.getMillis() + ts))
+                                                            .setDeltaSwitched(UInt64Value.of(now.getMillis() + ts))
                                                             .build()));
                             return result.getMillis() - now.getMillis();
                         })

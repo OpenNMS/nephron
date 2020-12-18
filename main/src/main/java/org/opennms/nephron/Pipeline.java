@@ -139,14 +139,12 @@ public class Pipeline {
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
         private final int topK;
         private final Duration fixedWindowSize;
-        private final Duration maxFlowDuration;
         private final Duration lateProcessingDelay;
         private final Duration allowedLateness;
 
-        public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration maxFlowDuration, Duration lateProcessingDelay, Duration allowedLateness) {
+        public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration lateProcessingDelay, Duration allowedLateness) {
             this.topK = topK;
             this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
-            this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
             this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
             this.allowedLateness = Objects.requireNonNull(allowedLateness);
         }
@@ -154,7 +152,6 @@ public class Pipeline {
         public CalculateFlowStatistics(NephronOptions options) {
             this(options.getTopK(),
                     Duration.millis(options.getFixedWindowSizeMs()),
-                    Duration.millis(options.getMaxFlowDurationMs()),
                     Duration.millis(options.getLateProcessingDelayMs()),
                     Duration.millis(options.getAllowedLatenessMs()));
         }
@@ -162,7 +159,7 @@ public class Pipeline {
         @Override
         public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
-                    new WindowedFlows(fixedWindowSize, maxFlowDuration, lateProcessingDelay, allowedLateness));
+                    new WindowedFlows(fixedWindowSize, lateProcessingDelay, allowedLateness));
 
             PCollection<FlowSummary> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
                     new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
@@ -187,20 +184,18 @@ public class Pipeline {
 
     public static class WindowedFlows extends PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> {
         private final Duration fixedWindowSize;
-        private final Duration maxFlowDuration;
         private final Duration lateProcessingDelay;
         private final Duration allowedLateness;
 
-        public WindowedFlows(Duration fixedWindowSize, Duration maxFlowDuration, Duration lateProcessingDelay, Duration allowedLateness) {
+        public WindowedFlows(Duration fixedWindowSize, Duration lateProcessingDelay, Duration allowedLateness) {
             this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
-            this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
             this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
             this.allowedLateness = Objects.requireNonNull(allowedLateness);
         }
 
         @Override
         public PCollection<FlowDocument> expand(PCollection<FlowDocument> input) {
-            return input.apply("attach_timestamp", attachTimestamps(maxFlowDuration))
+            return input.apply("attach_timestamp", attachTimestamps())
                     .apply("to_windows", toWindow(fixedWindowSize, lateProcessingDelay, allowedLateness));
         }
     }
@@ -404,7 +399,9 @@ public class Pipeline {
         }
 
         public static Instant getTimestamp(FlowDocument doc) {
-            return Instant.ofEpochMilli(doc.getLastSwitched().getValue());
+            long epochMilli = doc.getDeltaSwitched() != null ?
+                              doc.getDeltaSwitched().getValue() : doc.getFirstSwitched().getValue();
+            return Instant.ofEpochMilli(epochMilli);
         }
     }
 
@@ -457,7 +454,7 @@ public class Pipeline {
      *
      * @return transform
      */
-    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps(Duration maxFlowDuration) {
+    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps() {
         return ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
             @ProcessElement
             public void processElement(ProcessContext c) {
@@ -466,36 +463,24 @@ public class Pipeline {
                 // We want to dispatch the flow to all the windows it may be a part of
                 // The flow ranges from [delta_switched, last_switched]
                 final FlowDocument flow = c.element();
-                long flowStart = flow.getDeltaSwitched().getValue();
-                long timestamp = flowStart - windowSizeMs;
 
-                // If we're exactly on the window boundary, then don't go back
-                if (timestamp % windowSizeMs == 0) {
-                    timestamp += windowSizeMs;
-                }
-                while (timestamp <= flow.getLastSwitched().getValue()) {
-                    if (timestamp <= c.timestamp().minus(maxFlowDuration).getMillis()) {
-                        // Caused by: java.lang.IllegalArgumentException: Cannot output with timestamp 1970-01-01T00:00:00.000Z. Output timestamps must be no earlier than the timestamp of the current input (2020-
-                        //                            04-14T15:33:11.302Z) minus the allowed skew (30 minutes). See the DoFn#getAllowedTimestampSkew() Javadoc for details on changing the allowed skew.
-                        //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
-                        //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.outputWithTimestamp(SimpleDoFnRunner.java:573)
-                        //                    at org.opennms.nephron.FlowAnalyzer$1.processElement(FlowAnalyzer.java:96)
-                        RATE_LIMITED_LOG.warn("Skipping output for flow w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
-                                Instant.ofEpochMilli(flowStart), Instant.ofEpochMilli(flow.getLastSwitched().getValue()), Instant.ofEpochMilli(timestamp), c.timestamp(),
-                                flow);
-                        timestamp += windowSizeMs;
-                        continue;
-                    }
+                long deltaSwitched = flow.getDeltaSwitched().getValue();
+                long lastSwitched = flow.getLastSwitched().getValue();
 
+                long firstWindow = deltaSwitched / windowSizeMs; // the first window the flow falls into
+                long lastWindow = lastSwitched / windowSizeMs; // the last window the flow falls into (assuming lastSwitched is inclusive)
+                long nbWindows = lastWindow - firstWindow + 1;
+
+                long timestamp = deltaSwitched;
+                for (long i = 0; i < nbWindows; i++) {
                     c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
-                    timestamp += windowSizeMs;
+                    // ensure that the timestamp used for the last window is not larger than lastSwitched
+                    if (timestamp + windowSizeMs < lastSwitched) {
+                        timestamp += windowSizeMs;
+                    } else {
+                        timestamp = lastSwitched;
+                    }
                 }
-            }
-
-            @Override
-            public Duration getAllowedTimestampSkew() {
-                // Max flow duration
-                return maxFlowDuration;
             }
         });
     }
