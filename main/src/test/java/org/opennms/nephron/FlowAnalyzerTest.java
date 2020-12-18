@@ -92,11 +92,10 @@ public class FlowAnalyzerTest {
                 .build();
 
         // Build a stream from the given set of flows
-        long timestampOffsetMillis = TimeUnit.MINUTES.toMillis(1);
         TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowDocumentProtobufCoder());
         for (FlowDocument flow : flowGenerator.streamFlows()) {
             flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(flow,
-                    org.joda.time.Instant.ofEpochMilli(flow.getLastSwitched().getValue() + timestampOffsetMillis)));
+                    org.joda.time.Instant.ofEpochMilli(flow.getDeltaSwitched().getValue())));
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
