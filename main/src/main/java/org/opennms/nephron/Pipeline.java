@@ -139,14 +139,12 @@ public class Pipeline {
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
         private final int topK;
         private final Duration fixedWindowSize;
-        private final Duration maxFlowDuration;
         private final Duration lateProcessingDelay;
         private final Duration allowedLateness;
 
-        public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration maxFlowDuration, Duration lateProcessingDelay, Duration allowedLateness) {
+        public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration lateProcessingDelay, Duration allowedLateness) {
             this.topK = topK;
             this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
-            this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
             this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
             this.allowedLateness = Objects.requireNonNull(allowedLateness);
         }
@@ -154,7 +152,6 @@ public class Pipeline {
         public CalculateFlowStatistics(NephronOptions options) {
             this(options.getTopK(),
                     Duration.millis(options.getFixedWindowSizeMs()),
-                    Duration.millis(options.getMaxFlowDurationMs()),
                     Duration.millis(options.getLateProcessingDelayMs()),
                     Duration.millis(options.getAllowedLatenessMs()));
         }
@@ -162,7 +159,7 @@ public class Pipeline {
         @Override
         public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
-                    new WindowedFlows(fixedWindowSize, maxFlowDuration, lateProcessingDelay, allowedLateness));
+                    new WindowedFlows(fixedWindowSize, lateProcessingDelay, allowedLateness));
 
             PCollection<FlowSummary> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
                     new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
@@ -187,20 +184,18 @@ public class Pipeline {
 
     public static class WindowedFlows extends PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> {
         private final Duration fixedWindowSize;
-        private final Duration maxFlowDuration;
         private final Duration lateProcessingDelay;
         private final Duration allowedLateness;
 
-        public WindowedFlows(Duration fixedWindowSize, Duration maxFlowDuration, Duration lateProcessingDelay, Duration allowedLateness) {
+        public WindowedFlows(Duration fixedWindowSize, Duration lateProcessingDelay, Duration allowedLateness) {
             this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
-            this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
             this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
             this.allowedLateness = Objects.requireNonNull(allowedLateness);
         }
 
         @Override
         public PCollection<FlowDocument> expand(PCollection<FlowDocument> input) {
-            return input.apply("attach_timestamp", attachTimestamps(maxFlowDuration))
+            return input.apply("attach_timestamp", attachTimestamps())
                     .apply("to_windows", toWindow(fixedWindowSize, lateProcessingDelay, allowedLateness));
         }
     }
@@ -459,7 +454,7 @@ public class Pipeline {
      *
      * @return transform
      */
-    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps(Duration maxFlowDuration) {
+    public static ParDo.SingleOutput<FlowDocument, FlowDocument> attachTimestamps() {
         return ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
             @ProcessElement
             public void processElement(ProcessContext c) {
@@ -468,9 +463,23 @@ public class Pipeline {
                 // We want to dispatch the flow to all the windows it may be a part of
                 // The flow ranges from [delta_switched, last_switched]
                 final FlowDocument flow = c.element();
-                long flowEnd = flow.getLastSwitched().getValue();
-                for (long timestamp = flow.getDeltaSwitched().getValue(); timestamp <= flowEnd; timestamp += windowSizeMs) {
+
+                long deltaSwitched = flow.getDeltaSwitched().getValue();
+                long lastSwitched = flow.getLastSwitched().getValue();
+
+                long firstWindow = deltaSwitched / windowSizeMs; // the first window the flow falls into
+                long lastWindow = lastSwitched / windowSizeMs; // the last window the flow falls into (assuming lastSwitched is inclusive)
+                long nbWindows = lastWindow - firstWindow + 1;
+
+                long timestamp = deltaSwitched;
+                for (long i = 0; i < nbWindows; i++) {
                     c.outputWithTimestamp(flow, Instant.ofEpochMilli(timestamp));
+                    // ensure that the timestamp used for the last window is not larger than lastSwitched
+                    if (timestamp + windowSizeMs < lastSwitched) {
+                        timestamp += windowSizeMs;
+                    } else {
+                        timestamp = lastSwitched;
+                    }
                 }
             }
         });
