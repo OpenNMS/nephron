@@ -30,6 +30,8 @@ package org.opennms.nephron.elastic;
 
 import java.util.Objects;
 
+import org.opennms.nephron.Groupings;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -54,7 +56,7 @@ public class FlowSummary {
     private int ranking;
 
     @JsonProperty("grouped_by")
-    private GroupedBy groupedBy;
+    private Groupings.CompoundKeyType groupedBy;
 
     @JsonProperty("grouped_by_key")
     private String groupedByKey;
@@ -70,6 +72,12 @@ public class FlowSummary {
 
     @JsonProperty("bytes_total")
     private Long bytesTotal;
+
+    @JsonProperty("dscp")
+    private Integer dscp;
+
+    @JsonProperty("ecn")
+    private Integer ecn;
 
     @JsonProperty("exporter")
     private ExporterNode exporter;
@@ -137,11 +145,11 @@ public class FlowSummary {
         this.ranking = ranking;
     }
 
-    public GroupedBy getGroupedBy() {
+    public Groupings.CompoundKeyType getGroupedBy() {
         return groupedBy;
     }
 
-    public void setGroupedBy(GroupedBy groupedBy) {
+    public void setGroupedBy(Groupings.CompoundKeyType groupedBy) {
         this.groupedBy = groupedBy;
     }
 
@@ -225,55 +233,79 @@ public class FlowSummary {
         this.conversationKey = conversationKey;
     }
 
+    public Integer getDscp() {
+        return dscp;
+    }
+
+    public void setDscp(Integer dscp) {
+        this.dscp = dscp;
+    }
+
+    public Integer getEcn() {
+        return ecn;
+    }
+
+    public void setEcn(Integer ecn) {
+        this.ecn = ecn;
+    }
+
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof FlowSummary)) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         FlowSummary that = (FlowSummary) o;
         return timestamp == that.timestamp &&
-                rangeStartMs == that.rangeStartMs &&
-                rangeEndMs == that.rangeEndMs &&
-                ranking == that.ranking &&
-                Objects.equals(id, that.id) &&
-                Objects.equals(groupedByKey, that.groupedByKey) &&
-                groupedBy == that.groupedBy &&
-                aggregationType == that.aggregationType &&
-                Objects.equals(bytesIngress, that.bytesIngress) &&
-                Objects.equals(bytesEgress, that.bytesEgress) &&
-                Objects.equals(bytesTotal, that.bytesTotal) &&
-                Objects.equals(exporter, that.exporter) &&
-                Objects.equals(ifIndex, that.ifIndex) &&
-                Objects.equals(application, that.application) &&
-                Objects.equals(hostAddress, that.hostAddress) &&
-                Objects.equals(hostName, that.hostName) &&
-                Objects.equals(conversationKey, that.conversationKey);
+               rangeStartMs == that.rangeStartMs &&
+               rangeEndMs == that.rangeEndMs &&
+               ranking == that.ranking &&
+               Objects.equals(id, that.id) &&
+               groupedBy == that.groupedBy &&
+               Objects.equals(groupedByKey, that.groupedByKey) &&
+               aggregationType == that.aggregationType &&
+               Objects.equals(bytesIngress, that.bytesIngress) &&
+               Objects.equals(bytesEgress, that.bytesEgress) &&
+               Objects.equals(bytesTotal, that.bytesTotal) &&
+               Objects.equals(dscp, that.dscp) &&
+               Objects.equals(ecn, that.ecn) &&
+               Objects.equals(exporter, that.exporter) &&
+               Objects.equals(ifIndex, that.ifIndex) &&
+               Objects.equals(application, that.application) &&
+               Objects.equals(hostAddress, that.hostAddress) &&
+               Objects.equals(hostName, that.hostName) &&
+               Objects.equals(conversationKey, that.conversationKey);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, timestamp, groupedByKey, rangeStartMs, rangeEndMs, ranking, groupedBy, aggregationType, bytesIngress, bytesEgress, bytesTotal, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
+        return Objects.hash(id, timestamp, rangeStartMs, rangeEndMs, ranking, groupedBy, groupedByKey, aggregationType, bytesIngress, bytesEgress, bytesTotal, dscp, ecn, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
     }
 
     @Override
     public String toString() {
         return "FlowSummary{" +
-                "id='" + id + '\'' +
-                ", timestamp=" + timestamp +
-                ", groupedByKey='" + groupedByKey + '\'' +
-                ", rangeStartMs=" + rangeStartMs +
-                ", rangeEndMs=" + rangeEndMs +
-                ", ranking=" + ranking +
-                ", groupedBy=" + groupedBy +
-                ", aggregationType=" + aggregationType +
-                ", bytesIngress=" + bytesIngress +
-                ", bytesEgress=" + bytesEgress +
-                ", bytesTotal=" + bytesTotal +
-                ", exporter=" + exporter +
-                ", ifIndex=" + ifIndex +
-                ", application='" + application + '\'' +
-                ", hostAddress='" + hostAddress + '\'' +
-                ", hostName='" + hostName + '\'' +
-                ", conversationKey='" + conversationKey + '\'' +
-                '}';
+               "id='" + id + '\'' +
+               ", timestamp=" + timestamp +
+               ", rangeStartMs=" + rangeStartMs +
+               ", rangeEndMs=" + rangeEndMs +
+               ", ranking=" + ranking +
+               ", groupedBy=" + groupedBy +
+               ", groupedByKey='" + groupedByKey + '\'' +
+               ", aggregationType=" + aggregationType +
+               ", bytesIngress=" + bytesIngress +
+               ", bytesEgress=" + bytesEgress +
+               ", bytesTotal=" + bytesTotal +
+               ", dscp=" + dscp +
+               ", ecn=" + ecn +
+               ", exporter=" + exporter +
+               ", ifIndex=" + ifIndex +
+               ", application='" + application + '\'' +
+               ", hostAddress='" + hostAddress + '\'' +
+               ", hostName='" + hostName + '\'' +
+               ", conversationKey='" + conversationKey + '\'' +
+               '}';
     }
 }

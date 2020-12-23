@@ -37,6 +37,12 @@
             "bytes_egress": {
                 "type": "long"
             },
+            "dscp": {
+                "type": "integer"
+            },
+            "ecn": {
+                "type": "integer"
+            },
 
             "exporter": {
                 "dynamic": true,

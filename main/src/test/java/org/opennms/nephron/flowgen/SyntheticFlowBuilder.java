@@ -55,6 +55,7 @@ public class SyntheticFlowBuilder {
     private Direction direction = Direction.INGRESS;
     private String srcHostname = null;
     private String dstHostname = null;
+    private int tos = 0;
 
     public SyntheticFlowBuilder withExporter(String fs, String fid, int nodeId) {
         exporterNode = NodeInfo.newBuilder()
@@ -83,6 +84,11 @@ public class SyntheticFlowBuilder {
     public SyntheticFlowBuilder withHostnames(final String srcHostname, final String dstHostname) {
         this.srcHostname = srcHostname;
         this.dstHostname = dstHostname;
+        return this;
+    }
+
+    public SyntheticFlowBuilder withTos(int tos) {
+        this.tos = tos;
         return this;
     }
 
@@ -127,6 +133,8 @@ public class SyntheticFlowBuilder {
 
         builder.setConvoKey(getConvoKeyAsJsonString(builder));
         builder.setSamplingInterval(DoubleValue.of(1.0d));
+
+        builder.setTos(UInt32Value.of(tos));
 
         flows.add(builder.build());
         return this;

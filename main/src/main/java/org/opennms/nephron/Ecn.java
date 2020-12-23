@@ -1,8 +1,8 @@
 /*******************************************************************************
  * This file is part of OpenNMS(R).
  *
- * Copyright (C) 2020 The OpenNMS Group, Inc.
- * OpenNMS(R) is Copyright (C) 1999-2020 The OpenNMS Group, Inc.
+ * Copyright (C) 2021 The OpenNMS Group, Inc.
+ * OpenNMS(R) is Copyright (C) 1999-2021 The OpenNMS Group, Inc.
  *
  * OpenNMS(R) is a registered trademark of The OpenNMS Group, Inc.
  *
@@ -26,12 +26,24 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.nephron.elastic;
+package org.opennms.nephron;
 
-public enum GroupedBy {
-    EXPORTER,
-    EXPORTER_INTERFACE,
-    EXPORTER_INTERFACE_APPLICATION,
-    EXPORTER_INTERFACE_HOST,
-    EXPORTER_INTERFACE_CONVERSATION;
+/**
+ * Explicit congestion notification information.
+ *
+ * ECN information is encoded with 2 bits i.e. it could represent 4 different states (i.e. code 0, 1, 2, 3). However,
+ * only 3 different semantic states are distinguished. Both, code 1 and 2 both indicate an ecn capable transport.
+ * In order to save space when grouping flows according to their ecn information, code 2 is treated as code 1.
+ */
+public enum Ecn {
+
+    NON_ECT(0), // non ecn-capable transport
+    ECT(1), // ecn-capable transport
+    CE(3); // congestion encountered
+
+    public final int code;
+
+    Ecn(int code) {
+        this.code = code;
+    }
 }

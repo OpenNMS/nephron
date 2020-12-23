@@ -59,7 +59,7 @@ public class Aggregate {
 
     public static Aggregate merge(final Aggregate a, final Aggregate b) {
         return new Aggregate(a.bytesIn + b.bytesIn, a.bytesOut + b.bytesOut,
-                             a.hostname != null ? a.hostname : b.hostname);
+                a.hostname != null ? a.hostname : b.hostname);
     }
 
     public long getBytesIn() {
@@ -84,8 +84,8 @@ public class Aggregate {
         if (!(o instanceof Aggregate)) return false;
         Aggregate flowBytes = (Aggregate) o;
         return bytesIn == flowBytes.bytesIn &&
-                bytesOut == flowBytes.bytesOut &&
-                Objects.equals(hostname, flowBytes.hostname);
+               bytesOut == flowBytes.bytesOut &&
+               Objects.equals(hostname, flowBytes.hostname);
     }
 
     @Override
@@ -96,9 +96,9 @@ public class Aggregate {
     @Override
     public String toString() {
         return "Aggregate{" +
-                "bytesIn=" + bytesIn +
-                ", bytesOut=" + bytesOut +
-                ", hostname=" + hostname +
+               "bytesIn=" + bytesIn +
+               ", bytesOut=" + bytesOut +
+               ", hostname=" + hostname +
                '}';
     }
 

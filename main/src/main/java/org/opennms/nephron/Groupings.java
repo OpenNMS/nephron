@@ -31,16 +31,21 @@ package org.opennms.nephron;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.apache.beam.repackaged.core.org.apache.commons.lang3.ArrayUtils;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.DefaultCoder;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
@@ -51,7 +56,6 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.values.KV;
 import org.opennms.nephron.elastic.ExporterNode;
 import org.opennms.nephron.elastic.FlowSummary;
-import org.opennms.nephron.elastic.GroupedBy;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.opennms.netmgt.flows.persistence.model.NodeInfo;
@@ -63,46 +67,314 @@ import com.google.common.base.Strings;
 /**
  * Contains functions used to group flows by different keys.
  *
- * The keys are modeled as subclasses of {@link CompoundKey} and include
- * associated {@link Coder}s for serdes.
+ * Different types of keys are modeled by the {@link CompoundKeyType} enum and key instances are represented by the
+ * {@link CompoundKey} class. The associated {@link CompoundKeyCoder} is used for serdes.
  *
- * A visitor pattern is used to handle the different key types to
- * ensure that all the implementations that need to be aware of them get updated
- * when new types are added.
+ * Compound keys are made up from a list of parts that correspond to different dimensions flow data can be grouped
+ * into. Different types of key parts are modeled by instances of the {@link CompoundKeyTypePart} interface. Instances
+ * of key parts are represented by implementations of the {@link Ref} interface.
  *
  * @author jwhite
  */
 public class Groupings {
 
-    @DefaultCoder(CompoundKeyCoder.class)
-    public static abstract class CompoundKey {
-        public abstract void visit(Visitor visitor);
+    private interface CompoundKeyTypePart<T extends Ref> {
+        void encode(T ref, OutputStream os) throws IOException;
+
+        T decode(InputStream is) throws IOException;
+
+        List<KeyFlowBy.WithHostname<T>> create(FlowDocument flow) throws MissingFieldsException;
+
+        void populate(T ref, FlowSummary summary);
+    }
+
+    @FunctionalInterface
+    private interface CheckedFunction<T, R, E extends Exception> {
+        R apply(T t) throws E;
+    }
+
+    @FunctionalInterface
+    private interface CheckedConsumer<T> {
+        void accept(T t) throws IOException;
+    }
+
+    private static <T extends Ref> CompoundKeyTypePart<T> keyPart(
+            Function<T, CheckedConsumer<OutputStream>> encode,
+            CheckedFunction<InputStream, T, IOException> decode,
+            CheckedFunction<FlowDocument, List<KeyFlowBy.WithHostname<T>>, MissingFieldsException> create,
+            Function<T, Consumer<FlowSummary>> populate
+    ) {
+        return new CompoundKeyTypePart<T>() {
+            @Override
+            public void encode(T ref, OutputStream os) throws IOException {
+                encode.apply(ref).accept(os);
+            }
+
+            @Override
+            public T decode(InputStream is) throws IOException {
+                return decode.apply(is);
+            }
+
+            @Override
+            public List<KeyFlowBy.WithHostname<T>> create(FlowDocument flow) throws MissingFieldsException {
+                return create.apply(flow);
+            }
+
+            @Override
+            public void populate(T ref, FlowSummary summary) {
+                populate.apply(ref).accept(summary);
+            }
+        };
+    }
+
+    private final static Coder<String> STRING_CODER = NullableCoder.of(StringUtf8Coder.of());
+    private final static Coder<Integer> INT_CODER = NullableCoder.of(VarIntCoder.of());
+
+    private static <T> List<KeyFlowBy.WithHostname<T>> singlePartWithoutHostName(T t) {
+        return Collections.singletonList(KeyFlowBy.WithHostname.<T>having(t).withoutHostname());
+    }
+
+    private static final CompoundKeyTypePart<NodeRef> EXPORTER_PART = keyPart(
+            ref -> os -> {
+                STRING_CODER.encode(ref.getForeignSource(), os);
+                STRING_CODER.encode(ref.getForeignId(), os);
+                INT_CODER.encode(ref.getNodeId(), os);
+            },
+            is -> {
+                NodeRef ref = new NodeRef();
+                ref.setForeignSource(STRING_CODER.decode(is));
+                ref.setForeignId(STRING_CODER.decode(is));
+                ref.setNodeId(INT_CODER.decode(is));
+                return ref;
+            },
+            flow -> singlePartWithoutHostName(NodeRef.of(flow)),
+            ref -> flow -> {
+                ExporterNode exporterNode = new ExporterNode();
+                exporterNode.setForeignSource(ref.getForeignSource());
+                exporterNode.setForeignId(ref.getForeignId());
+                exporterNode.setNodeId(ref.getNodeId());
+                flow.setExporter(exporterNode);
+            }
+
+    );
+
+    private static final CompoundKeyTypePart<InterfaceRef> INTERFACE_PART = keyPart(
+            ref -> os -> INT_CODER.encode(ref.getIfIndex(), os),
+            is -> {
+                InterfaceRef ref = new InterfaceRef();
+                ref.setIfIndex(INT_CODER.decode(is));
+                return ref;
+            },
+            flow -> singlePartWithoutHostName(InterfaceRef.of(flow)),
+            ref -> flow -> flow.setIfIndex(ref.getIfIndex())
+    );
+
+    private static final CompoundKeyTypePart<DscpRef> DSCP_PART = keyPart(
+            ref -> os -> INT_CODER.encode(ref.getDscp(), os),
+            is -> new DscpRef(INT_CODER.decode(is)),
+            flow -> singlePartWithoutHostName(DscpRef.of(flow)),
+            ref -> flow -> flow.setDscp(ref.getDscp())
+    );
+
+    private static final CompoundKeyTypePart<EcnRef> ECN_PART = keyPart(
+            ref -> os -> INT_CODER.encode(ref.getEcn().ordinal(), os),
+            is -> new EcnRef(Ecn.values()[INT_CODER.decode(is)]),
+            flow -> singlePartWithoutHostName(EcnRef.of(flow)),
+            ref -> flow -> flow.setEcn(ref.getEcn().code)
+    );
+
+    private static final CompoundKeyTypePart<ApplicationRef> APPLICATION_PART = keyPart(
+            ref -> os -> STRING_CODER.encode(ref.getApplication(), os),
+            is -> {
+                ApplicationRef ref = new ApplicationRef();
+                ref.setApplication(STRING_CODER.decode(is));
+                return ref;
+            },
+            flow -> singlePartWithoutHostName(ApplicationRef.of(flow)),
+            ref -> flow -> flow.setApplication(ref.getApplication())
+    );
+
+    private static final CompoundKeyTypePart<HostRef> HOST_PART = keyPart(
+            ref -> os -> STRING_CODER.encode(ref.getAddress(), os),
+            is -> {
+                HostRef ref = new HostRef();
+                ref.setAddress(STRING_CODER.decode(is));
+                return ref;
+            },
+            flow -> Arrays.asList(
+                    KeyFlowBy.WithHostname.having(HostRef.of(flow.getSrcAddress())).andHostname(flow.getSrcHostname()),
+                    KeyFlowBy.WithHostname.having(HostRef.of(flow.getDstAddress())).andHostname(flow.getDstHostname())
+            ),
+            ref -> flow -> flow.setHostAddress(ref.getAddress())
+    );
+
+    private static final CompoundKeyTypePart<ConversationRef> CONVERSATION_PART = keyPart(
+            ref -> os -> STRING_CODER.encode(ref.getConversationKey(), os),
+            is -> {
+                ConversationRef ref = new ConversationRef();
+                ref.setConversationKey(STRING_CODER.decode(is));
+                return ref;
+            },
+            flow -> singlePartWithoutHostName(ConversationRef.of(flow)),
+            ref -> flow -> flow.setConversationKey(ref.getConversationKey())
+    );
+
+
+    public enum CompoundKeyType {
+
+        EXPORTER(null, EXPORTER_PART),
+        EXPORTER_INTERFACE(EXPORTER, INTERFACE_PART),
+
+        // The ToS aggregation adds two parts to the compound key, namely a part for distinguishing DSCPs and another
+        // part for distinguishing ECNs.
+        // -> the ToS aggregation and its subaggregations (for applications, conversations, and hosts) include
+        //    a "dscp" and a "ecn" field that can be used to filter for specific DSCPs or ECNs.
+        // -> the ToS aggregation can be use to retrieve series/summaries for DSCPs or for ECNs by aggregating over all
+        //    ECNs or all DSCPs, respectively.
+        EXPORTER_INTERFACE_TOS(EXPORTER_INTERFACE, DSCP_PART, ECN_PART),
+
+        EXPORTER_INTERFACE_TOS_APPLICATION(EXPORTER_INTERFACE_TOS, APPLICATION_PART),
+        EXPORTER_INTERFACE_TOS_CONVERSATION(EXPORTER_INTERFACE_TOS, CONVERSATION_PART),
+        EXPORTER_INTERFACE_TOS_HOST(EXPORTER_INTERFACE_TOS, HOST_PART);
+
+        private CompoundKeyType parent;
+        private CompoundKeyTypePart<Ref>[] parts;
+
+        CompoundKeyType(CompoundKeyType parent, CompoundKeyTypePart<? extends Ref>... parts) {
+            this.parent = parent;
+            this.parts = parent == null ? (CompoundKeyTypePart<Ref>[])parts : ArrayUtils.addAll(parent.parts, (CompoundKeyTypePart<Ref>[])parts);
+        }
+
+        CompoundKey decode(InputStream is) throws IOException {
+            List<Ref> refs = new ArrayList<>(parts.length);
+            for (int i = 0; i < parts.length; i++) {
+                refs.add(parts[i].decode(is));
+            }
+            return new CompoundKey(this, refs);
+        }
+
+        void encode(List<Ref> refs, OutputStream os) throws IOException {
+            for (int i = 0; i < parts.length; i++) {
+                parts[i].encode(refs.get(i), os);
+            }
+        }
 
         /**
-         * Ordered list of references from which the key is composed
+         * Creates a compound key that may be accompanied by a host name from a flow document.
          *
-         * @return immutable list of keys
+         * The key parts of the created key are created by delegating to the key type parts of this compound key type.
          */
-        public abstract List<Ref> getKeys();
+        List<KeyFlowBy.WithHostname<CompoundKey>> create(FlowDocument flow) throws MissingFieldsException {
+            // the method returns a list of compound keys
+            // -> a list of lists of the corresponding key parts must be determined
+            List<List<KeyFlowBy.WithHostname<Ref>>> refss = null;
+            for (CompoundKeyTypePart part : parts) {
+                // each key part type yields a list of choices (refs)
+                // -> all current lists in refss have to be extended by all choices
+                List<KeyFlowBy.WithHostname<Ref>> refs = part.create(flow);
+                if (refss == null) {
+                    // first part
+                    // -> each choice yields a singleton list of key parts
+                    refss = refs.stream().map(whn -> Collections.singletonList(whn)).collect(Collectors.toList());
+                } else {
+                    // append choices to current lists
+                    // -> determine the next refss list
+                    List<List<KeyFlowBy.WithHostname<Ref>>> next = new ArrayList<>();
+                    // for each current list and each choice:
+                    // -> copy the current list, extends it by the choice and add it to the next refss
+                    for (List<KeyFlowBy.WithHostname<Ref>> prefix : refss) {
+                        for (KeyFlowBy.WithHostname<Ref> suffix : refs) {
+                            List<KeyFlowBy.WithHostname<Ref>> l = new ArrayList<>();
+                            l.addAll(prefix);
+                            l.add(suffix);
+                            next.add(l);
+                        }
+                    }
+                    refss = next;
+                }
+            }
+            // convert the list of part lists into a list of compound keys that may be accompanied by a host name
+            return refss
+                    .stream()
+                    .map(refs -> {
+                        // get the first host name from all the parts
+                        String hostname = refs.stream().map(whn -> whn.hostname).filter(hn -> hn != null).findFirst().orElse(null);
+                        CompoundKey key = new CompoundKey(this, refs.stream().map(whn -> whn.value).collect(Collectors.toList()));
+                        return KeyFlowBy.WithHostname.having(key).andHostname(hostname);
+                    })
+                    .collect(Collectors.toList());
+        }
+
+    }
+
+
+
+    @DefaultCoder(CompoundKeyCoder.class)
+    public static class CompoundKey {
+
+        private final CompoundKeyType type;
+        private final List<Ref> refs;
+
+        private CompoundKey(CompoundKeyType type, List<Ref> refs) {
+            this.type = type;
+            this.refs = refs;
+        }
 
         /**
          * Build the parent, or "outer" key for the current key.
          *
          * @return the outer key, or null if no such key exists
          */
-        public abstract CompoundKey getOuterKey();
+        public CompoundKey getOuterKey() {
+            return new CompoundKey(type.parent, refs.subList(0, type.parent.parts.length));
+        }
 
+        public String groupedByKey() {
+            return refs.stream().map(Ref::idAsString).collect(Collectors.joining("-"));
+        }
+
+        public void populate(FlowSummary flow) {
+            flow.setGroupedBy(type);
+            flow.setGroupedByKey(groupedByKey());
+            for (int i = 0; i < type.parts.length; i++) {
+                type.parts[i].populate(refs.get(i), flow);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            CompoundKey cKey = (CompoundKey) o;
+            return type == cKey.type &&
+                   Objects.equals(refs, cKey.refs);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(type, refs);
+        }
+
+        @Override
+        public String toString() {
+            return "CompoundKey{" +
+                   "type=" + type +
+                   ", refs=" + refs +
+                   '}';
+        }
     }
 
-    public interface Visitor {
-        void visit(ExporterKey key);
-        void visit(ExporterInterfaceKey key);
-        void visit(ExporterInterfaceApplicationKey key);
-        void visit(ExporterInterfaceHostKey key);
-        void visit(ExporterInterfaceConversationKey key);
-    }
+    public static class KeyFlowBy extends DoFn<FlowDocument, KV<CompoundKey, Aggregate>> {
 
-    public static abstract class KeyFlowBy extends DoFn<FlowDocument, KV<CompoundKey, Aggregate>> {
+        private final CompoundKeyType type;
+
+        public KeyFlowBy(CompoundKeyType type) {
+            this.type = type;
+        }
 
         public static class WithHostname<T> {
             public final T value;
@@ -196,40 +468,14 @@ public class Groupings {
             }
         }
 
-        public abstract Collection<WithHostname<? extends CompoundKey>> key(FlowDocument flow) throws MissingFieldsException;
-    }
-
-    public static class KeyByExporterInterface extends KeyFlowBy {
-        @Override
-        public Collection<WithHostname<? extends CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
-            return Collections.singleton(WithHostname.having(ExporterInterfaceKey.from(flow)).withoutHostname());
+        public Collection<WithHostname<CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
+            return type.create(flow);
         }
     }
 
-    public static class KeyByExporterInterfaceApplication extends KeyFlowBy {
-        @Override
-        public Collection<WithHostname<? extends CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
-            return Collections.singleton(WithHostname.having(ExporterInterfaceApplicationKey.from(flow)).withoutHostname());
-        }
-    }
-
-    public static class KeyByExporterInterfaceHost extends KeyFlowBy {
-        @Override
-        public Collection<WithHostname<? extends CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
-            final NodeRef nodeRef = NodeRef.of(flow);
-            final InterfaceRef interfaceRef = InterfaceRef.of(flow);
-            return Arrays.asList(
-                    WithHostname.having(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getSrcAddress()))).andHostname(flow.getSrcHostname()),
-                    WithHostname.having(ExporterInterfaceHostKey.of(nodeRef, interfaceRef, HostRef.of(flow.getDstAddress()))).andHostname(flow.getDstHostname()));
-        }
-    }
-
-    public static class KeyByExporterInterfaceConversation extends KeyFlowBy {
-        @Override
-        public Collection<WithHostname<? extends CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
-            return Collections.singleton(WithHostname.having(ExporterInterfaceConversationKey.from(flow)).withoutHostname());
-        }
-    }
+    //
+    //
+    //
 
     interface Ref {
         String idAsString();
@@ -375,6 +621,112 @@ public class Groupings {
         }
     }
 
+    public static class DscpRef implements Ref {
+        private int dscp;
+
+        public static DscpRef of(FlowDocument flow) {
+            int dscp = flow.getTos().getValue() >>> 2;
+            return new DscpRef(dscp);
+        }
+
+        public DscpRef (int dscp) {
+            this.dscp = dscp;
+        }
+
+        public int getDscp() {
+            return dscp;
+        }
+
+        public void setDscp(int dscp) {
+            this.dscp = dscp;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            DscpRef dscpRef = (DscpRef) o;
+            return dscp == dscpRef.dscp;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(dscp);
+        }
+
+        @Override
+        public String toString() {
+            return "DscpRef{" +
+                   "dscp=" + dscp +
+                   '}';
+        }
+
+        @Override
+        public String idAsString() {
+            return Integer.toString(dscp);
+        }
+    }
+
+    public static class EcnRef implements Ref {
+        private Ecn ecn;
+
+        public static EcnRef of(FlowDocument flow) {
+            Ecn ecn;
+            switch(flow.getTos().getValue() & 0x03) {
+                case 0: ecn = Ecn.NON_ECT; break;
+                case 1:
+                case 2: ecn = Ecn.ECT; break;
+                default: ecn = Ecn.CE;
+            }
+            return new EcnRef(ecn);
+        }
+
+        public EcnRef (Ecn ecn) {
+            this.ecn = ecn;
+        }
+
+        public Ecn getEcn() {
+            return ecn;
+        }
+
+        public void setEcn(Ecn ecn) {
+            this.ecn = ecn;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            EcnRef ecnRef = (EcnRef) o;
+            return ecn == ecnRef.ecn;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(ecn);
+        }
+
+        @Override
+        public String toString() {
+            return "EcnRef{" +
+                   "ecn=" + ecn +
+                   '}';
+        }
+
+        @Override
+        public String idAsString() {
+            return ecn.name();
+        }
+    }
+
     public static class ApplicationRef implements Ref {
         private String application;
 
@@ -382,6 +734,11 @@ public class Groupings {
             ApplicationRef applicationRef = new ApplicationRef();
             applicationRef.setApplication(application);
             return applicationRef;
+        }
+
+        public static ApplicationRef of(FlowDocument flow) {
+            String application = flow.getApplication();
+            return Strings.isNullOrEmpty(application) ? of(FlowSummary.UNKNOWN_APPLICATION_NAME_KEY) : of(application);
         }
 
         public String getApplication() {
@@ -508,600 +865,24 @@ public class Groupings {
         }
     }
 
-    @DefaultCoder(CompoundKeyCoder.class)
-    public static class ExporterInterfaceApplicationKey extends CompoundKey {
-        private NodeRef nodeRef;
-        private InterfaceRef interfaceRef;
-        private ApplicationRef applicationRef;
-
-        public static ExporterInterfaceApplicationKey of(NodeRef nodeRef, InterfaceRef interfaceRef, ApplicationRef applicationRef) {
-            ExporterInterfaceApplicationKey key = new ExporterInterfaceApplicationKey();
-            key.setNodeRef(Objects.requireNonNull(nodeRef));
-            key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
-            key.setApplicationRef(Objects.requireNonNull(applicationRef));
-            return key;
-        }
-
-        public static ExporterInterfaceApplicationKey from(FlowDocument flow) throws MissingFieldsException {
-            final NodeRef nodeRef = NodeRef.of(flow);
-            final InterfaceRef interfaceRef = InterfaceRef.of(flow);
-
-            final ApplicationRef applicationRef;
-            if (Strings.isNullOrEmpty(flow.getApplication())) {
-                applicationRef = ApplicationRef.of(FlowSummary.UNKNOWN_APPLICATION_NAME_KEY);
-            } else {
-                applicationRef = ApplicationRef.of(flow.getApplication());
-            }
-
-            return of(nodeRef, interfaceRef, applicationRef);
-        }
-
-        public NodeRef getNodeRef() {
-            return nodeRef;
-        }
-
-        public void setNodeRef(NodeRef nodeRef) {
-            this.nodeRef = nodeRef;
-        }
-
-        public InterfaceRef getInterfaceRef() {
-            return interfaceRef;
-        }
-
-        public void setInterfaceRef(InterfaceRef interfaceRef) {
-            this.interfaceRef = interfaceRef;
-        }
-
-        public ApplicationRef getApplicationRef() {
-            return applicationRef;
-        }
-
-        public void setApplicationRef(ApplicationRef applicationRef) {
-            this.applicationRef = applicationRef;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            ExporterInterfaceApplicationKey that = (ExporterInterfaceApplicationKey) o;
-            return Objects.equals(nodeRef, that.nodeRef) &&
-                    Objects.equals(interfaceRef, that.interfaceRef) &&
-                    Objects.equals(applicationRef, that.applicationRef);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(nodeRef, interfaceRef, applicationRef);
-        }
-
-        @Override
-        public String toString() {
-            return "ExporterInterfaceApplicationKey{" +
-                    "nodeRef=" + nodeRef +
-                    ", interfaceRef=" + interfaceRef +
-                    ", applicationRef=" + applicationRef +
-                    '}';
-        }
-
-        @Override
-        public void visit(Visitor visitor) {
-            visitor.visit(this);
-        }
-
-        @Override
-        public CompoundKey getOuterKey() {
-            return ExporterInterfaceKey.of(nodeRef, interfaceRef);
-        }
-
-        @Override
-        public List<Ref> getKeys() {
-            return Arrays.asList(nodeRef, interfaceRef, applicationRef);
-        }
-    }
-
-    @DefaultCoder(CompoundKeyCoder.class)
-    public static class ExporterKey extends CompoundKey {
-        private NodeRef nodeRef;
-
-        public static ExporterKey from(FlowDocument flow) throws MissingFieldsException {
-            final ExporterKey key = new ExporterKey();
-            key.setNodeRef(NodeRef.of(flow));
-            return key;
-        }
-
-        public NodeRef getNodeRef() {
-            return nodeRef;
-        }
-
-        public void setNodeRef(NodeRef nodeRef) {
-            this.nodeRef = nodeRef;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof ExporterKey)) return false;
-            ExporterKey that = (ExporterKey) o;
-            return Objects.equals(nodeRef, that.nodeRef);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(nodeRef);
-        }
-
-        @Override
-        public String toString() {
-            return "ExporterKey{" +
-                    "nodeRef=" + nodeRef +
-                    '}';
-        }
-
-        @Override
-        public void visit(Visitor visitor) {
-            visitor.visit(this);
-        }
-
-        @Override
-        public CompoundKey getOuterKey() {
-            // No parent
-            return null;
-        }
-
-        @Override
-        public List<Ref> getKeys() {
-            return Arrays.asList(nodeRef);
-        }
-    }
-
-    @DefaultCoder(CompoundKeyCoder.class)
-    public static class ExporterInterfaceKey extends CompoundKey {
-        private NodeRef nodeRef;
-        private InterfaceRef interfaceRef;
-
-        public static ExporterInterfaceKey of(NodeRef nodeRef, InterfaceRef interfaceRef) {
-            ExporterInterfaceKey key = new ExporterInterfaceKey();
-            key.setNodeRef(Objects.requireNonNull(nodeRef));
-            key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
-            return key;
-        }
-
-        public static ExporterInterfaceKey from(FlowDocument flow) throws MissingFieldsException {
-            return of(NodeRef.of(flow), InterfaceRef.of(flow));
-        }
-
-        public NodeRef getNodeRef() {
-            return nodeRef;
-        }
-
-        public void setNodeRef(NodeRef nodeRef) {
-            this.nodeRef = nodeRef;
-        }
-
-        public InterfaceRef getInterfaceRef() {
-            return interfaceRef;
-        }
-
-        public void setInterfaceRef(InterfaceRef interfaceRef) {
-            this.interfaceRef = interfaceRef;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            ExporterInterfaceKey that = (ExporterInterfaceKey) o;
-            return Objects.equals(nodeRef, that.nodeRef) &&
-                    Objects.equals(interfaceRef, that.interfaceRef);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(nodeRef, interfaceRef);
-        }
-
-        @Override
-        public String toString() {
-            return "ExporterInterfaceKey{" +
-                    "nodeRef=" + nodeRef +
-                    ", interfaceRef=" + interfaceRef +
-                    '}';
-        }
-
-        @Override
-        public void visit(Visitor visitor) {
-            visitor.visit(this);
-        }
-
-        @Override
-        public CompoundKey getOuterKey() {
-            ExporterKey parentKey = new ExporterKey();
-            parentKey.setNodeRef(nodeRef);
-            return parentKey;
-        }
-
-        @Override
-        public List<Ref> getKeys() {
-            return Arrays.asList(nodeRef, interfaceRef);
-        }
-    }
-
-
-    @DefaultCoder(CompoundKeyCoder.class)
-    public static class ExporterInterfaceHostKey extends CompoundKey {
-        private NodeRef nodeRef;
-        private InterfaceRef interfaceRef;
-        private HostRef hostRef;
-
-        public static ExporterInterfaceHostKey of(NodeRef nodeRef, InterfaceRef interfaceRef, HostRef hostRef) {
-            ExporterInterfaceHostKey key = new ExporterInterfaceHostKey();
-            key.setNodeRef(Objects.requireNonNull(nodeRef));
-            key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
-            key.setHostRef(Objects.requireNonNull(hostRef));
-            return key;
-        }
-
-        public NodeRef getNodeRef() {
-            return nodeRef;
-        }
-
-        public void setNodeRef(NodeRef nodeRef) {
-            this.nodeRef = nodeRef;
-        }
-
-        public InterfaceRef getInterfaceRef() {
-            return interfaceRef;
-        }
-
-        public void setInterfaceRef(InterfaceRef interfaceRef) {
-            this.interfaceRef = interfaceRef;
-        }
-
-        public HostRef getHostRef() {
-            return hostRef;
-        }
-
-        public void setHostRef(HostRef hostRef) {
-            this.hostRef = hostRef;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            ExporterInterfaceHostKey that = (ExporterInterfaceHostKey) o;
-            return Objects.equals(nodeRef, that.nodeRef) &&
-                    Objects.equals(interfaceRef, that.interfaceRef) &&
-                    Objects.equals(hostRef, that.hostRef);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(nodeRef, interfaceRef, hostRef);
-        }
-
-        @Override
-        public String toString() {
-            return "ExporterInterfaceHostKey{" +
-                    "nodeRef=" + nodeRef +
-                    ", interfaceRef=" + interfaceRef +
-                    ", applicationRef=" + hostRef +
-                    '}';
-        }
-
-        @Override
-        public void visit(Visitor visitor) {
-            visitor.visit(this);
-        }
-
-        @Override
-        public CompoundKey getOuterKey() {
-            return ExporterInterfaceKey.of(nodeRef, interfaceRef);
-        }
-
-        @Override
-        public List<Ref> getKeys() {
-            return Arrays.asList(nodeRef, interfaceRef, hostRef);
-        }
-    }
-
-    @DefaultCoder(CompoundKeyCoder.class)
-    public static class ExporterInterfaceConversationKey extends CompoundKey {
-        private NodeRef nodeRef;
-        private InterfaceRef interfaceRef;
-        private ConversationRef conversationRef;
-
-        public static ExporterInterfaceConversationKey of(NodeRef nodeRef, InterfaceRef interfaceRef, ConversationRef conversationRef) {
-            final ExporterInterfaceConversationKey key = new ExporterInterfaceConversationKey();
-            key.setNodeRef(Objects.requireNonNull(nodeRef));
-            key.setInterfaceRef(Objects.requireNonNull(interfaceRef));
-            key.setConversationRef(Objects.requireNonNull(conversationRef));
-            return key;
-        }
-
-        public static CompoundKey from(FlowDocument flow) throws MissingFieldsException {
-            if (!flow.hasExporterNode()) {
-                throw new MissingFieldsException("exporterNode", flow);
-            }
-
-            final NodeRef nodeRef = NodeRef.of(flow);
-            final InterfaceRef interfaceRef = InterfaceRef.of(flow);
-            final ConversationRef conversationRef = ConversationRef.of(flow);
-            return of(nodeRef, interfaceRef, conversationRef);
-        }
-
-        public NodeRef getNodeRef() {
-            return nodeRef;
-        }
-
-        public void setNodeRef(NodeRef nodeRef) {
-            this.nodeRef = nodeRef;
-        }
-
-        public InterfaceRef getInterfaceRef() {
-            return interfaceRef;
-        }
-
-        public void setInterfaceRef(InterfaceRef interfaceRef) {
-            this.interfaceRef = interfaceRef;
-        }
-
-        public ConversationRef getConversationRef() {
-            return conversationRef;
-        }
-
-        public void setConversationRef(ConversationRef conversationRef) {
-            this.conversationRef = conversationRef;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            ExporterInterfaceConversationKey that = (ExporterInterfaceConversationKey) o;
-            return Objects.equals(nodeRef, that.nodeRef) &&
-                    Objects.equals(interfaceRef, that.interfaceRef) &&
-                    Objects.equals(conversationRef, that.conversationRef);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(nodeRef, interfaceRef, conversationRef);
-        }
-
-        @Override
-        public void visit(Visitor visitor) {
-            visitor.visit(this);
-        }
-
-        @Override
-        public CompoundKey getOuterKey() {
-            return ExporterInterfaceKey.of(nodeRef, interfaceRef);
-        }
-
-        @Override
-        public List<Ref> getKeys() {
-            return Arrays.asList(nodeRef, interfaceRef, conversationRef);
-        }
-    }
-
-    public static class FlowPopulatingVisitor implements Visitor {
-        private final FlowSummary flow;
-
-        public FlowPopulatingVisitor(FlowSummary flow) {
-            this.flow = Objects.requireNonNull(flow);
-        }
-
-        private static String keyToString(List<Ref> keys) {
-            return keys.stream()
-                    .map(Ref::idAsString)
-                    .collect(Collectors.joining("-"));
-        }
-
-        @Override
-        public void visit(ExporterKey key) {
-            flow.setGroupedByKey(keyToString(key.getKeys()));
-            flow.setGroupedBy(GroupedBy.EXPORTER);
-            flow.setExporter(toExporterNode(key.nodeRef));
-        }
-
-        @Override
-        public void visit(ExporterInterfaceKey key) {
-            flow.setGroupedByKey(keyToString(key.getKeys()));
-            flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE);
-            flow.setExporter(toExporterNode(key.nodeRef));
-            flow.setIfIndex(key.interfaceRef.ifIndex);
-        }
-
-        @Override
-        public void visit(ExporterInterfaceApplicationKey key) {
-            flow.setGroupedByKey(keyToString(key.getKeys()));
-            flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_APPLICATION);
-            flow.setExporter(toExporterNode(key.nodeRef));
-            flow.setIfIndex(key.interfaceRef.ifIndex);
-            flow.setApplication(key.applicationRef.application);
-        }
-
-        @Override
-        public void visit(ExporterInterfaceHostKey key) {
-            flow.setGroupedByKey(keyToString(key.getKeys()));
-            flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_HOST);
-            flow.setExporter(toExporterNode(key.nodeRef));
-            flow.setIfIndex(key.interfaceRef.ifIndex);
-            flow.setHostAddress(key.hostRef.address);
-        }
-
-        @Override
-        public void visit(ExporterInterfaceConversationKey key) {
-            flow.setGroupedByKey(keyToString(key.getKeys()));
-            flow.setGroupedBy(GroupedBy.EXPORTER_INTERFACE_CONVERSATION);
-            flow.setExporter(toExporterNode(key.nodeRef));
-            flow.setIfIndex(key.interfaceRef.ifIndex);
-            flow.setConversationKey(key.conversationRef.conversationKey);
-        }
-
-        private static ExporterNode toExporterNode(NodeRef nodeRef) {
-            ExporterNode exporterNode = new ExporterNode();
-            exporterNode.setForeignSource(nodeRef.foreignSource);
-            exporterNode.setForeignId(nodeRef.foreignId);
-            exporterNode.setNodeId(nodeRef.nodeId);
-            return exporterNode;
-        }
-    }
-
     public static class CompoundKeyCoder extends AtomicCoder<CompoundKey> {
-        private static final NodeRefKeyCoder NODE_REF_KEY_CODER = NodeRefKeyCoder.of();
-        private Coder<String> STRING_CODER = NullableCoder.of(StringUtf8Coder.of());
-        private Coder<Integer> INT_CODER = NullableCoder.of(VarIntCoder.of());
-
         @Override
-        public void encode(CompoundKey value, OutputStream os) {
-            value.visit(new Visitor() {
-                @Override
-                public void visit(ExporterKey key) {
-                    try {
-                        INT_CODER.encode(0, os);
-                        NODE_REF_KEY_CODER.encode(key.nodeRef, os);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-
-                @Override
-                public void visit(ExporterInterfaceKey key) {
-                    try {
-                        INT_CODER.encode(1, os);
-                        NODE_REF_KEY_CODER.encode(key.nodeRef, os);
-                        INT_CODER.encode(key.interfaceRef.ifIndex, os);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-
-                @Override
-                public void visit(ExporterInterfaceApplicationKey key) {
-                    try {
-                        INT_CODER.encode(2, os);
-                        NODE_REF_KEY_CODER.encode(key.nodeRef, os);
-                        INT_CODER.encode(key.interfaceRef.ifIndex, os);
-                        STRING_CODER.encode(key.applicationRef.application, os);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-
-                @Override
-                public void visit(ExporterInterfaceHostKey key) {
-                    try {
-                        INT_CODER.encode(3, os);
-                        NODE_REF_KEY_CODER.encode(key.nodeRef, os);
-                        INT_CODER.encode(key.interfaceRef.ifIndex, os);
-                        STRING_CODER.encode(key.hostRef.address, os);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-
-                @Override
-                public void visit(ExporterInterfaceConversationKey key) {
-                    try {
-                        INT_CODER.encode(4, os);
-                        NODE_REF_KEY_CODER.encode(key.nodeRef, os);
-                        INT_CODER.encode(key.interfaceRef.ifIndex, os);
-                        STRING_CODER.encode(key.conversationRef.conversationKey, os);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-            });
+        public void encode(CompoundKey value, OutputStream outStream) throws CoderException, IOException {
+            INT_CODER.encode(value.type.ordinal(), outStream);
+            value.type.encode(value.refs, outStream);
         }
 
         @Override
-        public CompoundKey decode(InputStream is) throws IOException {
-            int type = INT_CODER.decode(is);
-            if (type == 1) {
-                ExporterInterfaceKey key = new ExporterInterfaceKey();
-
-                key.nodeRef = NODE_REF_KEY_CODER.decode(is);
-                key.interfaceRef = new InterfaceRef();
-                key.interfaceRef.ifIndex = INT_CODER.decode(is);
-
-                return key;
-            } else if (type == 2) {
-                ExporterInterfaceApplicationKey key = new ExporterInterfaceApplicationKey();
-
-                key.nodeRef = NODE_REF_KEY_CODER.decode(is);
-                key.interfaceRef = new InterfaceRef();
-                key.interfaceRef.ifIndex = INT_CODER.decode(is);
-
-                key.applicationRef = new ApplicationRef();
-                key.applicationRef.application = STRING_CODER.decode(is);
-                return key;
-            } else if (type == 3) {
-                ExporterInterfaceHostKey key = new ExporterInterfaceHostKey();
-
-                key.nodeRef = NODE_REF_KEY_CODER.decode(is);
-
-                key.interfaceRef = new InterfaceRef();
-                key.interfaceRef.ifIndex = INT_CODER.decode(is);
-
-                key.hostRef = new HostRef();
-                key.hostRef.address = STRING_CODER.decode(is);
-                return key;
-            } else if (type == 4) {
-                ExporterInterfaceConversationKey key = new ExporterInterfaceConversationKey();
-
-                key.nodeRef = NODE_REF_KEY_CODER.decode(is);
-
-                key.interfaceRef = new InterfaceRef();
-                key.interfaceRef.ifIndex = INT_CODER.decode(is);
-
-                key.conversationRef = new ConversationRef();
-                key.conversationRef.conversationKey = STRING_CODER.decode(is);
-                return key;
-            }
-            throw new RuntimeException("Unsupported type: " + type);
+        public CompoundKey decode(InputStream inStream) throws CoderException, IOException {
+            CompoundKeyType type = CompoundKeyType.values()[INT_CODER.decode(inStream)];
+            return type.decode(inStream);
         }
 
         @Override
         public boolean consistentWithEquals() {
             return true;
         }
-    }
 
-    public static class NodeRefKeyCoder extends AtomicCoder<NodeRef> {
-        public static NodeRefKeyCoder of() {
-            return INSTANCE;
-        }
-
-        private static final NodeRefKeyCoder INSTANCE = new NodeRefKeyCoder();
-
-        private NodeRefKeyCoder() {}
-
-        private final static Coder<String> STRING_CODER = NullableCoder.of(StringUtf8Coder.of());
-        private final static  Coder<Integer> INT_CODER = NullableCoder.of(VarIntCoder.of());
-
-        @Override
-        public void encode(NodeRef nodeRef, OutputStream os) throws IOException {
-            STRING_CODER.encode(nodeRef.foreignSource, os);
-            STRING_CODER.encode(nodeRef.foreignId, os);
-            INT_CODER.encode(nodeRef.nodeId, os);
-        }
-
-        @Override
-        public NodeRef decode(InputStream is) throws IOException {
-            NodeRef nodeRef = new NodeRef();
-            nodeRef.foreignSource = STRING_CODER.decode(is);
-            nodeRef.foreignId = STRING_CODER.decode(is);
-            nodeRef.nodeId = INT_CODER.decode(is);
-            return nodeRef;
-        }
-
-        @Override
-        public boolean consistentWithEquals() {
-            return true;
-        }
     }
 
 }

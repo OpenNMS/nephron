@@ -127,7 +127,6 @@ public class Pipeline {
         final CoderRegistry coderRegistry = p.getCoderRegistry();
         coderRegistry.registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
         coderRegistry.registerCoderForClass(FlowSummaryData.class, new FlowSummaryData.FlowSummaryDataCoder());
-        coderRegistry.registerCoderForClass(Groupings.ExporterInterfaceApplicationKey.class, new Groupings.CompoundKeyCoder());
         coderRegistry.registerCoderForClass(Groupings.CompoundKey.class, new Groupings.CompoundKeyCoder());
         coderRegistry.registerCoderForClass(Aggregate.class, new Aggregate.AggregateCoder());
     }
@@ -159,23 +158,32 @@ public class Pipeline {
         public PCollection<FlowSummaryData> expand(PCollection<FlowDocument> input) {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("to_windows", toWindow(fixedWindowSize, earlyProcessingDelay, lateProcessingDelay, allowedLateness));
 
+            // exporter/interface and exporter/interface/tos aggregations are used as "parents" when the
+            // "include other" option is selected for topK-queries
+            // -> they must not be limited to topK but contain all cases
+
             PCollection<FlowSummaryData> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
-                    new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
+                    new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", Groupings.CompoundKeyType.EXPORTER_INTERFACE));
 
-            PCollection<FlowSummaryData> topKAppsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopAppsByExporterAndInterface",
-                    new CalculateTopKGroups("CalculateTopAppsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceApplication()));
+            PCollection<FlowSummaryData> totalBytesByExporterAndInterfaceAndTos = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterfaceAndTos",
+                    new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterfaceAndTos_", Groupings.CompoundKeyType.EXPORTER_INTERFACE_TOS));
 
-            PCollection<FlowSummaryData> topKHostsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopHostsByExporterAndInterface",
-                    new CalculateTopKGroups("CalculateTopHostsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceHost()));
+            PCollection<FlowSummaryData> topKAppsByExporterAndInterfaceAndTos = windowedStreamOfFlows.apply("CalculateTopAppsByExporterAndInterfaceAndTos",
+                    new CalculateTopKGroups("CalculateTopAppsByExporterAndInterfaceAndTos_", topK, Groupings.CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION));
 
-            PCollection<FlowSummaryData> topKConversationsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopConversationsByExporterAndInterface",
-                    new CalculateTopKGroups("CalculateTopConversationsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceConversation()));
+            PCollection<FlowSummaryData> topKHostsByExporterAndInterfaceAndTos = windowedStreamOfFlows.apply("CalculateTopHostsByExporterAndInterfaceAndTos",
+                    new CalculateTopKGroups("CalculateTopHostsByExporterAndInterfaceAndTos_", topK, Groupings.CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST));
+
+            PCollection<FlowSummaryData> topKConversationsByExporterAndInterfaceAndTos = windowedStreamOfFlows.apply("CalculateTopConversationsByExporterAndInterfaceAndTos",
+                    new CalculateTopKGroups("CalculateTopConversationsByExporterAndInterfaceAndTos_", topK, Groupings.CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERSATION));
 
             // Merge all the collections
             PCollectionList<FlowSummaryData> flowSummaries = PCollectionList.of(totalBytesByExporterAndInterface)
-                    .and(topKAppsByExporterAndInterface)
-                    .and(topKHostsByExporterAndInterface)
-                    .and(topKConversationsByExporterAndInterface);
+                    .and(totalBytesByExporterAndInterfaceAndTos)
+                    .and(topKAppsByExporterAndInterfaceAndTos)
+                    .and(topKHostsByExporterAndInterfaceAndTos)
+                    .and(topKConversationsByExporterAndInterfaceAndTos)
+                    ;
             return flowSummaries.apply(Flatten.pCollections());
         }
     }
@@ -189,10 +197,11 @@ public class Pipeline {
         private final int topK;
         private final DoFn<FlowDocument, KV<Groupings.CompoundKey, Aggregate>> groupingBy;
 
-        public CalculateTopKGroups(String transformPrefix, int topK, DoFn<FlowDocument, KV<Groupings.CompoundKey, Aggregate>> groupingBy) {
+        public CalculateTopKGroups(String transformPrefix, int topK, Groupings.CompoundKeyType type) {
             this.transformPrefix = Objects.requireNonNull(transformPrefix);
             this.topK = topK;
-            this.groupingBy = Objects.requireNonNull(groupingBy);
+            Objects.requireNonNull(type);
+            this.groupingBy = new Groupings.KeyFlowBy(type);
         }
 
         @Override
@@ -229,9 +238,10 @@ public class Pipeline {
         private final String transformPrefix;
         private final DoFn<FlowDocument, KV<Groupings.CompoundKey, Aggregate>> groupingBy;
 
-        public CalculateTotalBytes(String transformPrefix, DoFn<FlowDocument, KV<Groupings.CompoundKey, Aggregate>> groupingBy) {
+        public CalculateTotalBytes(String transformPrefix, Groupings.CompoundKeyType type) {
             this.transformPrefix = Objects.requireNonNull(transformPrefix);
-            this.groupingBy = Objects.requireNonNull(groupingBy);
+            Objects.requireNonNull(type);
+            this.groupingBy = new Groupings.KeyFlowBy(type);
         }
 
         @Override
@@ -418,7 +428,15 @@ public class Pipeline {
     static class FlowBytesValueComparator implements Comparator<KV<Groupings.CompoundKey, Aggregate>>, Serializable {
         @Override
         public int compare(KV<Groupings.CompoundKey, Aggregate> a, KV<Groupings.CompoundKey, Aggregate> b) {
-            return Long.compare(a.getValue().getBytes(), b.getValue().getBytes());
+            int res = Long.compare(a.getValue().getBytes(), b.getValue().getBytes());
+            if (res != 0) {
+                return res;
+            } else {
+                // use the lexicographic order of groupedByKey as a second order criteria
+                // -> makes the FlowSummary ranking deterministic (eases unit tests)
+                //    (the lexicographic order is reversed, i.e. "smaller" keys come earlier in TopK
+                return -a.getKey().groupedByKey().compareTo(b.getKey().groupedByKey());
+            }
         }
     }
 
@@ -429,7 +447,7 @@ public class Pipeline {
 
     public static FlowSummary toFlowSummary(FlowSummaryData fsd) {
         FlowSummary flowSummary = new FlowSummary();
-        fsd.key.visit(new Groupings.FlowPopulatingVisitor(flowSummary));
+        fsd.key.populate(flowSummary);
         flowSummary.setAggregationType(fsd.aggregationType);
 
         flowSummary.setRangeStartMs(fsd.windowStart);
