@@ -168,4 +168,9 @@ public interface NephronOptions extends PipelineOptions {
     long getElasticRetryDuration();
 
     void setElasticRetryDuration(long value);
+
+    @Description("If set then the ecn value is used for keying")
+    @Default.Boolean(false)
+    boolean getKeyByEcn();
+    void setKeyByEcn(boolean value);
 }

@@ -1,8 +1,8 @@
 /*******************************************************************************
  * This file is part of OpenNMS(R).
  *
- * Copyright (C) 2020 The OpenNMS Group, Inc.
- * OpenNMS(R) is Copyright (C) 1999-2020 The OpenNMS Group, Inc.
+ * Copyright (C) 2021 The OpenNMS Group, Inc.
+ * OpenNMS(R) is Copyright (C) 1999-2021 The OpenNMS Group, Inc.
  *
  * OpenNMS(R) is a registered trademark of The OpenNMS Group, Inc.
  *
@@ -26,31 +26,40 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.nephron.coders;
+package org.opennms.nephron;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+/**
+ * Explicit congestion notification information.
+ *
+ * ECN information is encoded with 2 bits i.e. it could represent 4 different states (i.e. code 0, 1, 2, 3). However,
+ * only 3 different semantic states are distinguished. Both, code 1 and 2 both indicate an ecn capable transport.
+ * In order to save space when grouping flows according to their ecn information, code 2 is treated as code 1.
+ */
+public enum Ecn {
 
-import org.apache.beam.sdk.coders.AtomicCoder;
-import org.apache.beam.sdk.coders.ByteArrayCoder;
-import org.opennms.netmgt.flows.persistence.model.FlowDocument;
+    IGNORED(-1), // the ECN value is not used for grouping
+    NON_ECT(0), // non ecn-capable transport
+    ECT(1), // ecn-capable transport
+    CE(3); // congestion encountered
 
-public class FlowDocumentProtobufCoder extends AtomicCoder<FlowDocument> {
-    private final ByteArrayCoder delegate = ByteArrayCoder.of();
 
-    @Override
-    public void encode(FlowDocument value, OutputStream outStream) throws IOException {
-        delegate.encode(value.toByteArray(), outStream);
+    public final int code;
+
+    Ecn(int code) {
+        this.code = code;
     }
 
-    @Override
-    public FlowDocument decode(InputStream inStream) throws IOException {
-        return FlowDocument.parseFrom(delegate.decode(inStream));
-    }
-
-    @Override
-    public boolean consistentWithEquals() {
-        return true;
+    public static Ecn fromCode(int ecn) {
+        switch (ecn) {
+            case -1:
+                return IGNORED;
+            case 0:
+                return NON_ECT;
+            case 1:
+            case 2:
+                return ECT;
+            default:
+                return CE;
+        }
     }
 }

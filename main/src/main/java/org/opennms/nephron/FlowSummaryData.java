@@ -47,12 +47,12 @@ import org.opennms.nephron.elastic.AggregationType;
 @DefaultCoder(FlowSummaryData.FlowSummaryDataCoder.class)
 public class FlowSummaryData {
     public final AggregationType aggregationType;
-    public final Groupings.CompoundKey key;
+    public final CompoundKey key;
     public final Aggregate aggregate;
     public final long windowStart, windowEnd;
     public final int ranking;
 
-    public FlowSummaryData(AggregationType aggregationType, Groupings.CompoundKey key, Aggregate aggregate, long windowStart, long windowEnd, int ranking) {
+    public FlowSummaryData(AggregationType aggregationType, CompoundKey key, Aggregate aggregate, long windowStart, long windowEnd, int ranking) {
         this.aggregationType = aggregationType;
         this.key = key;
         this.aggregate = aggregate;
@@ -77,7 +77,7 @@ public class FlowSummaryData {
 
         private static Coder<Integer> INT_CODER = VarIntCoder.of();
         private static Coder<Long> LONG_CODER = VarLongCoder.of();
-        private static Coder<Groupings.CompoundKey> KEY_CODER = new Groupings.CompoundKeyCoder();
+        private static Coder<CompoundKey> KEY_CODER = new CompoundKey.CompoundKeyCoder();
         private static Coder<Aggregate> AGG_CODER = new Aggregate.AggregateCoder();
 
         @Override

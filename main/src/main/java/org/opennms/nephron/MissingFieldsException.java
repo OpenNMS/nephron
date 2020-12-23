@@ -31,7 +31,7 @@ package org.opennms.nephron;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 /**
- * Thrown when we are unable to derive a {@link org.opennms.nephron.Groupings.CompoundKey} from
+ * Thrown when we are unable to derive a {@link CompoundKey} from
  * a {@link FlowDocument} due to one or more missing fields.
  */
 public class MissingFieldsException extends Exception {

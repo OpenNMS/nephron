@@ -50,7 +50,7 @@ public class KeyFlowByTest {
         long sampled = LongStream
                 .range(fd.deltaSwitched / windowSize, fd.lastSwitched / windowSize + 1)
                 .map(i ->
-                        Groupings.KeyFlowBy.bytesInWindow(
+                        Pipeline.KeyFlowBy.bytesInWindow(
                                 fd.deltaSwitched,
                                 fd.lastSwitched,
                                 fd.bytes * multiplier,

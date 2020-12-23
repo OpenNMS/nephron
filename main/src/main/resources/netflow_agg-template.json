@@ -37,6 +37,18 @@
             "bytes_egress": {
                 "type": "long"
             },
+            "dscp": {
+                "type": "integer"
+            },
+            "ecn": {
+                "type": "integer"
+            },
+            "congestion_encountered": {
+                "type": "boolean"
+            },
+            "non_ect": {
+                "type": "boolean"
+            },
 
             "exporter": {
                 "dynamic": true,
