@@ -458,6 +458,8 @@ public class Pipeline {
         flowSummary.setBytesEgress(fsd.aggregate.getBytesOut());
         flowSummary.setBytesIngress(fsd.aggregate.getBytesIn());
         flowSummary.setBytesTotal(flowSummary.getBytesIngress() + flowSummary.getBytesEgress());
+        flowSummary.setCongestionEncountered(fsd.aggregate.isCongestionEncountered());
+        flowSummary.setNonEcnCapableTransport(fsd.aggregate.isNonEcnCapableTransport());
 
         flowSummary.setHostName(fsd.aggregate.getHostname());
         flowSummary.setRanking(fsd.ranking);

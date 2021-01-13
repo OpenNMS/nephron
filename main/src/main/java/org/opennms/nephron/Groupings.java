@@ -83,7 +83,7 @@ public class Groupings {
 
         T decode(InputStream is) throws IOException;
 
-        List<KeyFlowBy.WithHostname<T>> create(FlowDocument flow) throws MissingFieldsException;
+        List<KeyFlowBy.WithHostname<T>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException;
 
         void populate(T ref, FlowSummary summary);
     }
@@ -94,20 +94,30 @@ public class Groupings {
     }
 
     @FunctionalInterface
-    private interface CheckedConsumer<T> {
-        void accept(T t) throws IOException;
+    private interface CheckedFunction2<T1, T2, R, E extends Exception> {
+        R apply(T1 t1, T2 t2) throws E;
+    }
+
+    @FunctionalInterface
+    private interface Consumer2<T1, T2> {
+        void accept(T1 t1, T2 t2);
+    }
+
+    @FunctionalInterface
+    private interface CheckedConsumer2<T1, T2> {
+        void accept(T1 t1, T2 t2) throws IOException;
     }
 
     private static <T extends Ref> CompoundKeyTypePart<T> keyPart(
-            Function<T, CheckedConsumer<OutputStream>> encode,
+            CheckedConsumer2<T, OutputStream> encode,
             CheckedFunction<InputStream, T, IOException> decode,
-            CheckedFunction<FlowDocument, List<KeyFlowBy.WithHostname<T>>, MissingFieldsException> create,
-            Function<T, Consumer<FlowSummary>> populate
+            CheckedFunction2<NephronOptions, FlowDocument, List<KeyFlowBy.WithHostname<T>>, MissingFieldsException> create,
+            Consumer2<T, FlowSummary> populate
     ) {
         return new CompoundKeyTypePart<T>() {
             @Override
             public void encode(T ref, OutputStream os) throws IOException {
-                encode.apply(ref).accept(os);
+                encode.accept(ref, os);
             }
 
             @Override
@@ -116,13 +126,13 @@ public class Groupings {
             }
 
             @Override
-            public List<KeyFlowBy.WithHostname<T>> create(FlowDocument flow) throws MissingFieldsException {
-                return create.apply(flow);
+            public List<KeyFlowBy.WithHostname<T>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
+                return create.apply(opts, flow);
             }
 
             @Override
             public void populate(T ref, FlowSummary summary) {
-                populate.apply(ref).accept(summary);
+                populate.accept(ref, summary);
             }
         };
     }
@@ -135,7 +145,7 @@ public class Groupings {
     }
 
     private static final CompoundKeyTypePart<NodeRef> EXPORTER_PART = keyPart(
-            ref -> os -> {
+            (ref, os) -> {
                 STRING_CODER.encode(ref.getForeignSource(), os);
                 STRING_CODER.encode(ref.getForeignId(), os);
                 INT_CODER.encode(ref.getNodeId(), os);
@@ -147,8 +157,8 @@ public class Groupings {
                 ref.setNodeId(INT_CODER.decode(is));
                 return ref;
             },
-            flow -> singlePartWithoutHostName(NodeRef.of(flow)),
-            ref -> flow -> {
+            (opts, flow) -> singlePartWithoutHostName(NodeRef.of(flow)),
+            (ref, flow) -> {
                 ExporterNode exporterNode = new ExporterNode();
                 exporterNode.setForeignSource(ref.getForeignSource());
                 exporterNode.setForeignId(ref.getForeignId());
@@ -159,64 +169,69 @@ public class Groupings {
     );
 
     private static final CompoundKeyTypePart<InterfaceRef> INTERFACE_PART = keyPart(
-            ref -> os -> INT_CODER.encode(ref.getIfIndex(), os),
+            (ref, os) -> INT_CODER.encode(ref.getIfIndex(), os),
             is -> {
                 InterfaceRef ref = new InterfaceRef();
                 ref.setIfIndex(INT_CODER.decode(is));
                 return ref;
             },
-            flow -> singlePartWithoutHostName(InterfaceRef.of(flow)),
-            ref -> flow -> flow.setIfIndex(ref.getIfIndex())
+            (opts, flow) -> singlePartWithoutHostName(InterfaceRef.of(flow)),
+            (ref, flow) -> flow.setIfIndex(ref.getIfIndex())
     );
 
     private static final CompoundKeyTypePart<DscpRef> DSCP_PART = keyPart(
-            ref -> os -> INT_CODER.encode(ref.getDscp(), os),
+            (ref, os) -> INT_CODER.encode(ref.getDscp(), os),
             is -> new DscpRef(INT_CODER.decode(is)),
-            flow -> singlePartWithoutHostName(DscpRef.of(flow)),
-            ref -> flow -> flow.setDscp(ref.getDscp())
+            (opts, flow) -> singlePartWithoutHostName(DscpRef.of(flow)),
+            (ref, flow) -> flow.setDscp(ref.getDscp())
     );
 
     private static final CompoundKeyTypePart<EcnRef> ECN_PART = keyPart(
-            ref -> os -> INT_CODER.encode(ref.getEcn().ordinal(), os),
+            (ref, os) -> INT_CODER.encode(ref.getEcn().ordinal(), os),
             is -> new EcnRef(Ecn.values()[INT_CODER.decode(is)]),
-            flow -> singlePartWithoutHostName(EcnRef.of(flow)),
-            ref -> flow -> flow.setEcn(ref.getEcn().code)
+            (opts, flow) -> singlePartWithoutHostName(EcnRef.of(opts, flow)),
+            (ref, flow) -> {
+                switch (ref.getEcn()) {
+                    case IGNORED: break;
+                    default: flow.setEcn(ref.getEcn().code);
+                }
+            }
     );
 
     private static final CompoundKeyTypePart<ApplicationRef> APPLICATION_PART = keyPart(
-            ref -> os -> STRING_CODER.encode(ref.getApplication(), os),
+            (ref, os) -> STRING_CODER.encode(ref.getApplication(), os),
             is -> {
                 ApplicationRef ref = new ApplicationRef();
                 ref.setApplication(STRING_CODER.decode(is));
                 return ref;
             },
-            flow -> singlePartWithoutHostName(ApplicationRef.of(flow)),
-            ref -> flow -> flow.setApplication(ref.getApplication())
+            (opts, flow) -> singlePartWithoutHostName(ApplicationRef.of(flow)),
+            (ref, flow) -> flow.setApplication(ref.getApplication())
     );
 
     private static final CompoundKeyTypePart<HostRef> HOST_PART = keyPart(
-            ref -> os -> STRING_CODER.encode(ref.getAddress(), os),
+            (ref, os) -> STRING_CODER.encode(ref.getAddress(), os),
             is -> {
                 HostRef ref = new HostRef();
                 ref.setAddress(STRING_CODER.decode(is));
                 return ref;
             },
-            flow -> Arrays.asList(
+            (opts, flow) -> Arrays.asList(
                     KeyFlowBy.WithHostname.having(HostRef.of(flow.getSrcAddress())).andHostname(flow.getSrcHostname()),
                     KeyFlowBy.WithHostname.having(HostRef.of(flow.getDstAddress())).andHostname(flow.getDstHostname())
             ),
-            ref -> flow -> flow.setHostAddress(ref.getAddress())
+            (ref, flow) -> flow.setHostAddress(ref.getAddress())
     );
 
     private static final CompoundKeyTypePart<ConversationRef> CONVERSATION_PART = keyPart(
-            ref -> os -> STRING_CODER.encode(ref.getConversationKey(), os),
+            (ref, os) -> STRING_CODER.encode(ref.getConversationKey(), os),
             is -> {
                 ConversationRef ref = new ConversationRef();
                 ref.setConversationKey(STRING_CODER.decode(is));
                 return ref;
             },
-            flow -> singlePartWithoutHostName(ConversationRef.of(flow)),
-            ref -> flow -> flow.setConversationKey(ref.getConversationKey())
+            (opts, flow) -> singlePartWithoutHostName(ConversationRef.of(flow)),
+            (ref, flow) -> flow.setConversationKey(ref.getConversationKey())
     );
 
 
@@ -264,14 +279,14 @@ public class Groupings {
          *
          * The key parts of the created key are created by delegating to the key type parts of this compound key type.
          */
-        List<KeyFlowBy.WithHostname<CompoundKey>> create(FlowDocument flow) throws MissingFieldsException {
+        List<KeyFlowBy.WithHostname<CompoundKey>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
             // the method returns a list of compound keys
             // -> a list of lists of the corresponding key parts must be determined
             List<List<KeyFlowBy.WithHostname<Ref>>> refss = null;
             for (CompoundKeyTypePart part : parts) {
                 // each key part type yields a list of choices (refs)
                 // -> all current lists in refss have to be extended by all choices
-                List<KeyFlowBy.WithHostname<Ref>> refs = part.create(flow);
+                List<KeyFlowBy.WithHostname<Ref>> refs = part.create(opts, flow);
                 if (refss == null) {
                     // first part
                     // -> each choice yields a singleton list of key parts
@@ -459,7 +474,7 @@ public class Groupings {
         public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
             final FlowDocument flow = c.element();
             try {
-                for (final WithHostname<? extends CompoundKey> key: key(flow)) {
+                for (final WithHostname<? extends CompoundKey> key: key(c.getPipelineOptions().as(NephronOptions.class), flow)) {
                     Aggregate aggregate = aggregatize(window, flow, key.hostname);
                     c.output(KV.of(key.value, aggregate));
                 }
@@ -468,8 +483,8 @@ public class Groupings {
             }
         }
 
-        public Collection<WithHostname<CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
-            return type.create(flow);
+        public Collection<WithHostname<CompoundKey>> key(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
+            return type.create(opts, flow);
         }
     }
 
@@ -674,13 +689,22 @@ public class Groupings {
     public static class EcnRef implements Ref {
         private Ecn ecn;
 
-        public static EcnRef of(FlowDocument flow) {
+        public static EcnRef of(NephronOptions opts, FlowDocument flow) {
             Ecn ecn;
-            switch(flow.getTos().getValue() & 0x03) {
-                case 0: ecn = Ecn.NON_ECT; break;
-                case 1:
-                case 2: ecn = Ecn.ECT; break;
-                default: ecn = Ecn.CE;
+            if (opts.getKeyByEcn()) {
+                switch (flow.getTos().getValue() & 0x03) {
+                    case 0:
+                        ecn = Ecn.NON_ECT;
+                        break;
+                    case 1:
+                    case 2:
+                        ecn = Ecn.ECT;
+                        break;
+                    default:
+                        ecn = Ecn.CE;
+                }
+            } else {
+                ecn = Ecn.IGNORED;
             }
             return new EcnRef(ecn);
         }

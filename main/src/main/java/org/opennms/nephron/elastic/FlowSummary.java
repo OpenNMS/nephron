@@ -79,6 +79,12 @@ public class FlowSummary {
     @JsonProperty("ecn")
     private Integer ecn;
 
+    @JsonProperty("congestion_encountered")
+    private Boolean congestionEncountered;
+
+    @JsonProperty("non_ect")
+    private Boolean nonEcnCapableTransport;
+
     @JsonProperty("exporter")
     private ExporterNode exporter;
 
@@ -249,6 +255,22 @@ public class FlowSummary {
         this.ecn = ecn;
     }
 
+    public Boolean getCongestionEncountered() {
+        return congestionEncountered;
+    }
+
+    public void setCongestionEncountered(Boolean congestionEncountered) {
+        this.congestionEncountered = congestionEncountered;
+    }
+
+    public Boolean getNonEcnCapableTransport() {
+        return nonEcnCapableTransport;
+    }
+
+    public void setNonEcnCapableTransport(Boolean nonEcnCapableTransport) {
+        this.nonEcnCapableTransport = nonEcnCapableTransport;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -271,6 +293,8 @@ public class FlowSummary {
                Objects.equals(bytesTotal, that.bytesTotal) &&
                Objects.equals(dscp, that.dscp) &&
                Objects.equals(ecn, that.ecn) &&
+               Objects.equals(congestionEncountered, that.congestionEncountered) &&
+               Objects.equals(nonEcnCapableTransport, that.nonEcnCapableTransport) &&
                Objects.equals(exporter, that.exporter) &&
                Objects.equals(ifIndex, that.ifIndex) &&
                Objects.equals(application, that.application) &&
@@ -281,7 +305,7 @@ public class FlowSummary {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, timestamp, rangeStartMs, rangeEndMs, ranking, groupedBy, groupedByKey, aggregationType, bytesIngress, bytesEgress, bytesTotal, dscp, ecn, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
+        return Objects.hash(id, timestamp, rangeStartMs, rangeEndMs, ranking, groupedBy, groupedByKey, aggregationType, bytesIngress, bytesEgress, bytesTotal, dscp, ecn, congestionEncountered, nonEcnCapableTransport, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
     }
 
     @Override
@@ -300,6 +324,8 @@ public class FlowSummary {
                ", bytesTotal=" + bytesTotal +
                ", dscp=" + dscp +
                ", ecn=" + ecn +
+               ", congestionEncountered=" + congestionEncountered +
+               ", nonEcnCapableTransport=" + nonEcnCapableTransport +
                ", exporter=" + exporter +
                ", ifIndex=" + ifIndex +
                ", application='" + application + '\'' +

@@ -37,9 +37,11 @@ package org.opennms.nephron;
  */
 public enum Ecn {
 
+    IGNORED(-1), // the ECN value is not used for grouping
     NON_ECT(0), // non ecn-capable transport
     ECT(1), // ecn-capable transport
     CE(3); // congestion encountered
+
 
     public final int code;
 
