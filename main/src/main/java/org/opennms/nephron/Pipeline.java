@@ -449,9 +449,11 @@ public class Pipeline {
                 .withTimestampCombiner(TimestampCombiner.END_OF_WINDOW)
                 .triggering(trigger)
 
-                // After 4 hours, we assume no more data of interest will arrive, and the trigger stops executing
+                // After some time, we assume no more data of interest will arrive, and the trigger stops executing
                 .withAllowedLateness(allowedLateness)
-                .accumulatingFiredPanes();
+                // each pane is aggregated separately
+                // -> aggregation is done by elastic search if multiple flow summary documents exist for a window
+                .discardingFiredPanes();
     }
 
     /**
@@ -537,7 +539,8 @@ public class Pipeline {
     }
     public static TotalAndSummary aggregateParentTotal(
             String transformPrefix,
-            PCollection<KV<CompoundKey, Aggregate>> child) {
+            PCollection<KV<CompoundKey, Aggregate>> child
+    ) {
         PCollection<KV<CompoundKey, Aggregate>> parentTotal = child
                 .apply(transformPrefix + "group_by_outer_key", ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, Aggregate>>() {
                     @ProcessElement
@@ -575,7 +578,6 @@ public class Pipeline {
                             @ProcessElement
                             public void processElement(ProcessContext c) {
                                 KV<CompoundKey, Aggregate> el = c.element();
-                                CompoundKey ck = el.getKey().project(typeWithoutTos);
                                 c.output(KV.of(el.getKey().project(typeWithoutTos), el.getValue()));
                             }
                         }));
@@ -597,9 +599,9 @@ public class Pipeline {
                             @ProcessElement
                             public void processElement(ProcessContext c) {
                                 KV<CompoundKey, Aggregate> el = c.element();
-                        c.output(KV.of(el.getKey().getOuterKey(), el));
-                    }
-                }))
+                                c.output(KV.of(el.getKey().getOuterKey(), el));
+                            }
+                        }))
                 .apply(transformPrefix + "top_k_per_key", Top.perKey(k, new FlowBytesValueComparator()))
                 .apply(transformPrefix + "flatten", Values.create())
                 .apply(transformPrefix + "top_k_summary", ParDo.of(new DoFn<List<KV<CompoundKey, Aggregate>>, FlowSummary>() {

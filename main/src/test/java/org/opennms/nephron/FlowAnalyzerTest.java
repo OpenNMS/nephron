@@ -38,6 +38,8 @@ import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERS
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST;
 import static org.opennms.nephron.JacksonJsonCoder.TO_FLOW_SUMMARY;
 import static org.opennms.nephron.Pipeline.ReadFromKafka.getTimestamp;
+import static org.opennms.nephron.Pipeline.aggregateParentTotal;
+import static org.opennms.nephron.Pipeline.aggregateSumsAndTopKs;
 import static org.opennms.nephron.flowgen.FlowGenerator.GIGABYTE;
 
 import java.time.Instant;
@@ -56,7 +58,9 @@ import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.transforms.Filter;
+import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.joda.time.Duration;
@@ -158,6 +162,115 @@ public class FlowAnalyzerTest {
         p.run();
     }
 
+    static class TestTransform extends PTransform<PCollection<FlowDocument>, PCollection<KV<Groupings.CompoundKey, Aggregate>>> {
+
+        private final int topK;
+        private final Duration fixedWindowSize;
+        private final Duration maxFlowDuration;
+        private final Duration lateProcessingDelay;
+        private final Duration allowedLateness;
+
+        public TestTransform(int topK, Duration fixedWindowSize, Duration maxFlowDuration, Duration lateProcessingDelay, Duration allowedLateness) {
+            this.topK = topK;
+            this.fixedWindowSize = fixedWindowSize;
+            this.maxFlowDuration = maxFlowDuration;
+            this.lateProcessingDelay = lateProcessingDelay;
+            this.allowedLateness = allowedLateness;
+        }
+
+        @Override
+        public PCollection<KV<Groupings.CompoundKey, Aggregate>> expand(PCollection<FlowDocument> input) {
+            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
+                    new Pipeline.WindowedFlows(fixedWindowSize, maxFlowDuration, lateProcessingDelay, allowedLateness));
+
+            Pipeline.SumsAndTopKs app = aggregateSumsAndTopKs("app_", windowedStreamOfFlows,
+                    Groupings.CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION,
+                    Groupings.CompoundKeyType.EXPORTER_INTERFACE_APPLICATION,
+                    topK
+            );
+
+//            return app.withTos.sum;
+
+            Pipeline.TotalAndSummary tos = aggregateParentTotal("tos_", app.withTos.sum);
+//            return tos.total;
+
+            Pipeline.TotalAndSummary itf = aggregateParentTotal("itf_", tos.total);
+
+            return itf.total;
+
+        }
+    }
+
+    @Test
+    public void xxx() {
+        Instant start = Instant.ofEpochMilli(1500000000000L);
+        List<Long> flowTimestampOffsets =
+                ImmutableList.of(
+                        -3600_000L, // 1 hour ago
+                        -3570_000L, // 59m30s ago
+                        -3540_000L, // 59m ago
+                        // ...
+                        -2400_000L, // 40m ago
+                        -3600_000L,  // 1 hour ago - late data
+                        -24 * 3600_000L // 24 hours ago - late - should be discarded
+                );
+
+        TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowDocumentProtobufCoder());
+        long numBytes = 100;
+        org.joda.time.Instant lastWatermark = null;
+        for (Long offset : flowTimestampOffsets) {
+            final Instant lastSwitched = start.plusMillis(offset);
+            final Instant firstSwitched = lastSwitched.minusSeconds(30);
+
+            final FlowDocument flow = new SyntheticFlowBuilder()
+                    .withExporter("SomeFs", "SomeFid", 99)
+                    .withSnmpInterfaceId(98)
+                    .withApplication("SomeApplication")
+                    .withFlow(firstSwitched, lastSwitched,
+                            "10.0.0.1", 88,
+                            "10.0.0.3", 99,
+                            numBytes)
+                    .withTos(0)
+                    .build().get(0);
+
+            final org.joda.time.Instant flowTimestamp = getTimestamp(flow);
+            flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(flow, getTimestamp(flow)));
+
+            // Advance the watermark to the max timestamp
+            if (lastWatermark == null || flowTimestamp.isAfter(lastWatermark)) {
+                flowStreamBuilder = flowStreamBuilder.advanceWatermarkTo(flowTimestamp);
+                lastWatermark = flowTimestamp;
+            }
+
+            // Add some bytes to each flow to help make then *unique*
+            numBytes += 3;
+        }
+        TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
+
+        // Build the pipeline
+        PCollection<?> output = p.apply(flowStream)
+                .apply(new TestTransform(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)));
+
+        IntervalWindow windowWithLateArrival = new IntervalWindow(
+                toJoda(start.minus(1, ChronoUnit.HOURS).minus(1, ChronoUnit.MINUTES)),
+                toJoda(start.minus(1, ChronoUnit.HOURS)));
+
+        PAssert.that(output).inOnTimePane(windowWithLateArrival).satisfies(iter -> {
+            for (Object fs: iter) {
+                System.out.println("onTime: " + fs);
+            }
+            return null;
+        });
+
+        PAssert.that(output).inFinalPane(windowWithLateArrival).satisfies(iter -> {
+            for (Object fs: iter) {
+                System.out.println("final: " + fs);
+            }
+            return null;
+        });
+        p.run();
+    }
+
     @Test
     public void canHandleLateData() {
         Instant start = Instant.ofEpochMilli(1500000000000L);
@@ -187,6 +300,7 @@ public class FlowAnalyzerTest {
                             "10.0.0.1", 88,
                             "10.0.0.3", 99,
                             numBytes)
+                    .withTos(0)
                     .build().get(0);
 
             final org.joda.time.Instant flowTimestamp = getTimestamp(flow);
@@ -239,12 +353,16 @@ public class FlowAnalyzerTest {
         // We expect the summary in the late pane to include data from the first
         // pane with additional flows
         FlowSummary summaryFromLatePane = clone(summaryFromOnTimePane);
-        summaryFromLatePane.setBytesIngress(212L);
-        summaryFromLatePane.setBytesTotal(212L);
+        summaryFromLatePane.setBytesIngress(112L);
+        summaryFromLatePane.setBytesTotal(112L);
 
         PAssert.that(output)
                 .inFinalPane(windowWithLateArrival)
                 .containsInAnyOrder(summaryFromLatePane);
+
+        PAssert.that(output)
+                .inWindow(windowWithLateArrival)
+                .containsInAnyOrder(summaryFromOnTimePane, summaryFromLatePane);
 
         p.run();
     }

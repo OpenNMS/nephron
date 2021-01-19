@@ -102,6 +102,10 @@ public class CompoundKey {
                 j++;
             }
         }
+        if (j != projectedType.getParts().length) {
+            // the parts of this key could do not match the parts of the projected type
+            throw new RuntimeException("key of type " + type + " can not be project into key of type " + projectedType);
+        }
         return new CompoundKey(projectedType, l);
     }
 
