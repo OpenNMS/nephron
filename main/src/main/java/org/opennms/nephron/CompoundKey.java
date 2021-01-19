@@ -31,6 +31,7 @@ package org.opennms.nephron;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -86,8 +87,26 @@ public class CompoundKey {
                new CompoundKey(type.getParent(), refs.subList(0, type.getParent().getParts().length));
     }
 
+    /**
+     * Project this key into a key of the given type.
+     *
+     * The projection is done by removing the key parts from this key that have no corresponding
+     * {@link RefType} in the given type.
+     */
+    public CompoundKey project(CompoundKeyType projectedType) {
+        List<Ref> l = new ArrayList<>();
+        int j = 0;
+        for (int i = 0; i < type.getParts().length; i++) {
+            if (type.getParts()[i] == projectedType.getParts()[j]) {
+                l.add(refs.get(i));
+                j++;
+            }
+        }
+        return new CompoundKey(projectedType, l);
+    }
+
     public String groupedByKey() {
-        return refs.stream().map(Ref::idAsString).collect(Collectors.joining("-"));
+        return refs.stream().map(Ref::idAsString).filter(s -> s != null).collect(Collectors.joining("-"));
     }
 
     public void populate(FlowSummary flow) {

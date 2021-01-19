@@ -55,6 +55,8 @@ import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.transforms.Filter;
+import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.joda.time.Duration;
@@ -123,10 +125,9 @@ public class FlowAnalyzerTest {
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
-        // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", CompoundKeyType.EXPORTER_INTERFACE))
+                .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(Filter.by(fs -> fs.getGroupedBy() == CompoundKeyType.EXPORTER_INTERFACE))
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summary = new FlowSummary();
@@ -204,8 +205,8 @@ public class FlowAnalyzerTest {
 
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", CompoundKeyType.EXPORTER_INTERFACE))
+                .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(Filter.by(fs -> fs.getGroupedBy() == CompoundKeyType.EXPORTER_INTERFACE))
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();

@@ -161,116 +161,63 @@ public class Pipeline {
         public PCollection<FlowSummaryData> expand(PCollection<FlowDocument> input) {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("to_windows", toWindow(fixedWindowSize, earlyProcessingDelay, lateProcessingDelay, allowedLateness));
 
+            SumsAndTopKs app = aggregateSumsAndTopKs("app_", windowedStreamOfFlows,
+                    CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION,
+                    CompoundKeyType.EXPORTER_INTERFACE_APPLICATION,
+                    topK
+            );
+            SumsAndTopKs host = aggregateSumsAndTopKs("host_", windowedStreamOfFlows,
+                    CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST,
+                    CompoundKeyType.EXPORTER_INTERFACE_HOST,
+                    topK
+            );
+            SumsAndTopKs conv = aggregateSumsAndTopKs("conv_", windowedStreamOfFlows,
+                    CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERSATION,
+                    CompoundKeyType.EXPORTER_INTERFACE_CONVERSATION,
+                    topK
+            );
+
             // exporter/interface and exporter/interface/tos aggregations are used as "parents" when the
             // "include other" option is selected for topK-queries
             // -> they must not be limited to topK but contain all cases
 
-            PCollection<FlowSummaryData> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
-                    new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", CompoundKeyType.EXPORTER_INTERFACE));
+            TotalAndSummary tos = aggregateParentTotal("tos_", app.withTos.sum);
+            TotalAndSummary itf = aggregateParentTotal("itf_", tos.total);
 
-            PCollection<FlowSummaryData> totalBytesByExporterAndInterfaceAndTos = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterfaceAndTos",
-                    new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterfaceAndTos_", CompoundKeyType.EXPORTER_INTERFACE_TOS));
-
-            PCollection<FlowSummaryData> topKAppsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopAppsByExporterAndInterface",
-                    new CalculateTopKGroups("CalculateTopAppsByExporterAndInterface_", topK, CompoundKeyType.EXPORTER_INTERFACE_APPLICATION));
-
-            PCollection<FlowSummaryData> topKHostsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopHostsByExporterAndInterface",
-                    new CalculateTopKGroups("CalculateTopHostsByExporterAndInterface_", topK, CompoundKeyType.EXPORTER_INTERFACE_HOST));
-
-            PCollection<FlowSummaryData> topKConversationsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopConversationsByExporterAndInterface",
-                    new CalculateTopKGroups("CalculateTopConversationsByExporterAndInterface_", topK, CompoundKeyType.EXPORTER_INTERFACE_CONVERSATION));
-
-            PCollection<FlowSummaryData> topKAppsByExporterAndInterfaceAndTos = windowedStreamOfFlows.apply("CalculateTopAppsByExporterAndInterfaceAndTos",
-                    new CalculateTopKGroups("CalculateTopAppsByExporterAndInterfaceAndTos_", topK, CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION));
-
-            PCollection<FlowSummaryData> topKHostsByExporterAndInterfaceAndTos = windowedStreamOfFlows.apply("CalculateTopHostsByExporterAndInterfaceAndTos",
-                    new CalculateTopKGroups("CalculateTopHostsByExporterAndInterfaceAndTos_", topK, CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST));
-
-            PCollection<FlowSummaryData> topKConversationsByExporterAndInterfaceAndTos = windowedStreamOfFlows.apply("CalculateTopConversationsByExporterAndInterfaceAndTos",
-                    new CalculateTopKGroups("CalculateTopConversationsByExporterAndInterfaceAndTos_", topK, CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERSATION));
-
-            // Merge all the collections
-            PCollectionList<FlowSummaryData> flowSummaries = PCollectionList.of(totalBytesByExporterAndInterface)
-                    .and(totalBytesByExporterAndInterfaceAndTos)
-                    .and(topKAppsByExporterAndInterface)
-                    .and(topKHostsByExporterAndInterface)
-                    .and(topKConversationsByExporterAndInterface)
-                    .and(topKAppsByExporterAndInterfaceAndTos)
-                    .and(topKHostsByExporterAndInterfaceAndTos)
-                    .and(topKConversationsByExporterAndInterfaceAndTos)
-                    ;
+            // Merge all the summary collections
+            PCollectionList<FlowSummary> flowSummaries = PCollectionList.of(itf.summary)
+                    .and(tos.summary)
+                    .and(app.withTos.topK)
+                    .and(app.withoutTos.topK)
+                    .and(host.withTos.topK)
+                    .and(host.withoutTos.topK)
+                    .and(conv.withTos.topK)
+                    .and(conv.withoutTos.topK);
             return flowSummaries.apply(Flatten.pCollections());
         }
     }
 
-    /**
-     * Used to calculate the top K groups using the given grouping function.
-     * Assumes that the input stream is windowed.
-     */
-    public static class CalculateTopKGroups extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummaryData>> {
-        private final String transformPrefix;
-        private final int topK;
-        private final DoFn<FlowDocument, KV<CompoundKey, Aggregate>> groupingBy;
+    public static class WindowedFlows extends PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> {
+        private final Duration fixedWindowSize;
+        private final Duration maxFlowDuration;
+        private final Duration lateProcessingDelay;
+        private final Duration allowedLateness;
 
-        public CalculateTopKGroups(String transformPrefix, int topK, CompoundKeyType type) {
-            this.transformPrefix = Objects.requireNonNull(transformPrefix);
-            this.topK = topK;
-            this.groupingBy = new KeyFlowBy(Objects.requireNonNull(type));
+        public WindowedFlows(Duration fixedWindowSize, Duration maxFlowDuration, Duration lateProcessingDelay, Duration allowedLateness) {
+            this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
+            this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
+            this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
+            this.allowedLateness = Objects.requireNonNull(allowedLateness);
         }
 
         @Override
-        public PCollection<FlowSummaryData> expand(PCollection<FlowDocument> input) {
-            return input.apply(transformPrefix + "group_by_key_in_window", ParDo.of(groupingBy))
-                    .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply(transformPrefix + "group_by_outer_key", ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, KV<CompoundKey, Aggregate>>>() {
-                        @ProcessElement
-                        public void processElement(ProcessContext c) {
-                            KV<CompoundKey, Aggregate> el = c.element();
-                            c.output(KV.of(el.getKey().getOuterKey(), el));
-                        }
-                    }))
-                    .apply(transformPrefix + "top_k_per_key", Top.perKey(topK, new FlowBytesValueComparator()))
-                    .apply(transformPrefix + "flatten", Values.create())
-                    .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<CompoundKey, Aggregate>>, FlowSummaryData>() {
-                        @ProcessElement
-                        public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
-                            int ranking = 1;
-                            for (KV<CompoundKey, Aggregate> el : c.element()) {
-                                FlowSummaryData flowSummary = toFlowSummaryData(AggregationType.TOPK, window, el, ranking++);
-                                c.output(flowSummary);
-                            }
-                        }
-                    }));
+        public PCollection<FlowDocument> expand(PCollection<FlowDocument> input) {
+            return input.apply("attach_timestamp", attachTimestamps(maxFlowDuration))
+                    .apply("to_windows", toWindow(fixedWindowSize, lateProcessingDelay, allowedLateness));
         }
     }
 
-    /**
-     * Used to calculate the total bytes derived from flows for the given grouping.
-     * Assumes that the input stream is windowed.
-     */
-    public static class CalculateTotalBytes extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummaryData>> {
-        private final String transformPrefix;
-        private final DoFn<FlowDocument, KV<CompoundKey, Aggregate>> groupingBy;
-
-        public CalculateTotalBytes(String transformPrefix, CompoundKeyType type) {
-            this.transformPrefix = Objects.requireNonNull(transformPrefix);
-            this.groupingBy = new KeyFlowBy(Objects.requireNonNull(type));
-        }
-
-        @Override
-        public PCollection<FlowSummaryData> expand(PCollection<FlowDocument> input) {
-            return input.apply(transformPrefix + "group_by_key_in_window", ParDo.of(groupingBy))
-                    .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, FlowSummaryData>() {
-                        @ProcessElement
-                        public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
-                            c.output(toFlowSummaryData(AggregationType.TOTAL, window, c.element(), 0));
-                        }
-                    }));
-        }
-    }
-
-    public static class WriteToElasticsearch extends PTransform<PCollection<FlowSummaryData>, PDone> {
+    public static class WriteToElasticsearch extends PTransform<PCollection<FlowSummary>, PDone> {
         private final String elasticIndex;
         private final IndexStrategy indexStrategy;
         private final ElasticsearchIO.ConnectionConfiguration esConfig;
@@ -588,4 +535,114 @@ public class Pipeline {
             return type.create(flow);
         }
     }
+    public static TotalAndSummary aggregateParentTotal(
+            String transformPrefix,
+            PCollection<KV<CompoundKey, Aggregate>> child) {
+        PCollection<KV<CompoundKey, Aggregate>> parentTotal = child
+                .apply(transformPrefix + "group_by_outer_key", ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, Aggregate>>() {
+                    @ProcessElement
+                    public void processElement(ProcessContext c) {
+                        KV<CompoundKey, Aggregate> el = c.element();
+                        c.output(KV.of(el.getKey().getOuterKey(), el.getValue()));
+                    }
+                }))
+                .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()));
+
+        PCollection<FlowSummary> summary = parentTotal.apply(transformPrefix + "total_summary", ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, FlowSummary>() {
+            @ProcessElement
+            public void processElement(ProcessContext c, IntervalWindow window) {
+                c.output(toFlowSummary(AggregationType.TOTAL, window, c.element()));
+            }
+        }));
+        return new TotalAndSummary(parentTotal, summary);
+    }
+
+    public static SumsAndTopKs aggregateSumsAndTopKs(
+            String transformPrefix,
+            PCollection<FlowDocument> input,
+            CompoundKeyType typeWithTos,
+            CompoundKeyType typeWithoutTos,
+            int k
+    ) {
+        PCollection<KV<CompoundKey, Aggregate>> groupedByKeyWithTos =
+                input.apply(transformPrefix + "group_with_tos", ParDo.of(new KeyFlowBy(typeWithTos)));
+        SumAndTopK withTos = aggregateSumAndTopK(transformPrefix + "with_tos_", groupedByKeyWithTos, k);
+
+        PCollection<KV<CompoundKey, Aggregate>> groupedByKeyWithoutTos =
+                withTos.sum.apply(
+                        transformPrefix + "group_without_tos_",
+                        ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, Aggregate>>() {
+                            @ProcessElement
+                            public void processElement(ProcessContext c) {
+                                KV<CompoundKey, Aggregate> el = c.element();
+                                CompoundKey ck = el.getKey().project(typeWithoutTos);
+                                c.output(KV.of(el.getKey().project(typeWithoutTos), el.getValue()));
+                            }
+                        }));
+        SumAndTopK withoutTos = aggregateSumAndTopK(transformPrefix + "without_tos_", groupedByKeyWithoutTos, k);
+
+        return new SumsAndTopKs(withTos, withoutTos);
+    }
+
+    public static SumAndTopK aggregateSumAndTopK(
+            String transformPrefix,
+            PCollection<KV<CompoundKey, Aggregate>> groupedByKey,
+            int k
+    ) {
+        PCollection<KV<CompoundKey, Aggregate>> sum =
+                groupedByKey.apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()));
+        PCollection<FlowSummary> topK = sum
+                .apply(transformPrefix + "group_by_outer_key",
+                        ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, KV<CompoundKey, Aggregate>>>() {
+                            @ProcessElement
+                            public void processElement(ProcessContext c) {
+                                KV<CompoundKey, Aggregate> el = c.element();
+                        c.output(KV.of(el.getKey().getOuterKey(), el));
+                    }
+                }))
+                .apply(transformPrefix + "top_k_per_key", Top.perKey(k, new FlowBytesValueComparator()))
+                .apply(transformPrefix + "flatten", Values.create())
+                .apply(transformPrefix + "top_k_summary", ParDo.of(new DoFn<List<KV<CompoundKey, Aggregate>>, FlowSummary>() {
+                    @ProcessElement
+                    public void processElement(ProcessContext c, IntervalWindow window) {
+                        int ranking = 1;
+                        for (KV<CompoundKey, Aggregate> el : c.element()) {
+                            FlowSummary flowSummary = toFlowSummary(AggregationType.TOPK, window, el);
+                            flowSummary.setRanking(ranking++);
+                            c.output(flowSummary);
+                        }
+                    }
+                }));
+        return new SumAndTopK(sum, topK);
+    }
+
+    public static class TotalAndSummary {
+        public final PCollection<KV<CompoundKey, Aggregate>> total;
+        public final PCollection<FlowSummary> summary;
+        public TotalAndSummary(PCollection<KV<CompoundKey, Aggregate>> total, PCollection<FlowSummary> summary) {
+            this.total = total;
+            this.summary = summary;
+        }
+    }
+
+    public static class SumAndTopK {
+        public final PCollection<KV<CompoundKey, Aggregate>> sum;
+        public final PCollection<FlowSummary> topK;
+
+        public SumAndTopK(PCollection<KV<CompoundKey, Aggregate>> sum, PCollection<FlowSummary> topK) {
+            this.sum = sum;
+            this.topK = topK;
+        }
+    }
+
+    public static class SumsAndTopKs {
+        public final SumAndTopK withTos;
+        public final SumAndTopK withoutTos;
+
+        public SumsAndTopKs(SumAndTopK withTos, SumAndTopK withoutTos) {
+            this.withTos = withTos;
+            this.withoutTos = withoutTos;
+        }
+    }
+
 }
