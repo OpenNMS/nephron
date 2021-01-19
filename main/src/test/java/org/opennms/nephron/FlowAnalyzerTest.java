@@ -28,11 +28,14 @@
 
 package org.opennms.nephron;
 
-import static org.opennms.nephron.Groupings.CompoundKeyType.EXPORTER_INTERFACE;
-import static org.opennms.nephron.Groupings.CompoundKeyType.EXPORTER_INTERFACE_TOS;
-import static org.opennms.nephron.Groupings.CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION;
-import static org.opennms.nephron.Groupings.CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERSATION;
-import static org.opennms.nephron.Groupings.CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST;
+import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE;
+import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_APPLICATION;
+import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_CONVERSATION;
+import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_HOST;
+import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS;
+import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION;
+import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERSATION;
+import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST;
 import static org.opennms.nephron.JacksonJsonCoder.TO_FLOW_SUMMARY;
 import static org.opennms.nephron.Pipeline.ReadFromKafka.getTimestamp;
 import static org.opennms.nephron.flowgen.FlowGenerator.GIGABYTE;
@@ -42,6 +45,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.function.LongFunction;
 
 import org.apache.beam.sdk.coders.CoderRegistry;
@@ -75,12 +80,12 @@ import com.google.common.collect.ImmutableList;
 @Ignore
 public class FlowAnalyzerTest {
 
-    static final ExporterNode exporterNode = new ExporterNode();
+    static final ExporterNode EXPORTER_NODE = new ExporterNode();
 
     static {
-        exporterNode.setForeignSource("SomeFs");
-        exporterNode.setForeignId("SomeFid");
-        exporterNode.setNodeId(99);
+        EXPORTER_NODE.setForeignSource("SomeFs");
+        EXPORTER_NODE.setForeignId("SomeFid");
+        EXPORTER_NODE.setNodeId(99);
     }
 
     @Rule
@@ -123,7 +128,7 @@ public class FlowAnalyzerTest {
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", Groupings.CompoundKeyType.EXPORTER_INTERFACE))
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", CompoundKeyType.EXPORTER_INTERFACE))
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summary = new FlowSummary();
@@ -142,7 +147,7 @@ public class FlowAnalyzerTest {
 
         summary.setIfIndex(98);
 
-        summary.setExporter(exporterNode);
+        summary.setExporter(EXPORTER_NODE);
 
         PAssert.that(output)
                 .inWindow(new FlowWindows.FlowWindow(org.joda.time.Instant.ofEpochMilli(1546318800000L),
@@ -201,7 +206,7 @@ public class FlowAnalyzerTest {
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", Groupings.CompoundKeyType.EXPORTER_INTERFACE))
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", CompoundKeyType.EXPORTER_INTERFACE))
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();
@@ -220,12 +225,12 @@ public class FlowAnalyzerTest {
 
         summaryFromOnTimePane.setIfIndex(98);
 
-        summaryFromOnTimePane.setExporter(exporterNode);
+        summaryFromOnTimePane.setExporter(EXPORTER_NODE);
 
         FlowWindows.FlowWindow windowWithLateArrival = new FlowWindows.FlowWindow(
                 toJoda(start.minus(1, ChronoUnit.HOURS).minus(1, ChronoUnit.MINUTES)),
                 toJoda(start.minus(1, ChronoUnit.HOURS)),
-                exporterNode.getNodeId());
+                EXPORTER_NODE.getNodeId());
 
         PAssert.that(output)
                 .inOnTimePane(windowWithLateArrival)
@@ -304,7 +309,136 @@ public class FlowAnalyzerTest {
                     this.setCongestionEncountered(false);
                     this.setNonEcnCapableTransport(true);
                     this.setIfIndex(98);
-                    this.setExporter(exporterNode);
+                    this.setExporter(EXPORTER_NODE);
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.1\",\"10.0.0.3\",\"SomeApplication\"]");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(1);
+                    this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(1337L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(1337L);
+                    this.setCongestionEncountered(false);
+                    this.setNonEcnCapableTransport(true);
+                    this.setIfIndex(98);
+                    this.setExporter(EXPORTER_NODE);
+                    this.setConversationKey("[\"\",6,\"10.0.0.1\",\"10.0.0.3\",\"SomeApplication\"]");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.1\",\"10.0.0.2\",\"SomeApplication\"]");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(2);
+                    this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(42L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(42L);
+                    this.setCongestionEncountered(false);
+                    this.setNonEcnCapableTransport(true);
+                    this.setIfIndex(98);
+                    this.setExporter(EXPORTER_NODE);
+                    this.setConversationKey("[\"\",6,\"10.0.0.1\",\"10.0.0.2\",\"SomeApplication\"]");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.2\",\"10.0.0.3\",\"SomeApplication\"]");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(3);
+                    this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(23L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(23L);
+                    this.setCongestionEncountered(false);
+                    this.setNonEcnCapableTransport(true);
+                    this.setIfIndex(98);
+                    this.setExporter(EXPORTER_NODE);
+                    this.setConversationKey("[\"\",6,\"10.0.0.2\",\"10.0.0.3\",\"SomeApplication\"]");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-SomeApplication");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(1);
+                    this.setGroupedBy(EXPORTER_INTERFACE_APPLICATION);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(1402L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(1402L);
+                    this.setCongestionEncountered(false);
+                    this.setNonEcnCapableTransport(true);
+                    this.setIfIndex(98);
+                    this.setExporter(EXPORTER_NODE);
+                    this.setApplication("SomeApplication");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.1");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(1);
+                    this.setGroupedBy(EXPORTER_INTERFACE_HOST);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(1379L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(1379L);
+                    this.setCongestionEncountered(false);
+                    this.setNonEcnCapableTransport(true);
+                    this.setIfIndex(98);
+                    this.setExporter(EXPORTER_NODE);
+                    this.setHostAddress("10.0.0.1");
+                    this.setHostName("first.src.example.com");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.2");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(3);
+                    this.setGroupedBy(EXPORTER_INTERFACE_HOST);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(65L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(65L);
+                    this.setCongestionEncountered(false);
+                    this.setNonEcnCapableTransport(true);
+                    this.setIfIndex(98);
+                    this.setExporter(EXPORTER_NODE);
+                    this.setHostAddress("10.0.0.2");
+                    this.setHostName("second.dst.example.com");
+                }},
+
+                new FlowSummary() {{
+                    this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.3");
+                    this.setTimestamp(1500000060000L);
+                    this.setRangeStartMs(1500000000000L);
+                    this.setRangeEndMs(1500000060000L);
+                    this.setRanking(2);
+                    this.setGroupedBy(EXPORTER_INTERFACE_HOST);
+                    this.setAggregationType(AggregationType.TOPK);
+                    this.setBytesIngress(1360L);
+                    this.setBytesEgress(0L);
+                    this.setBytesTotal(1360L);
+                    this.setCongestionEncountered(false);
+                    this.setNonEcnCapableTransport(true);
+                    this.setIfIndex(98);
+                    this.setExporter(EXPORTER_NODE);
+                    this.setHostAddress("10.0.0.3");
+                    this.setHostName("third.dst.example.com");
                 }},
 
                 new FlowSummary() {{
@@ -323,7 +457,7 @@ public class FlowAnalyzerTest {
                     this.setDscp(0);
                     this.setEcn(0);
                     this.setIfIndex(98);
-                    this.setExporter(exporterNode);
+                    this.setExporter(EXPORTER_NODE);
                 }},
 
                 new FlowSummary() {{
@@ -342,7 +476,7 @@ public class FlowAnalyzerTest {
                     this.setDscp(0);
                     this.setEcn(0);
                     this.setIfIndex(98);
-                    this.setExporter(exporterNode);
+                    this.setExporter(EXPORTER_NODE);
                     this.setConversationKey("[\"\",6,\"10.0.0.1\",\"10.0.0.3\",\"SomeApplication\"]");
                 }},
 
@@ -362,7 +496,7 @@ public class FlowAnalyzerTest {
                     this.setDscp(0);
                     this.setEcn(0);
                     this.setIfIndex(98);
-                    this.setExporter(exporterNode);
+                    this.setExporter(EXPORTER_NODE);
                     this.setConversationKey("[\"\",6,\"10.0.0.1\",\"10.0.0.2\",\"SomeApplication\"]");
                 }},
 
@@ -382,7 +516,7 @@ public class FlowAnalyzerTest {
                     this.setDscp(0);
                     this.setEcn(0);
                     this.setIfIndex(98);
-                    this.setExporter(exporterNode);
+                    this.setExporter(EXPORTER_NODE);
                     this.setConversationKey("[\"\",6,\"10.0.0.2\",\"10.0.0.3\",\"SomeApplication\"]");
                 }},
 
@@ -402,7 +536,7 @@ public class FlowAnalyzerTest {
                     this.setDscp(0);
                     this.setEcn(0);
                     this.setIfIndex(98);
-                    this.setExporter(exporterNode);
+                    this.setExporter(EXPORTER_NODE);
                     this.setApplication("SomeApplication");
                 }},
 
@@ -422,7 +556,7 @@ public class FlowAnalyzerTest {
                     this.setDscp(0);
                     this.setEcn(0);
                     this.setIfIndex(98);
-                    this.setExporter(exporterNode);
+                    this.setExporter(EXPORTER_NODE);
                     this.setHostAddress("10.0.0.1");
                     this.setHostName("first.src.example.com");
                 }},
@@ -443,7 +577,7 @@ public class FlowAnalyzerTest {
                     this.setDscp(0);
                     this.setEcn(0);
                     this.setIfIndex(98);
-                    this.setExporter(exporterNode);
+                    this.setExporter(EXPORTER_NODE);
                     this.setHostAddress("10.0.0.2");
                     this.setHostName("second.dst.example.com");
                 }},
@@ -464,7 +598,7 @@ public class FlowAnalyzerTest {
                     this.setDscp(0);
                     this.setEcn(0);
                     this.setIfIndex(98);
-                    this.setExporter(exporterNode);
+                    this.setExporter(EXPORTER_NODE);
                     this.setHostAddress("10.0.0.3");
                     this.setHostName("third.dst.example.com");
                 }}
@@ -503,7 +637,7 @@ public class FlowAnalyzerTest {
                           (32 - 17) * 100)
                 .build()
                 .get(0);
-        final Groupings.CompoundKey key1 = Groupings.CompoundKeyType.EXPORTER_INTERFACE.create(flow1);
+        final CompoundKey key1 = CompoundKeyType.EXPORTER_INTERFACE.create(flow1);
 
         // Start aligns with window
         final FlowDocument flow2 = new SyntheticFlowBuilder()
@@ -517,7 +651,7 @@ public class FlowAnalyzerTest {
                           (32 - 10) * 200)
                 .build()
                 .get(0);
-        final Groupings.CompoundKey key2 = Groupings.CompoundKeyType.EXPORTER_INTERFACE.create(flow2);
+        final CompoundKey key2 = CompoundKeyType.EXPORTER_INTERFACE.create(flow2);
 
         // Start and end aligns with window
         final FlowDocument flow3 = new SyntheticFlowBuilder()
@@ -531,7 +665,7 @@ public class FlowAnalyzerTest {
                           (40 - 10) * 300)
                 .build()
                 .get(0);
-        final Groupings.CompoundKey key3 = Groupings.CompoundKeyType.EXPORTER_INTERFACE.create(flow3);
+        final CompoundKey key3 = CompoundKeyType.EXPORTER_INTERFACE.create(flow3);
 
         // Does not align with window but spans one more bucket with wrong alignment
         final FlowDocument flow4 = new SyntheticFlowBuilder()
@@ -545,7 +679,7 @@ public class FlowAnalyzerTest {
                           (37 - 12) * 400)
                 .build()
                 .get(0);
-        final Groupings.CompoundKey key4 = Groupings.CompoundKeyType.EXPORTER_INTERFACE.create(flow4);
+        final CompoundKey key4 = CompoundKeyType.EXPORTER_INTERFACE.create(flow4);
 
         final FlowDocument flow5 = new SyntheticFlowBuilder()
                 .withExporter("TestFlows", "Flow5", NODE_ID)
@@ -558,7 +692,7 @@ public class FlowAnalyzerTest {
                           (27 - 23) * 500)
                 .build()
                 .get(0);
-        final Groupings.CompoundKey key5 = Groupings.CompoundKeyType.EXPORTER_INTERFACE.create(flow5);
+        final CompoundKey key5 = CompoundKeyType.EXPORTER_INTERFACE.create(flow5);
 
         final TestStream<FlowDocument> flows = TestStream.create(new FlowDocumentProtobufCoder())
                                                          .addElements(TimestampedValue.of(flow1, getTimestamp(flow1)),
@@ -577,7 +711,7 @@ public class FlowAnalyzerTest {
         PAssert.that("Bucket 3", output).inWindow(window.apply(3)).containsInAnyOrder(flow1, flow2, flow3, flow4);
         PAssert.that("Bucket 4", output).inWindow(window.apply(4)).containsInAnyOrder();
 
-        final PCollection<KV<Groupings.CompoundKey, Aggregate>> aggregates = output.apply(ParDo.of(new Groupings.KeyFlowBy(EXPORTER_INTERFACE)));
+        final PCollection<KV<CompoundKey, Aggregate>> aggregates = output.apply(ParDo.of(new Groupings.KeyFlowBy(EXPORTER_INTERFACE)));
 
         PAssert.that("Bytes 0", aggregates).inWindow(window.apply(0)).containsInAnyOrder();
         PAssert.that("Bytes 1", aggregates).inWindow(window.apply(1)).containsInAnyOrder(
@@ -603,7 +737,7 @@ public class FlowAnalyzerTest {
 
     private static TestStream<FlowDocument> testStream(int tos1, int tos2) {
         TestStream.Builder<FlowDocument> flowStreamBuilder = new SyntheticFlowBuilder()
-                .withExporter(exporterNode.getForeignSource(), exporterNode.getForeignId(), exporterNode.getNodeId())
+                .withExporter(EXPORTER_NODE.getForeignSource(), EXPORTER_NODE.getForeignId(), EXPORTER_NODE.getNodeId())
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withTos(tos1)
@@ -630,7 +764,7 @@ public class FlowAnalyzerTest {
     }
 
     static class Expected {
-        public final Groupings.CompoundKeyType groupedBy;
+        public final CompoundKeyType groupedBy;
         public final int ranking;
         public final String groupedByKey;
         public final AggregationType aggregationType;
@@ -642,7 +776,7 @@ public class FlowAnalyzerTest {
         public final String hostAddress;
         public final String conversationKey;
 
-        public Expected(Groupings.CompoundKeyType groupedBy, int ranking, String groupedByKey, AggregationType aggregationType, int bytes, boolean congestionEncountered, Integer dscp, Integer ecn, String application, String hostAddress, String conversationKey) {
+        public Expected(CompoundKeyType groupedBy, int ranking, String groupedByKey, AggregationType aggregationType, int bytes, boolean congestionEncountered, Integer dscp, Integer ecn, String application, String hostAddress, String conversationKey) {
             this.groupedBy = groupedBy;
             this.ranking = ranking;
             this.groupedByKey = groupedByKey;
@@ -664,8 +798,11 @@ public class FlowAnalyzerTest {
                 .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
                 .apply(TO_FLOW_SUMMARY);
 
-        // expect 11 flow summaries:
+        // expect 15 flow summaries:
         // 1 for exporter/interface
+        // 1 for exporter/interface/application ("SomeApplication")
+        // 1 for exporter/interface/conversation (10.0.0.1 <-> 10.0.0.2)
+        // 2 for exporter/interface/host (10.0.0.1, 10.0.0.2)
         // 2 for exporter/interface/dscp (0, 3)
         // 2 * 1 for exporter/interface/dscp/application ("SomeApplication")
         // 2 * 1 for exporter/interface/dscp/conversation (10.0.0.1 <-> 10.0.0.2)
@@ -677,6 +814,10 @@ public class FlowAnalyzerTest {
         FlowSummary[] summaries = Arrays.stream(
                 new Expected[]{
                         new Expected(EXPORTER_INTERFACE, 0, "SomeFs:SomeFid-98", AggregationType.TOTAL, 28, false, null, null, null, null, null),
+                        new Expected(EXPORTER_INTERFACE_APPLICATION, 1, "SomeFs:SomeFid-98-SomeApplication", AggregationType.TOPK, 28, false, null, null, "SomeApplication", null, null),
+                        new Expected(EXPORTER_INTERFACE_CONVERSATION, 1, "SomeFs:SomeFid-98-" + conversationKey, AggregationType.TOPK, 28, false, null, null, null, null, conversationKey),
+                        new Expected(EXPORTER_INTERFACE_HOST, 1, "SomeFs:SomeFid-98-10.0.0.1", AggregationType.TOPK, 28, false, null, null, null, "10.0.0.1", null),
+                        new Expected(EXPORTER_INTERFACE_HOST, 2, "SomeFs:SomeFid-98-10.0.0.2", AggregationType.TOPK, 28, false, null, null, null, "10.0.0.2", null),
                         new Expected(EXPORTER_INTERFACE_TOS, 0, "SomeFs:SomeFid-98-0-NON_ECT", AggregationType.TOTAL, 11, false, 0, 0, null, null, null),
                         new Expected(EXPORTER_INTERFACE_TOS, 0, "SomeFs:SomeFid-98-3-NON_ECT", AggregationType.TOTAL, 17, false, 3, 0, null, null, null),
                         new Expected(EXPORTER_INTERFACE_TOS_APPLICATION, 1, "SomeFs:SomeFid-98-0-NON_ECT-SomeApplication", AggregationType.TOPK, 11, false, 0, 0, "SomeApplication", null, null),
@@ -702,7 +843,7 @@ public class FlowAnalyzerTest {
                     this.setCongestionEncountered(e.congestionEncountered);
                     this.setNonEcnCapableTransport(true);
                     this.setIfIndex(98);
-                    this.setExporter(exporterNode);
+                    this.setExporter(EXPORTER_NODE);
                     this.setDscp(e.dscp);
                     this.setEcn(e.ecn);
                     this.setApplication(e.application);
@@ -724,8 +865,11 @@ public class FlowAnalyzerTest {
                 .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
                 .apply(TO_FLOW_SUMMARY);
 
-        // expect 11 flow summaries:
+        // expect 15 flow summaries:
         // 1 for exporter/interface
+        // 1 for exporter/interface/application ("SomeApplication")
+        // 1 for exporter/interface/conversation (10.0.0.1 <-> 10.0.0.2)
+        // 2 for exporter/interface/host (10.0.0.1, 10.0.0.2)
         // 2 for exporter/interface/ecn (1, 3)
         // 2 * 1 for exporter/interface/ecn/application ("SomeApplication")
         // 2 * 1 for exporter/interface/ecn/conversation (10.0.0.1 <-> 10.0.0.2)
@@ -733,9 +877,12 @@ public class FlowAnalyzerTest {
 
         String conversationKey = "[\"\",6,\"10.0.0.1\",\"10.0.0.2\",\"SomeApplication\"]";
 
-        FlowSummary[] summaries = Arrays.stream(
-                new Expected[]{
+        List<FlowSummary> summaries = Stream.of(
                         new Expected(EXPORTER_INTERFACE, 0, "SomeFs:SomeFid-98", AggregationType.TOTAL, 28, true, null, null, null, null, null),
+                        new Expected(EXPORTER_INTERFACE_APPLICATION, 1, "SomeFs:SomeFid-98-SomeApplication", AggregationType.TOPK, 28, true, null, null, "SomeApplication", null, null),
+                        new Expected(EXPORTER_INTERFACE_CONVERSATION, 1, "SomeFs:SomeFid-98-" + conversationKey, AggregationType.TOPK, 28, true, null, null, null, null, conversationKey),
+                        new Expected(EXPORTER_INTERFACE_HOST, 1, "SomeFs:SomeFid-98-10.0.0.1", AggregationType.TOPK, 28, true, null, null, null, "10.0.0.1", null),
+                        new Expected(EXPORTER_INTERFACE_HOST, 2, "SomeFs:SomeFid-98-10.0.0.2", AggregationType.TOPK, 28, true, null, null, null, "10.0.0.2", null),
                         new Expected(EXPORTER_INTERFACE_TOS, 0, "SomeFs:SomeFid-98-0-ECT", AggregationType.TOTAL, 11, false, 0, 1, null, null, null),
                         new Expected(EXPORTER_INTERFACE_TOS, 0, "SomeFs:SomeFid-98-0-CE", AggregationType.TOTAL, 17, true, 0, 3, null, null, null),
                         new Expected(EXPORTER_INTERFACE_TOS_APPLICATION, 1, "SomeFs:SomeFid-98-0-ECT-SomeApplication", AggregationType.TOPK, 11, false, 0, 1, "SomeApplication", null, null),
@@ -745,8 +892,7 @@ public class FlowAnalyzerTest {
                         new Expected(EXPORTER_INTERFACE_TOS_HOST, 1, "SomeFs:SomeFid-98-0-ECT-10.0.0.1", AggregationType.TOPK, 11, false, 0, 1, null, "10.0.0.1", null),
                         new Expected(EXPORTER_INTERFACE_TOS_HOST, 2, "SomeFs:SomeFid-98-0-ECT-10.0.0.2", AggregationType.TOPK, 11, false, 0, 1, null, "10.0.0.2", null),
                         new Expected(EXPORTER_INTERFACE_TOS_HOST, 1, "SomeFs:SomeFid-98-0-CE-10.0.0.1", AggregationType.TOPK, 17, true, 0, 3, null, "10.0.0.1", null),
-                        new Expected(EXPORTER_INTERFACE_TOS_HOST, 2, "SomeFs:SomeFid-98-0-CE-10.0.0.2", AggregationType.TOPK, 17, true, 0, 3, null, "10.0.0.2", null),
-                        }
+                        new Expected(EXPORTER_INTERFACE_TOS_HOST, 2, "SomeFs:SomeFid-98-0-CE-10.0.0.2", AggregationType.TOPK, 17, true, 0, 3, null, "10.0.0.2", null)
         ).map(e -> new FlowSummary() {{
             this.setGroupedByKey(e.groupedByKey);
             this.setTimestamp(1500000060000L);
@@ -761,13 +907,13 @@ public class FlowAnalyzerTest {
             this.setCongestionEncountered(e.congestionEncountered);
             this.setNonEcnCapableTransport(false);
             this.setIfIndex(98);
-            this.setExporter(exporterNode);
+            this.setExporter(EXPORTER_NODE);
             this.setDscp(e.dscp);
             this.setEcn(e.ecn);
             this.setApplication(e.application);
             this.setHostAddress(e.hostAddress);
             this.setConversationKey(e.conversationKey);
-        }}).toArray(l -> new FlowSummary[l]);
+        }}).collect(Collectors.toList());
 
         PAssert.that(output).containsInAnyOrder(summaries);
 
@@ -783,18 +929,25 @@ public class FlowAnalyzerTest {
                 .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.standardMinutes(2), Duration.standardHours(2)))
                 .apply(TO_FLOW_SUMMARY);
 
-        // expect 6 flow summaries:
+        // expect 10 flow summaries:
         // 1 for exporter/interface
+        // 1 for exporter/interface/application ("SomeApplication")
+        // 1 for exporter/interface/conversation (10.0.0.1 <-> 10.0.0.2)
+        // 2 for exporter/interface/host (10.0.0.1, 10.0.0.2)
         // 1 for exporter/interface/tos (the ecn is ignored; there is only one DSCP value)
-        // 1 for exporter/interface/ecn/application ("SomeApplication")
-        // 1 for exporter/interface/ecn/conversation (10.0.0.1 <-> 10.0.0.2)
-        // 2 for exporter/interface/ecn/host (10.0.0.1, 10.0.0.2)
+        // 1 for exporter/interface/tos/application ("SomeApplication")
+        // 1 for exporter/interface/tos/conversation (10.0.0.1 <-> 10.0.0.2)
+        // 2 for exporter/interface/tos/host (10.0.0.1, 10.0.0.2)
 
         String conversationKey = "[\"\",6,\"10.0.0.1\",\"10.0.0.2\",\"SomeApplication\"]";
 
         FlowSummary[] summaries = Arrays.stream(
                 new Expected[]{
                         new Expected(EXPORTER_INTERFACE, 0, "SomeFs:SomeFid-98", AggregationType.TOTAL, 28, true, null, null, null, null, null),
+                        new Expected(EXPORTER_INTERFACE_APPLICATION, 1, "SomeFs:SomeFid-98-SomeApplication", AggregationType.TOPK, 28, true, null, null, "SomeApplication", null, null),
+                        new Expected(EXPORTER_INTERFACE_CONVERSATION, 1, "SomeFs:SomeFid-98-" + conversationKey, AggregationType.TOPK, 28, true, null, null, null, null, conversationKey),
+                        new Expected(EXPORTER_INTERFACE_HOST, 1, "SomeFs:SomeFid-98-10.0.0.1", AggregationType.TOPK, 28, true, null, null, null, "10.0.0.1", null),
+                        new Expected(EXPORTER_INTERFACE_HOST, 2, "SomeFs:SomeFid-98-10.0.0.2", AggregationType.TOPK, 28, true, null, null, null, "10.0.0.2", null),
                         new Expected(EXPORTER_INTERFACE_TOS, 0, "SomeFs:SomeFid-98-0-IGNORED", AggregationType.TOTAL, 28, true, 0, null, null, null, null),
                         new Expected(EXPORTER_INTERFACE_TOS_APPLICATION, 1, "SomeFs:SomeFid-98-0-IGNORED-SomeApplication", AggregationType.TOPK, 28, true, 0, null, "SomeApplication", null, null),
                         new Expected(EXPORTER_INTERFACE_TOS_CONVERSATION, 1, "SomeFs:SomeFid-98-0-IGNORED-" + conversationKey, AggregationType.TOPK, 28, true, 0, null, null, null, conversationKey),
@@ -815,7 +968,7 @@ public class FlowAnalyzerTest {
             this.setCongestionEncountered(e.congestionEncountered);
             this.setNonEcnCapableTransport(false);
             this.setIfIndex(98);
-            this.setExporter(exporterNode);
+            this.setExporter(EXPORTER_NODE);
             this.setDscp(e.dscp);
             this.setEcn(e.ecn);
             this.setApplication(e.application);

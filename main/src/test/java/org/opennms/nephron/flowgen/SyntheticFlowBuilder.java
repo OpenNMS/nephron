@@ -135,6 +135,8 @@ public class SyntheticFlowBuilder {
         builder.setSamplingInterval(DoubleValue.of(1.0d));
 
         builder.setTos(UInt32Value.of(tos));
+        builder.setDscp(UInt32Value.of(tos >>> 2));
+        builder.setEcn(UInt32Value.of(tos & 3));
 
         flows.add(builder.build());
         return this;

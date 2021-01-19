@@ -61,13 +61,17 @@ public class Aggregate {
         this.nonEcnCapableTransport = nonEct;
     }
 
-    public Aggregate(long bytesIn, long bytesOut, String hostname, int tos) {
+    public Aggregate(long bytesIn, long bytesOut, String hostname, Integer ecn) {
         this.bytesIn = bytesIn;
         this.bytesOut = bytesOut;
         this.hostname = hostname;
-        int ecn = tos % 4;
-        this.congestionEncountered = ecn == 3;
-        this.nonEcnCapableTransport = ecn == 0;
+        if (ecn != null) {
+            this.congestionEncountered = ecn == 3;
+            this.nonEcnCapableTransport = ecn == 0;
+        } else {
+            this.congestionEncountered = false;
+            this.nonEcnCapableTransport = true;
+        }
     }
 
     public static Aggregate merge(final Aggregate a, final Aggregate b) {
@@ -104,17 +108,23 @@ public class Aggregate {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof Aggregate)) return false;
-        Aggregate flowBytes = (Aggregate) o;
-        return bytesIn == flowBytes.bytesIn &&
-               bytesOut == flowBytes.bytesOut &&
-               Objects.equals(hostname, flowBytes.hostname);
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        Aggregate aggregate = (Aggregate) o;
+        return bytesIn == aggregate.bytesIn &&
+               bytesOut == aggregate.bytesOut &&
+               congestionEncountered == aggregate.congestionEncountered &&
+               nonEcnCapableTransport == aggregate.nonEcnCapableTransport &&
+               Objects.equals(hostname, aggregate.hostname);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(bytesIn, bytesOut);
+        return Objects.hash(bytesIn, bytesOut, hostname, congestionEncountered, nonEcnCapableTransport);
     }
 
     @Override
@@ -122,7 +132,9 @@ public class Aggregate {
         return "Aggregate{" +
                "bytesIn=" + bytesIn +
                ", bytesOut=" + bytesOut +
-               ", hostname=" + hostname +
+               ", hostname='" + hostname + '\'' +
+               ", congestionEncountered=" + congestionEncountered +
+               ", nonEcnCapableTransport=" + nonEcnCapableTransport +
                '}';
     }
 
@@ -167,6 +179,11 @@ public class Aggregate {
             final boolean nonEcnCapableTransport = BOOLEAN_CODER.decode(inStream);
             return new Aggregate(bytesIn, bytesOut, Strings.emptyToNull(hostname),
                     congestionEncountered, nonEcnCapableTransport);
+        }
+
+        @Override
+        public boolean consistentWithEquals() {
+            return true;
         }
     }
 }

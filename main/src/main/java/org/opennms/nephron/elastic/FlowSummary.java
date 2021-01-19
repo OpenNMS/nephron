@@ -30,7 +30,7 @@ package org.opennms.nephron.elastic;
 
 import java.util.Objects;
 
-import org.opennms.nephron.Groupings;
+import org.opennms.nephron.CompoundKeyType;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -56,7 +56,7 @@ public class FlowSummary {
     private int ranking;
 
     @JsonProperty("grouped_by")
-    private Groupings.CompoundKeyType groupedBy;
+    private CompoundKeyType groupedBy;
 
     @JsonProperty("grouped_by_key")
     private String groupedByKey;
@@ -151,11 +151,11 @@ public class FlowSummary {
         this.ranking = ranking;
     }
 
-    public Groupings.CompoundKeyType getGroupedBy() {
+    public CompoundKeyType getGroupedBy() {
         return groupedBy;
     }
 
-    public void setGroupedBy(Groupings.CompoundKeyType groupedBy) {
+    public void setGroupedBy(CompoundKeyType groupedBy) {
         this.groupedBy = groupedBy;
     }
 
@@ -281,26 +281,26 @@ public class FlowSummary {
         }
         FlowSummary that = (FlowSummary) o;
         return timestamp == that.timestamp &&
-               rangeStartMs == that.rangeStartMs &&
-               rangeEndMs == that.rangeEndMs &&
-               ranking == that.ranking &&
-               Objects.equals(id, that.id) &&
-               groupedBy == that.groupedBy &&
-               Objects.equals(groupedByKey, that.groupedByKey) &&
-               aggregationType == that.aggregationType &&
-               Objects.equals(bytesIngress, that.bytesIngress) &&
-               Objects.equals(bytesEgress, that.bytesEgress) &&
-               Objects.equals(bytesTotal, that.bytesTotal) &&
-               Objects.equals(dscp, that.dscp) &&
-               Objects.equals(ecn, that.ecn) &&
-               Objects.equals(congestionEncountered, that.congestionEncountered) &&
-               Objects.equals(nonEcnCapableTransport, that.nonEcnCapableTransport) &&
-               Objects.equals(exporter, that.exporter) &&
-               Objects.equals(ifIndex, that.ifIndex) &&
-               Objects.equals(application, that.application) &&
-               Objects.equals(hostAddress, that.hostAddress) &&
-               Objects.equals(hostName, that.hostName) &&
-               Objects.equals(conversationKey, that.conversationKey);
+                rangeStartMs == that.rangeStartMs &&
+                rangeEndMs == that.rangeEndMs &&
+                ranking == that.ranking &&
+                Objects.equals(id, that.id) &&
+                Objects.equals(groupedByKey, that.groupedByKey) &&
+                groupedBy == that.groupedBy &&
+                aggregationType == that.aggregationType &&
+                Objects.equals(bytesIngress, that.bytesIngress) &&
+                Objects.equals(bytesEgress, that.bytesEgress) &&
+                Objects.equals(bytesTotal, that.bytesTotal) &&
+                Objects.equals(dscp, that.dscp) &&
+                Objects.equals(ecn, that.ecn) &&
+                Objects.equals(congestionEncountered, that.congestionEncountered) &&
+                Objects.equals(nonEcnCapableTransport, that.nonEcnCapableTransport) &&
+                Objects.equals(exporter, that.exporter) &&
+                Objects.equals(ifIndex, that.ifIndex) &&
+                Objects.equals(application, that.application) &&
+                Objects.equals(hostAddress, that.hostAddress) &&
+                Objects.equals(hostName, that.hostName) &&
+                Objects.equals(conversationKey, that.conversationKey);
     }
 
     @Override
@@ -311,27 +311,27 @@ public class FlowSummary {
     @Override
     public String toString() {
         return "FlowSummary{" +
-               "id='" + id + '\'' +
-               ", timestamp=" + timestamp +
-               ", rangeStartMs=" + rangeStartMs +
-               ", rangeEndMs=" + rangeEndMs +
-               ", ranking=" + ranking +
-               ", groupedBy=" + groupedBy +
-               ", groupedByKey='" + groupedByKey + '\'' +
-               ", aggregationType=" + aggregationType +
-               ", bytesIngress=" + bytesIngress +
-               ", bytesEgress=" + bytesEgress +
-               ", bytesTotal=" + bytesTotal +
-               ", dscp=" + dscp +
-               ", ecn=" + ecn +
-               ", congestionEncountered=" + congestionEncountered +
-               ", nonEcnCapableTransport=" + nonEcnCapableTransport +
-               ", exporter=" + exporter +
-               ", ifIndex=" + ifIndex +
-               ", application='" + application + '\'' +
-               ", hostAddress='" + hostAddress + '\'' +
-               ", hostName='" + hostName + '\'' +
-               ", conversationKey='" + conversationKey + '\'' +
-               '}';
+                "id='" + id + '\'' +
+                ", timestamp=" + timestamp +
+                ", groupedByKey='" + groupedByKey + '\'' +
+                ", rangeStartMs=" + rangeStartMs +
+                ", rangeEndMs=" + rangeEndMs +
+                ", ranking=" + ranking +
+                ", groupedBy=" + groupedBy +
+                ", aggregationType=" + aggregationType +
+                ", bytesIngress=" + bytesIngress +
+                ", bytesEgress=" + bytesEgress +
+                ", bytesTotal=" + bytesTotal +
+                ", dscp=" + dscp +
+                ", ecn=" + ecn +
+                ", congestionEncountered=" + congestionEncountered +
+                ", nonEcnCapableTransport=" + nonEcnCapableTransport +
+                ", exporter=" + exporter +
+                ", ifIndex=" + ifIndex +
+                ", application='" + application + '\'' +
+                ", hostAddress='" + hostAddress + '\'' +
+                ", hostName='" + hostName + '\'' +
+                ", conversationKey='" + conversationKey + '\'' +
+                '}';
     }
 }

@@ -48,4 +48,18 @@ public enum Ecn {
     Ecn(int code) {
         this.code = code;
     }
+
+    public static Ecn fromCode(int ecn) {
+        switch (ecn) {
+            case -1:
+                return IGNORED;
+            case 0:
+                return NON_ECT;
+            case 1:
+            case 2:
+                return ECT;
+            default:
+                return CE;
+        }
+    }
 }
