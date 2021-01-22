@@ -110,12 +110,6 @@ import com.google.common.io.Resources;
 public class FlowAnalyzerIT {
     private ObjectMapper objectMapper = new ObjectMapper();
 
-    @ClassRule
-    public static MiniClusterWithClientResource miniClusterResource = new MiniClusterWithClientResource(new MiniClusterResourceConfiguration.Builder()
-                                                                                                                    .setNumberTaskManagers(2)
-                                                                                                                    .setNumberSlotsPerTaskManager(3)
-                                                                                                                    .build());
-
     @Rule
     public KafkaContainer kafka = new KafkaContainer();
 
@@ -143,7 +137,8 @@ public class FlowAnalyzerIT {
     @Test
     public void canStreamIt() throws InterruptedException, ExecutionException {
         NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + kafka.getBootstrapServers(),
-                "--fixedWindowSizeMs=50000",
+                "--fixedWindowSizeMs=10000",
+                "--defaultMaxInputDelayMs=1000",
                 "--flowDestTopic=opennms-flows-aggregated")
                 .as(NephronOptions.class);
         options.setElasticUrl("http://" + elastic.getHttpHostAddress());
@@ -253,8 +248,6 @@ public class FlowAnalyzerIT {
         createTopics(options.getFlowSourceTopic(), options.getFlowDestTopic());
 
         final TestFlinkRunner runner = TestFlinkRunner.fromOptions(options);
-//        final PipelineRunner<?> runner = FlinkRunner.fromOptions(options);
-//        final PipelineRunner<?> runner = DirectRunner.fromOptions(options);
 
         // Fire up the pipeline
         final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(runner.getPipelineOptions().as(NephronOptions.class));

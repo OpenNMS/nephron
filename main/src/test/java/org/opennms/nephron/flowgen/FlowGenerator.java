@@ -195,6 +195,9 @@ public class FlowGenerator {
             flowIndex = 0;
             conversationIndex++;
 
+            // New conversations start in start time as all conversation happen in parallel (but are streamed in sequence)
+            startOfFlow = startTime;
+
             int applicationIndex = conversationIndex % applications.size();
             applicationForConversation = applications.get(applicationIndex);
 
@@ -238,6 +241,9 @@ public class FlowGenerator {
                                 egressBytesPerFlow);
             }
             final FlowDocument flow = flowBuilder.build().get(0);
+
+            // Move to next timeslot
+            startOfFlow = startOfFlow.plusMillis(flowDurationMillis);
 
             // Prepare for next flow
             flowIndex++;
