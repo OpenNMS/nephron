@@ -50,6 +50,7 @@
         <module>assemblies</module>
         <module>main</module>
         <module>proto</module>
+        <module>catheter</module>
     </modules>
 
     <dependencyManagement>
