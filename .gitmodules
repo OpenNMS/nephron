@@ -1,0 +1,3 @@
+[submodule "catheter"]
+	path = catheter
+	url = https://github.com/opennms-forge/catheter

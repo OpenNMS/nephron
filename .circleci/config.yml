@@ -9,20 +9,26 @@ jobs:
       MAVEN_OPTS: -Xmx1024m
 
     steps:
+      # Disabled while submodules are used
       # Restore source cache
-      - restore_cache:
-          keys:
-            - source-v1-{{ .Branch }}-{{ .Revision }}
-            - source-v1-{{ .Branch }}-
-            - source-v1-
+      #      - restore_cache:
+      #          keys:
+      #            - source-v1-{{ .Branch }}-{{ .Revision }}
+      #            - source-v1-{{ .Branch }}-
+      #            - source-v1-
 
       - checkout
+      
+      - run: |
+           git submodule sync --recursive
+           git submodule update --init --recursive
 
+      # Disabled while submodules are used
       # Save source cache
-      - save_cache:
-          key: source-v1-{{ .Branch }}-{{ .Revision }}
-          paths:
-            - ".git"
+      #- save_cache:
+      #    key: source-v1-{{ .Branch }}-{{ .Revision }}
+      #    paths:
+      #      - ".git"
 
       # Download and cache dependencies
       - restore_cache:
