@@ -162,7 +162,7 @@ public class FlowAnalyzerTest {
         p.run();
     }
 
-    static class TestTransform extends PTransform<PCollection<FlowDocument>, PCollection<KV<Groupings.CompoundKey, Aggregate>>> {
+    static class TestTransform extends PTransform<PCollection<FlowDocument>, PCollection<KV<CompoundKey, Aggregate>>> {
 
         private final int topK;
         private final Duration fixedWindowSize;
@@ -179,25 +179,20 @@ public class FlowAnalyzerTest {
         }
 
         @Override
-        public PCollection<KV<Groupings.CompoundKey, Aggregate>> expand(PCollection<FlowDocument> input) {
+        public PCollection<KV<CompoundKey, Aggregate>> expand(PCollection<FlowDocument> input) {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
                     new Pipeline.WindowedFlows(fixedWindowSize, maxFlowDuration, lateProcessingDelay, allowedLateness));
 
             Pipeline.SumsAndTopKs app = aggregateSumsAndTopKs("app_", windowedStreamOfFlows,
-                    Groupings.CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION,
-                    Groupings.CompoundKeyType.EXPORTER_INTERFACE_APPLICATION,
+                    CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION,
+                    CompoundKeyType.EXPORTER_INTERFACE_APPLICATION,
                     topK
             );
 
-//            return app.withTos.sum;
-
             Pipeline.TotalAndSummary tos = aggregateParentTotal("tos_", app.withTos.sum);
-//            return tos.total;
-
             Pipeline.TotalAndSummary itf = aggregateParentTotal("itf_", tos.total);
 
             return itf.total;
-
         }
     }
 

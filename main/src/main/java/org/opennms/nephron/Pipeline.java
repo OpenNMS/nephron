@@ -262,7 +262,6 @@ public class Pipeline {
                                     ElasticsearchIO.RetryConfiguration.create(this.elasticRetryCount,
                                             Duration.millis(this.elasticRetryDuration))
                             )
-                            .withUsePartialUpdate(true)
                             .withIndexFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
                                 @Override
                                 public String apply(JsonNode input) {
@@ -278,16 +277,6 @@ public class Pipeline {
                                     flowsToEsDrift.update(System.currentTimeMillis() - flowTimestamp.toEpochMilli());
 
                                     return indexName;
-                                }
-                            })
-                            .withIdFn(new ElasticsearchIO.Write.FieldValueExtractFn() {
-                                @Override
-                                public String apply(JsonNode input) {
-                                    return input.get("@timestamp").asLong() + "_" +
-                                            input.get("grouped_by").asText() + "_" +
-                                            input.get("grouped_by_key").asText() + "_" +
-                                            input.get("aggregation_type").asText() + "_" +
-                                            input.get("ranking").asLong();
                                 }
                             }));
         }
