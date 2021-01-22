@@ -10,13 +10,17 @@ jobs:
 
     steps:
       # Restore source cache
-      - restore_cache:
-          keys:
-            - source-v1-{{ .Branch }}-{{ .Revision }}
-            - source-v1-{{ .Branch }}-
-            - source-v1-
+      #      - restore_cache:
+      #          keys:
+      #            - source-v1-{{ .Branch }}-{{ .Revision }}
+      #            - source-v1-{{ .Branch }}-
+      #            - source-v1-
 
       - checkout
+      
+      - run: |
+           git submodule sync --recursive
+           git submodule update --init --recursive
 
       # Save source cache
       - save_cache:
