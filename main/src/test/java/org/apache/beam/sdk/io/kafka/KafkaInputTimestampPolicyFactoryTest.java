@@ -104,6 +104,8 @@ public class KafkaInputTimestampPolicyFactoryTest {
                                                     "key",
                                                     FlowDocument.newBuilder()
                                                             .setFirstSwitched(UInt64Value.of(now.getMillis() + ts))
+                                                            .setDeltaSwitched(UInt64Value.of(now.getMillis() + ts))
+                                                            .setLastSwitched(UInt64Value.of(now.getMillis() + ts))
                                                             .build()), now);
                             return result.getMillis() - now.getMillis();
                         })

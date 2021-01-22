@@ -48,8 +48,17 @@ import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
+import com.google.common.base.MoreObjects;
 import com.google.common.collect.Lists;
 
+/**
+ * Window function to assign flows to all windows they belong to.
+ *
+ * A flow spanning more than one window is assigned to multiple windows covering the whole span from flow start to flow
+ * end (inclusive) while keeping the flow unchanged.
+ *
+ * The assigned Windows are aware of the exporter of the flows making them non-equal if the the exporter differs.
+ */
 public class FlowWindows extends NonMergingWindowFn<FlowDocument, FlowWindows.FlowWindow> {
 
     private final Duration size;
@@ -133,7 +142,7 @@ public class FlowWindows extends NonMergingWindowFn<FlowDocument, FlowWindows.Fl
 
         @Override
         public Instant maxTimestamp() {
-            return this.end.minus(1);
+            return this.end;
         }
 
         @Override
@@ -153,6 +162,15 @@ public class FlowWindows extends NonMergingWindowFn<FlowDocument, FlowWindows.Fl
         @Override
         public int hashCode() {
             return Objects.hash(this.start, this.end, this.nodeId);
+        }
+
+        @Override
+        public String toString() {
+            return MoreObjects.toStringHelper(this)
+                              .add("start", start)
+                              .add("end", end)
+                              .add("nodeId", nodeId)
+                              .toString();
         }
 
         public static Coder<FlowWindow> getCoder() {

@@ -383,7 +383,7 @@ public class Pipeline {
         }
 
         public static Instant getTimestamp(FlowDocument doc) {
-            return Instant.ofEpochMilli(doc.getFirstSwitched().getValue());
+            return Instant.ofEpochMilli(doc.getDeltaSwitched().getValue());
         }
     }
 

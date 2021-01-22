@@ -412,10 +412,6 @@ public class RandomFlowIT {
 
     }
 
-    public CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options) {
-        return getFirstNFlowSummmariesFromES(numDocs, options, QueryBuilders.matchAllQuery());
-    }
-
     public CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options, QueryBuilder query) {
         CompletableFuture<SearchResponse> future = new CompletableFuture<>();
         SearchRequest searchRequest = new SearchRequest(options.getElasticFlowIndex() + "-*");
