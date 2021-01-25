@@ -139,7 +139,7 @@ public class Groupings {
         private final Counter flowsInWindow = Metrics.counter("flows", "in_window");
 
         private Optional<Aggregate> aggregatize(final FlowWindows.FlowWindow window, final FlowDocument flow, final String hostname) {
-            // The flow duration ranges [delta_switched, last_switched]
+            // The flow duration ranges [delta_switched, last_switched)
             long flowDurationMs = flow.getLastSwitched().getValue() - flow.getDeltaSwitched().getValue();
             if (flowDurationMs < 0) {
                 // Negative duration, pass

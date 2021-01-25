@@ -54,10 +54,13 @@ import com.google.common.collect.Lists;
 /**
  * Window function to assign flows to all windows they belong to.
  *
- * A flow spanning more than one window is assigned to multiple windows covering the whole span from flow start to flow
- * end (inclusive) while keeping the flow unchanged.
+ * A flow spanning more than one window is assigned to multiple windows covering the whole timespan of the flow while
+ * keeping the flow itself unchanged.
  *
  * The assigned Windows are aware of the exporter of the flows making them non-equal if the the exporter differs.
+ *
+ * Note: The timestamps of the flow itself are discrete points in time and therefore considered start (inclusive) and
+ * end (exclusive).
  */
 public class FlowWindows extends NonMergingWindowFn<FlowDocument, FlowWindows.FlowWindow> {
 
@@ -76,25 +79,23 @@ public class FlowWindows extends NonMergingWindowFn<FlowDocument, FlowWindows.Fl
         final long windowSize = this.size.getMillis();
 
         // We want to dispatch the flow to all the windows it may be a part of
-        // The flow ranges from [delta_switched, last_switched]
+        // The flow ranges from [delta_switched, last_switched)
         final FlowDocument flow = c.element();
 
-        final long flowStart = flow.getDeltaSwitched().getValue();
+        // Calculate the first and last windows since EPOCH the flow falls into
+        long firstWindow = flow.getDeltaSwitched().getValue() / windowSize;
+        long lastWindow = flow.getLastSwitched().getValue() / windowSize; // exclusive
 
-        // Make the the flow duration at least spanning a milliseconds (smallest time unit)
-        final long flowEnd = Long.max(flow.getLastSwitched().getValue(), flowStart + 1);
-
-        final long lastBucket = (flowEnd + windowSize - 1) / windowSize * windowSize;
-
+        // Iterate windows since EPOCH for flow duration and build windows
         final List<FlowWindow> windows = Lists.newArrayList();
+        for (long window = firstWindow; window <= lastWindow; window++) {
+            final Instant start = new Instant(window * windowSize);
 
-        long timestamp = flowStart;
-        while (timestamp < lastBucket) {
-            final Instant start = new Instant(timestamp - (timestamp % this.size.getMillis()));
-
-            windows.add(new FlowWindow(start, start.plus(this.size), c.element().getExporterNode().getNodeId()));
-
-            timestamp += windowSize;
+            windows.add(new FlowWindow(
+                    start,
+                    start.plus(this.size),
+                    c.element().getExporterNode().getNodeId()
+            ));
         }
 
         return windows;
@@ -115,9 +116,19 @@ public class FlowWindows extends NonMergingWindowFn<FlowDocument, FlowWindows.Fl
         throw null;
     }
 
+    /**
+     * An implementation of {@link BoundedWindow} that represents an interval from {@link #start}
+     * (inclusive) to {@link #end} (exclusive) and tracks the exporters node ID to ensure non-equality for flows from
+     * distinct exporters.
+     */
     public static class FlowWindow extends BoundedWindow {
+        /** Start of the interval, inclusive. */
         private final Instant start;
+
+        /** End of the interval, exclusive. */
         private final Instant end;
+
+        /** ID of the node exporting the flow */
         private final int nodeId;
 
         public FlowWindow(final Instant start,
@@ -142,7 +153,8 @@ public class FlowWindows extends NonMergingWindowFn<FlowDocument, FlowWindows.Fl
 
         @Override
         public Instant maxTimestamp() {
-            return this.end;
+            // End not inclusive
+            return this.end.minus(1);
         }
 
         @Override
