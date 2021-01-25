@@ -33,7 +33,7 @@ import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Test;
-import org.opennms.nephron.MyCustomTimestampPolicyWithLimitedDelay;
+import org.opennms.nephron.FlowTimestampPolicy;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 import com.google.common.collect.ImmutableList;
@@ -50,8 +50,7 @@ public class KafkaInputTimestampPolicyFactoryTest {
         Duration maxDelay = Duration.standardMinutes(2);
 
         TimestampPolicyFactory<String, FlowDocument> factory = getKafkaInputTimestampPolicyFactory(maxDelay);
-        MyCustomTimestampPolicyWithLimitedDelay<String, FlowDocument> policy =
-                (MyCustomTimestampPolicyWithLimitedDelay)factory.createTimestampPolicy(new TopicPartition("flows", 0), Optional.empty());
+        FlowTimestampPolicy policy = (FlowTimestampPolicy)factory.createTimestampPolicy(new TopicPartition("flows", 0), Optional.empty());
 
         // Base condition, we're at the current timestamp, there's no watermark yet (min value) and there is a backlog in the topic
         Instant now = Instant.now();
@@ -86,8 +85,7 @@ public class KafkaInputTimestampPolicyFactoryTest {
     }
 
     // Takes offsets of timestamps from now returns the results as offsets from 'now'.
-    private static List<Long> getTimestampsForMyRecords(
-            MyCustomTimestampPolicyWithLimitedDelay<String, FlowDocument> policy, Instant now, List<Long> timestampOffsets) {
+    private static List<Long> getTimestampsForMyRecords(FlowTimestampPolicy policy, Instant now, List<Long> timestampOffsets) {
         return timestampOffsets.stream()
                 .map(
                         ts -> {
