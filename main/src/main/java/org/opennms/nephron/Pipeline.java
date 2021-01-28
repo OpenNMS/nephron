@@ -38,7 +38,6 @@ import java.util.Objects;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
-import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Distribution;
@@ -65,7 +64,6 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
-import org.opennms.nephron.coders.JacksonJsonCoder;
 import org.opennms.nephron.coders.KafkaInputFlowDeserializer;
 import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -112,7 +110,7 @@ public class Pipeline {
                 options.getFlowSourceTopic(), kafkaConsumerConfig));
 
         // Calculate the flow summary statistics
-        PCollection<FlowSummary> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
+        PCollection<FlowSummaryData> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
 
         // Write the results out to Elasticsearch
         flowSummaries.apply(new WriteToElasticsearch(options));
@@ -128,13 +126,13 @@ public class Pipeline {
     public static void registerCoders(org.apache.beam.sdk.Pipeline p) {
         final CoderRegistry coderRegistry = p.getCoderRegistry();
         coderRegistry.registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
-        coderRegistry.registerCoderForClass(FlowSummary.class, new JacksonJsonCoder<>(FlowSummary.class));
+        coderRegistry.registerCoderForClass(FlowSummaryData.class, new FlowSummaryData.FlowSummaryDataCoder());
         coderRegistry.registerCoderForClass(Groupings.ExporterInterfaceApplicationKey.class, new Groupings.CompoundKeyCoder());
         coderRegistry.registerCoderForClass(Groupings.CompoundKey.class, new Groupings.CompoundKeyCoder());
         coderRegistry.registerCoderForClass(Aggregate.class, new Aggregate.AggregateCoder());
     }
 
-    public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
+    public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummaryData>> {
         private final int topK;
         private final Duration fixedWindowSize;
         private final Duration earlyProcessingDelay;
@@ -158,23 +156,23 @@ public class Pipeline {
         }
 
         @Override
-        public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
+        public PCollection<FlowSummaryData> expand(PCollection<FlowDocument> input) {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("to_windows", toWindow(fixedWindowSize, earlyProcessingDelay, lateProcessingDelay, allowedLateness));
 
-            PCollection<FlowSummary> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
+            PCollection<FlowSummaryData> totalBytesByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTotalBytesByExporterAndInterface",
                     new CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
 
-            PCollection<FlowSummary> topKAppsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopAppsByExporterAndInterface",
+            PCollection<FlowSummaryData> topKAppsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopAppsByExporterAndInterface",
                     new CalculateTopKGroups("CalculateTopAppsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceApplication()));
 
-            PCollection<FlowSummary> topKHostsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopHostsByExporterAndInterface",
+            PCollection<FlowSummaryData> topKHostsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopHostsByExporterAndInterface",
                     new CalculateTopKGroups("CalculateTopHostsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceHost()));
 
-            PCollection<FlowSummary> topKConversationsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopConversationsByExporterAndInterface",
+            PCollection<FlowSummaryData> topKConversationsByExporterAndInterface = windowedStreamOfFlows.apply("CalculateTopConversationsByExporterAndInterface",
                     new CalculateTopKGroups("CalculateTopConversationsByExporterAndInterface_", topK, new Groupings.KeyByExporterInterfaceConversation()));
 
             // Merge all the collections
-            PCollectionList<FlowSummary> flowSummaries = PCollectionList.of(totalBytesByExporterAndInterface)
+            PCollectionList<FlowSummaryData> flowSummaries = PCollectionList.of(totalBytesByExporterAndInterface)
                     .and(topKAppsByExporterAndInterface)
                     .and(topKHostsByExporterAndInterface)
                     .and(topKConversationsByExporterAndInterface);
@@ -186,7 +184,7 @@ public class Pipeline {
      * Used to calculate the top K groups using the given grouping function.
      * Assumes that the input stream is windowed.
      */
-    public static class CalculateTopKGroups extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
+    public static class CalculateTopKGroups extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummaryData>> {
         private final String transformPrefix;
         private final int topK;
         private final DoFn<FlowDocument, KV<Groupings.CompoundKey, Aggregate>> groupingBy;
@@ -198,7 +196,7 @@ public class Pipeline {
         }
 
         @Override
-        public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
+        public PCollection<FlowSummaryData> expand(PCollection<FlowDocument> input) {
             return input.apply(transformPrefix + "group_by_key_in_window", ParDo.of(groupingBy))
                     .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
                     .apply(transformPrefix + "group_by_outer_key", ParDo.of(new DoFn<KV<Groupings.CompoundKey, Aggregate>, KV<Groupings.CompoundKey, KV<Groupings.CompoundKey, Aggregate>>>() {
@@ -210,13 +208,12 @@ public class Pipeline {
                     }))
                     .apply(transformPrefix + "top_k_per_key", Top.perKey(topK, new FlowBytesValueComparator()))
                     .apply(transformPrefix + "flatten", Values.create())
-                    .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, Aggregate>>, FlowSummary>() {
+                    .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, Aggregate>>, FlowSummaryData>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
                             int ranking = 1;
                             for (KV<Groupings.CompoundKey, Aggregate> el : c.element()) {
-                                FlowSummary flowSummary = toFlowSummary(AggregationType.TOPK, window, el);
-                                flowSummary.setRanking(ranking++);
+                                FlowSummaryData flowSummary = toFlowSummaryData(AggregationType.TOPK, window, el, ranking++);
                                 c.output(flowSummary);
                             }
                         }
@@ -228,7 +225,7 @@ public class Pipeline {
      * Used to calculate the total bytes derived from flows for the given grouping.
      * Assumes that the input stream is windowed.
      */
-    public static class CalculateTotalBytes extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummary>> {
+    public static class CalculateTotalBytes extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummaryData>> {
         private final String transformPrefix;
         private final DoFn<FlowDocument, KV<Groupings.CompoundKey, Aggregate>> groupingBy;
 
@@ -238,19 +235,19 @@ public class Pipeline {
         }
 
         @Override
-        public PCollection<FlowSummary> expand(PCollection<FlowDocument> input) {
+        public PCollection<FlowSummaryData> expand(PCollection<FlowDocument> input) {
             return input.apply(transformPrefix + "group_by_key_in_window", ParDo.of(groupingBy))
                     .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
-                    .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, Aggregate>, FlowSummary>() {
+                    .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, Aggregate>, FlowSummaryData>() {
                         @ProcessElement
                         public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
-                            c.output(toFlowSummary(AggregationType.TOTAL, window, c.element()));
+                            c.output(toFlowSummaryData(AggregationType.TOTAL, window, c.element(), 0));
                         }
                     }));
         }
     }
 
-    public static class WriteToElasticsearch extends PTransform<PCollection<FlowSummary>, PDone> {
+    public static class WriteToElasticsearch extends PTransform<PCollection<FlowSummaryData>, PDone> {
         private final String elasticIndex;
         private final IndexStrategy indexStrategy;
         private final ElasticsearchIO.ConnectionConfiguration esConfig;
@@ -288,7 +285,7 @@ public class Pipeline {
         }
 
         @Override
-        public PDone expand(PCollection<FlowSummary> input) {
+        public PDone expand(PCollection<FlowSummaryData> input) {
             return input.apply("SerializeToJson", toJson())
                     .apply("WriteToElasticsearch", ElasticsearchIO.write().withConnectionConfiguration(esConfig)
                             .withRetryConfiguration(
@@ -380,7 +377,7 @@ public class Pipeline {
         }
     }
 
-    public static class WriteToKafka extends PTransform<PCollection<FlowSummary>, PDone> {
+    public static class WriteToKafka extends PTransform<PCollection<FlowSummaryData>, PDone> {
         private final String bootstrapServers;
         private final String topic;
 
@@ -390,7 +387,7 @@ public class Pipeline {
         }
 
         @Override
-        public PDone expand(PCollection<FlowSummary> input) {
+        public PDone expand(PCollection<FlowSummaryData> input) {
             return input.apply(toJson())
                     .apply(KafkaIO.<Void, String>write()
                             .withBootstrapServers(bootstrapServers)
@@ -401,11 +398,12 @@ public class Pipeline {
         }
     }
 
-    private static ParDo.SingleOutput<FlowSummary, String> toJson() {
-        return ParDo.of(new DoFn<FlowSummary, String>() {
+    private static ParDo.SingleOutput<FlowSummaryData, String> toJson() {
+        return ParDo.of(new DoFn<FlowSummaryData, String>() {
             @ProcessElement
             public void processElement(ProcessContext c) throws JsonProcessingException {
-                c.output(MAPPER.writeValueAsString(c.element()));
+                FlowSummary flowSummary = toFlowSummary(c.element());
+                c.output(MAPPER.writeValueAsString(flowSummary));
             }
         });
     }
@@ -424,21 +422,27 @@ public class Pipeline {
         }
     }
 
-    public static FlowSummary toFlowSummary(AggregationType aggregationType, FlowWindows.FlowWindow window, KV<Groupings.CompoundKey, Aggregate> el) {
-        FlowSummary flowSummary = new FlowSummary();
-        el.getKey().visit(new Groupings.FlowPopulatingVisitor(flowSummary));
-        flowSummary.setAggregationType(aggregationType);
 
-        flowSummary.setRangeStartMs(window.start().getMillis());
-        flowSummary.setRangeEndMs(window.end().getMillis());
+    public static FlowSummaryData toFlowSummaryData(AggregationType aggregationType, FlowWindows.FlowWindow window, KV<Groupings.CompoundKey, Aggregate> el, int ranking) {
+        return new FlowSummaryData(aggregationType, el.getKey(), el.getValue(), window.start().getMillis(), window.end().getMillis(), ranking);
+    }
+
+    public static FlowSummary toFlowSummary(FlowSummaryData fsd) {
+        FlowSummary flowSummary = new FlowSummary();
+        fsd.key.visit(new Groupings.FlowPopulatingVisitor(flowSummary));
+        flowSummary.setAggregationType(fsd.aggregationType);
+
+        flowSummary.setRangeStartMs(fsd.windowStart);
+        flowSummary.setRangeEndMs(fsd.windowEnd);
         // Use the range end as the timestamp
         flowSummary.setTimestamp(flowSummary.getRangeEndMs());
 
-        flowSummary.setBytesEgress(el.getValue().getBytesOut());
-        flowSummary.setBytesIngress(el.getValue().getBytesIn());
+        flowSummary.setBytesEgress(fsd.aggregate.getBytesOut());
+        flowSummary.setBytesIngress(fsd.aggregate.getBytesIn());
         flowSummary.setBytesTotal(flowSummary.getBytesIngress() + flowSummary.getBytesEgress());
 
-        flowSummary.setHostName(el.getValue().getHostname());
+        flowSummary.setHostName(fsd.aggregate.getHostname());
+        flowSummary.setRanking(fsd.ranking);
 
         return flowSummary;
     }
