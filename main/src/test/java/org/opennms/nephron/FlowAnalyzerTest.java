@@ -38,8 +38,8 @@ import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERS
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST;
 import static org.opennms.nephron.JacksonJsonCoder.TO_FLOW_SUMMARY;
 import static org.opennms.nephron.Pipeline.ReadFromKafka.getTimestamp;
-import static org.opennms.nephron.Pipeline.aggregateParentTotal;
 import static org.opennms.nephron.Pipeline.aggregateSumsAndTopKs;
+import static org.opennms.nephron.Pipeline.attachTimestamps;
 import static org.opennms.nephron.flowgen.FlowGenerator.GIGABYTE;
 
 import java.time.Instant;
@@ -50,6 +50,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.LongFunction;
 
 import org.apache.beam.sdk.coders.CoderRegistry;
+import org.apache.beam.runners.flink.TestFlinkRunner;
+import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
@@ -59,7 +61,11 @@ import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.PTransform;
+import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
+import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
+import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
+import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
@@ -89,8 +95,14 @@ public class FlowAnalyzerTest {
         EXPORTER_NODE.setNodeId(99);
     }
 
+    private PipelineOptions pipelineOptionsWithKeyByEcn = TestFlinkRunner
+            .fromOptions(PipelineOptionsFactory.fromArgs("--keyByEcn").as(NephronOptions.class)).getPipelineOptions();
+
+    private PipelineOptions pipelineOptionsWithoutKeyByEcn = TestFlinkRunner
+            .fromOptions(PipelineOptionsFactory.as(NephronOptions.class)).getPipelineOptions();
+
     @Rule
-    public TestPipeline p = TestPipeline.fromOptions(PipelineOptionsFactory.as(NephronOptions.class));
+    public TestPipeline p = TestPipeline.fromOptions(pipelineOptionsWithKeyByEcn);
 
     @Before
     public void setUp() {
@@ -180,8 +192,29 @@ public class FlowAnalyzerTest {
 
         @Override
         public PCollection<KV<CompoundKey, Aggregate>> expand(PCollection<FlowDocument> input) {
-            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
-                    new Pipeline.WindowedFlows(fixedWindowSize, maxFlowDuration, lateProcessingDelay, allowedLateness));
+
+            Window<FlowDocument> window = Window.<FlowDocument>into(FixedWindows.of(fixedWindowSize))
+                    // See https://beam.apache.org/documentation/programming-guide/#composite-triggers
+                    .triggering(AfterWatermark
+                            // On Beam’s estimate that all the data has arrived (the watermark passes the end of the window)
+                            .pastEndOfWindow()
+                            // Any time late data arrives, after a one-minute delay
+                            .withLateFirings(AfterProcessingTime
+                                    .pastFirstElementInPane()
+                                    .plusDelayOf(lateProcessingDelay)))
+                    // After some time, we assume no more data of interest will arrive, and the trigger stops executing
+                    .withAllowedLateness(allowedLateness)
+                    // each pane is aggregated separately
+                    // -> aggregation is done by elastic search if multiple flow summary documents exist for a window
+                    .discardingFiredPanes();
+
+//            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
+//                    new Pipeline.WindowedFlows(fixedWindowSize, maxFlowDuration, lateProcessingDelay, allowedLateness));
+
+            PCollection<FlowDocument> windowedStreamOfFlows = input
+                    .apply("attach_timestamps", attachTimestamps(maxFlowDuration))
+                    .apply("to_windows", window)
+            ;
 
             Pipeline.SumsAndTopKs app = aggregateSumsAndTopKs("app_", windowedStreamOfFlows,
                     CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION,
@@ -189,10 +222,7 @@ public class FlowAnalyzerTest {
                     topK
             );
 
-            Pipeline.TotalAndSummary tos = aggregateParentTotal("tos_", app.withTos.sum);
-            Pipeline.TotalAndSummary itf = aggregateParentTotal("itf_", tos.total);
-
-            return itf.total;
+            return app.withoutTos.sum;
         }
     }
 
@@ -252,14 +282,21 @@ public class FlowAnalyzerTest {
 
         PAssert.that(output).inOnTimePane(windowWithLateArrival).satisfies(iter -> {
             for (Object fs: iter) {
-                System.out.println("onTime: " + fs);
+                System.out.println("res-onTime: " + fs);
+            }
+            return null;
+        });
+
+        PAssert.that(output).inLatePane(windowWithLateArrival).satisfies(iter -> {
+            for (Object fs: iter) {
+                System.out.println("res-late: " + fs);
             }
             return null;
         });
 
         PAssert.that(output).inFinalPane(windowWithLateArrival).satisfies(iter -> {
             for (Object fs: iter) {
-                System.out.println("final: " + fs);
+                System.out.println("res-final: " + fs);
             }
             return null;
         });
