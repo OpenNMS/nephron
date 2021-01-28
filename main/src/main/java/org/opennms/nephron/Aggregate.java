@@ -126,8 +126,8 @@ public class Aggregate {
     @Override
     public String toString() {
         return "Aggregate{" +
-                "bytesIn=" + bytesIn +
-                ", bytesOut=" + bytesOut +
+               "bytesIn=" + bytesIn +
+               ", bytesOut=" + bytesOut +
                ", hostname='" + hostname + '\'' +
                ", congestionEncountered=" + congestionEncountered +
                ", nonEcnCapableTransport=" + nonEcnCapableTransport +
