@@ -31,7 +31,6 @@ package org.opennms.nephron;
 import static org.opennms.nephron.RefType.APPLICATION_PART;
 import static org.opennms.nephron.RefType.CONVERSATION_PART;
 import static org.opennms.nephron.RefType.DSCP_PART;
-import static org.opennms.nephron.RefType.ECN_PART;
 import static org.opennms.nephron.RefType.EXPORTER_PART;
 import static org.opennms.nephron.RefType.HOST_PART;
 import static org.opennms.nephron.RefType.INTERFACE_PART;
@@ -64,16 +63,7 @@ public enum CompoundKeyType {
     EXPORTER_INTERFACE_CONVERSATION(EXPORTER_INTERFACE, CONVERSATION_PART),
     EXPORTER_INTERFACE_HOST(EXPORTER_INTERFACE, HOST_PART),
 
-    /**
-     * The ToS aggregation adds two parts to the compound key type, namely a part for distinguishing DSCPs and another
-     * part for distinguishing ECNs.
-     * -> the ToS aggregation and its subaggregations (for applications, conversations, and hosts) include
-     *    a "dscp" and a "ecn" field that can be used to filter for specific DSCPs or ECNs.
-     * -> the ToS aggregation can be use to retrieve series/summaries for DSCPs or for ECNs by aggregating over all
-     *    ECNs or all DSCPs, respectively.
-     * -> the ECN grouping can be switched on / off by the {@link NephronOptions#getKeyByEcn()} flag
-     */
-    EXPORTER_INTERFACE_TOS(EXPORTER_INTERFACE, DSCP_PART, ECN_PART),
+    EXPORTER_INTERFACE_TOS(EXPORTER_INTERFACE, DSCP_PART),
 
     EXPORTER_INTERFACE_TOS_APPLICATION(EXPORTER_INTERFACE_TOS, APPLICATION_PART),
     EXPORTER_INTERFACE_TOS_CONVERSATION(EXPORTER_INTERFACE_TOS, CONVERSATION_PART),
@@ -114,7 +104,7 @@ public enum CompoundKeyType {
      * <p>
      * The key parts of the created key are created by delegating to the {@link RefType}s of this compound key type.
      */
-    List<WithHostname<CompoundKey>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
+    List<WithHostname<CompoundKey>> create(FlowDocument flow) throws MissingFieldsException {
         // the method returns a list of compound keys
         // -> a list of lists of the corresponding key parts must be determined
         // -> each key part type contributes a list of choices for that key part
@@ -123,7 +113,7 @@ public enum CompoundKeyType {
         for (RefType part : parts) {
             // each key part type yields a list of choices (refs)
             // -> all current lists in refss have to be extended by all choices
-            List<WithHostname<Ref>> refs = part.create(opts, flow);
+            List<WithHostname<Ref>> refs = part.create(flow);
             if (refss == null) {
                 // first part
                 // -> each choice yields a singleton list of key parts

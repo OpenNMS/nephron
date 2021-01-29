@@ -662,7 +662,7 @@ public class Pipeline {
         public void processElement(ProcessContext c, IntervalWindow window) {
             final FlowDocument flow = c.element();
             try {
-                for (final WithHostname<? extends CompoundKey> key: key(c.getPipelineOptions().as(NephronOptions.class), flow)) {
+                for (final WithHostname<? extends CompoundKey> key: key(flow)) {
                     Aggregate aggregate = aggregatize(window, flow, key.hostname);
                     c.output(KV.of(key.value, aggregate));
                 }
@@ -671,8 +671,8 @@ public class Pipeline {
             }
         }
 
-        public Collection<WithHostname<CompoundKey>> key(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
-            return type.create(opts, flow);
+        public Collection<WithHostname<CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
+            return type.create(flow);
         }
     }
 }

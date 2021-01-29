@@ -108,18 +108,14 @@ public class Aggregate {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-        Aggregate aggregate = (Aggregate) o;
-        return bytesIn == aggregate.bytesIn &&
-               bytesOut == aggregate.bytesOut &&
-               congestionEncountered == aggregate.congestionEncountered &&
-               nonEcnCapableTransport == aggregate.nonEcnCapableTransport &&
-               Objects.equals(hostname, aggregate.hostname);
+        if (this == o) return true;
+        if (!(o instanceof Aggregate)) return false;
+        Aggregate flowBytes = (Aggregate) o;
+        return bytesIn == flowBytes.bytesIn &&
+               bytesOut == flowBytes.bytesOut &&
+               congestionEncountered == flowBytes.congestionEncountered &&
+               nonEcnCapableTransport == flowBytes.nonEcnCapableTransport &&
+               Objects.equals(hostname, flowBytes.hostname);
     }
 
     @Override
@@ -130,8 +126,8 @@ public class Aggregate {
     @Override
     public String toString() {
         return "Aggregate{" +
-               "bytesIn=" + bytesIn +
-               ", bytesOut=" + bytesOut +
+                "bytesIn=" + bytesIn +
+                ", bytesOut=" + bytesOut +
                ", hostname='" + hostname + '\'' +
                ", congestionEncountered=" + congestionEncountered +
                ", nonEcnCapableTransport=" + nonEcnCapableTransport +

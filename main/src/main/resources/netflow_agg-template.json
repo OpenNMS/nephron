@@ -40,9 +40,6 @@
             "dscp": {
                 "type": "integer"
             },
-            "ecn": {
-                "type": "integer"
-            },
             "congestion_encountered": {
                 "type": "boolean"
             },
