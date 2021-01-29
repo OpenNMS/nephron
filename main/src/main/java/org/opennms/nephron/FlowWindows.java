@@ -82,9 +82,12 @@ public class FlowWindows extends NonMergingWindowFn<FlowDocument, FlowWindows.Fl
         // The flow ranges from [delta_switched, last_switched)
         final FlowDocument flow = c.element();
 
+        long deltaSwitchedMillis = flow.getDeltaSwitched().getValue();
+        long lastSwitchedMillis = flow.getLastSwitched().getValue();
+
         // Calculate the first and last window since EPOCH (both inclusive) the flow falls into
-        long firstWindow = flow.getDeltaSwitched().getValue() / windowSize;
-        long lastWindow = flow.getLastSwitched().getValue() / windowSize;
+        long firstWindow = deltaSwitchedMillis / windowSize;
+        long lastWindow = lastSwitchedMillis / windowSize;
 
         // Iterate window numbers for flow duration and build windows
         final List<FlowWindow> windows = Lists.newArrayList();
