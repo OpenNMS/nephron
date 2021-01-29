@@ -236,61 +236,6 @@ abstract class Ref {
         }
     }
 
-    public static class Ecn extends Ref {
-        private org.opennms.nephron.Ecn ecn;
-
-        public static Ecn of(NephronOptions opts, FlowDocument flow) {
-            org.opennms.nephron.Ecn ecn;
-            if (opts.getKeyByEcn() && flow.hasEcn()) {
-                ecn = org.opennms.nephron.Ecn.fromCode(flow.getEcn().getValue());
-            } else {
-                ecn = org.opennms.nephron.Ecn.IGNORED;
-            }
-            return new Ecn(ecn);
-        }
-
-        public Ecn(org.opennms.nephron.Ecn ecn) {
-            this.ecn = Objects.requireNonNull(ecn);
-        }
-
-        public org.opennms.nephron.Ecn getEcn() {
-            return ecn;
-        }
-
-        public void setEcn(org.opennms.nephron.Ecn ecn) {
-            this.ecn = ecn;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            Ecn ecnRef = (Ecn) o;
-            return ecn == ecnRef.ecn;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(ecn);
-        }
-
-        @Override
-        public String toString() {
-            return "EcnRef{" +
-                   "ecn=" + ecn +
-                   '}';
-        }
-
-        @Override
-        public String idAsString() {
-            return ecn.name();
-        }
-    }
-
     public static class Application extends Ref {
         private String application;
 

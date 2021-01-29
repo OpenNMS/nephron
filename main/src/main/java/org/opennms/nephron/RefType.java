@@ -141,31 +141,6 @@ abstract class RefType<T extends Ref> {
         }
     };
 
-    public static final RefType<Ref.Ecn> ECN_PART = new RefType<Ref.Ecn>() {
-        @Override
-        public void encode(Ref.Ecn ref, OutputStream os) throws IOException {
-            INT_CODER.encode(ref.getEcn().ordinal(), os);
-        }
-
-        @Override
-        public Ref.Ecn decode(InputStream is) throws IOException {
-            return new Ref.Ecn(org.opennms.nephron.Ecn.values()[INT_CODER.decode(is)]);
-        }
-
-        @Override
-        public List<WithHostname<Ref.Ecn>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
-            return singlePartWithoutHostName(Ref.Ecn.of(opts, flow));
-        }
-
-        @Override
-        public void populate(Ref.Ecn ref, FlowSummary summary) {
-            switch (ref.getEcn()) {
-                case IGNORED: break;
-                default: summary.setEcn(ref.getEcn().code);
-            }
-        }
-    };
-
     public static final RefType<Ref.Application> APPLICATION_PART = new RefType<Ref.Application>() {
         @Override
         public void encode(Ref.Application ref, OutputStream os) throws IOException {
