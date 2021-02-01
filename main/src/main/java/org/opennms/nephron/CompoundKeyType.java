@@ -104,7 +104,7 @@ public enum CompoundKeyType {
      * <p>
      * The key parts of the created key are created by delegating to the {@link RefType}s of this compound key type.
      */
-    List<WithHostname<CompoundKey>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
+    List<WithHostname<CompoundKey>> create(FlowDocument flow) throws MissingFieldsException {
         // the method returns a list of compound keys
         // -> a list of lists of the corresponding key parts must be determined
         // -> each key part type contributes a list of choices for that key part
@@ -113,7 +113,7 @@ public enum CompoundKeyType {
         for (RefType part : parts) {
             // each key part type yields a list of choices (refs)
             // -> all current lists in refss have to be extended by all choices
-            List<WithHostname<Ref>> refs = part.create(opts, flow);
+            List<WithHostname<Ref>> refs = part.create(flow);
             if (refss == null) {
                 // first part
                 // -> each choice yields a singleton list of key parts

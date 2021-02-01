@@ -45,8 +45,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import java.util.function.LongFunction;
 
 import org.apache.beam.sdk.coders.CoderRegistry;
@@ -54,7 +52,6 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
-import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
@@ -62,7 +59,6 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.joda.time.Duration;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
@@ -77,7 +73,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 
-@Ignore
 public class FlowAnalyzerTest {
 
     static final ExporterNode EXPORTER_NODE = new ExporterNode();
@@ -100,15 +95,23 @@ public class FlowAnalyzerTest {
 
     @Test
     public void canComputeTotalBytesInWindow() {
+
+        long start = 1546318800000L;
+        long startPlusOneMinute = start + 60000;
+
         // Generate some flows
+        // -> choose the number of bytes for ingress/egress carefully in order to avoid rounding errors in FlowGenerator
+        long totalIngressBytes = 5 * GIGABYTE + 1;
+        long totalEgressBytes = 2 * GIGABYTE + 2;
+
         final FlowGenerator flowGenerator = FlowGenerator.builder()
                 .withNumConversations(2)
-                .withNumFlowsPerConversation(5)
+                .withNumFlowsPerConversation(4)
                 .withConversationDuration(2, TimeUnit.MINUTES)
-                .withStartTime(Instant.ofEpochMilli(1546318800000L))
+                .withStartTime(Instant.ofEpochMilli(start))
                 .withApplications("http", "https")
-                .withTotalIngressBytes(5*GIGABYTE)
-                .withTotalEgressBytes(2*GIGABYTE)
+                .withTotalIngressBytes(totalIngressBytes)
+                .withTotalEgressBytes(totalEgressBytes)
                 .withApplicationTrafficWeights(0.2d, 0.8d)
                 .build();
 
@@ -128,15 +131,16 @@ public class FlowAnalyzerTest {
 
         FlowSummary summary = new FlowSummary();
         summary.setGroupedByKey("SomeFs:SomeFid-98");
-        summary.setTimestamp(1546318860000L);
-        summary.setRangeStartMs(1546318800000L);
-        summary.setRangeEndMs(1546318860000L);
+        summary.setTimestamp(startPlusOneMinute);
+        summary.setRangeStartMs(start);
+        summary.setRangeEndMs(startPlusOneMinute);
         summary.setRanking(0);
         summary.setGroupedBy(EXPORTER_INTERFACE);
         summary.setAggregationType(AggregationType.TOTAL);
-        summary.setBytesIngress(1968526677L);
-        summary.setBytesEgress(644245094L);
-        summary.setBytesTotal(2612771771L);
+        // the flow spans two minutes, the window 1 minute -> divide by 2
+        summary.setBytesIngress(totalIngressBytes / 2);
+        summary.setBytesEgress(totalEgressBytes / 2);
+        summary.setBytesTotal((totalIngressBytes + totalEgressBytes) / 2);
         summary.setCongestionEncountered(false);
         summary.setNonEcnCapableTransport(true);
 
@@ -145,8 +149,8 @@ public class FlowAnalyzerTest {
         summary.setExporter(EXPORTER_NODE);
 
         PAssert.that(output)
-                .inWindow(new FlowWindows.FlowWindow(org.joda.time.Instant.ofEpochMilli(1546318800000L),
-                                                     org.joda.time.Instant.ofEpochMilli(1546318860000L),
+                .inWindow(new FlowWindows.FlowWindow(org.joda.time.Instant.ofEpochMilli(start),
+                                                     org.joda.time.Instant.ofEpochMilli(startPlusOneMinute),
                                                      99))
                 .containsInAnyOrder(summary);
 
@@ -589,13 +593,16 @@ public class FlowAnalyzerTest {
                     this.setHostAddress("10.0.0.3");
                     this.setHostName("third.dst.example.com");
                 }}
-
         };
 
         PAssert.that(output)
                .containsInAnyOrder(summaries);
 
         p.run();
+    }
+
+    private CompoundKey exporterInterfaceKey(FlowDocument flow) throws Exception {
+        return CompoundKeyType.EXPORTER_INTERFACE.create(flow).get(0).value;
     }
 
     @Test
@@ -624,7 +631,7 @@ public class FlowAnalyzerTest {
                           (32 - 17) * 100)
                 .build()
                 .get(0);
-        final CompoundKey key1 = CompoundKeyType.EXPORTER_INTERFACE.create(flow1);
+        final CompoundKey key1 = exporterInterfaceKey(flow1);
 
         // Start aligns with window
         final FlowDocument flow2 = new SyntheticFlowBuilder()
@@ -638,21 +645,23 @@ public class FlowAnalyzerTest {
                           (32 - 10) * 200)
                 .build()
                 .get(0);
-        final CompoundKey key2 = CompoundKeyType.EXPORTER_INTERFACE.create(flow2);
+        final CompoundKey key2 = exporterInterfaceKey(flow2);
 
         // Start and end aligns with window
+        // -> lastSwitched is considered inclusive
+        // -> set lastSwitched one millisecond smaller than the start of the next window
         final FlowDocument flow3 = new SyntheticFlowBuilder()
                 .withExporter("TestFlows", "Flow3", NODE_ID)
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withHostnames("first.src.example.com", "second.dst.example.com")
-                .withFlow(Instant.ofEpochSecond(10), Instant.ofEpochSecond(40),
+                .withFlow(Instant.ofEpochSecond(10), Instant.ofEpochSecond(40).minusMillis(1),
                           "10.0.0.1", 88,
                           "10.0.0.2", 99,
                           (40 - 10) * 300)
                 .build()
                 .get(0);
-        final CompoundKey key3 = CompoundKeyType.EXPORTER_INTERFACE.create(flow3);
+        final CompoundKey key3 = exporterInterfaceKey(flow3);
 
         // Does not align with window but spans one more bucket with wrong alignment
         final FlowDocument flow4 = new SyntheticFlowBuilder()
@@ -666,7 +675,7 @@ public class FlowAnalyzerTest {
                           (37 - 12) * 400)
                 .build()
                 .get(0);
-        final CompoundKey key4 = CompoundKeyType.EXPORTER_INTERFACE.create(flow4);
+        final CompoundKey key4 = exporterInterfaceKey(flow4);
 
         final FlowDocument flow5 = new SyntheticFlowBuilder()
                 .withExporter("TestFlows", "Flow5", NODE_ID)
@@ -679,7 +688,7 @@ public class FlowAnalyzerTest {
                           (27 - 23) * 500)
                 .build()
                 .get(0);
-        final CompoundKey key5 = CompoundKeyType.EXPORTER_INTERFACE.create(flow5);
+        final CompoundKey key5 = exporterInterfaceKey(flow5);
 
         final TestStream<FlowDocument> flows = TestStream.create(new FlowDocumentProtobufCoder())
                                                          .addElements(TimestampedValue.of(flow1, getTimestamp(flow1)),
@@ -698,7 +707,7 @@ public class FlowAnalyzerTest {
         PAssert.that("Bucket 3", output).inWindow(window.apply(3)).containsInAnyOrder(flow1, flow2, flow3, flow4);
         PAssert.that("Bucket 4", output).inWindow(window.apply(4)).containsInAnyOrder();
 
-        final PCollection<KV<CompoundKey, Aggregate>> aggregates = output.apply(ParDo.of(new Groupings.KeyFlowBy(EXPORTER_INTERFACE)));
+        final PCollection<KV<CompoundKey, Aggregate>> aggregates = output.apply(ParDo.of(new Pipeline.KeyFlowBy(CompoundKeyType.EXPORTER_INTERFACE)));
 
         PAssert.that("Bytes 0", aggregates).inWindow(window.apply(0)).containsInAnyOrder();
         PAssert.that("Bytes 1", aggregates).inWindow(window.apply(1)).containsInAnyOrder(

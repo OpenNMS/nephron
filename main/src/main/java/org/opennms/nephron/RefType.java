@@ -52,7 +52,7 @@ abstract class RefType<T extends Ref> {
 
     public abstract T decode(InputStream is) throws IOException;
 
-    public abstract List<WithHostname<T>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException;
+    public abstract List<WithHostname<T>> create(FlowDocument flow) throws MissingFieldsException;
 
     public abstract void populate(T ref, FlowSummary summary);
 
@@ -81,7 +81,7 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Node>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
+        public List<WithHostname<Ref.Node>> create(FlowDocument flow) throws MissingFieldsException {
             return singlePartWithoutHostName(Ref.Node.of(flow));
         }
 
@@ -109,7 +109,7 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Interface>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
+        public List<WithHostname<Ref.Interface>> create(FlowDocument flow) throws MissingFieldsException {
             return singlePartWithoutHostName(Ref.Interface.of(flow));
         }
 
@@ -131,7 +131,7 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Dscp>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
+        public List<WithHostname<Ref.Dscp>> create(FlowDocument flow) throws MissingFieldsException {
             return singlePartWithoutHostName(Ref.Dscp.of(flow));
         }
 
@@ -155,7 +155,7 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Application>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
+        public List<WithHostname<Ref.Application>> create(FlowDocument flow) throws MissingFieldsException {
             return singlePartWithoutHostName(Ref.Application.of(flow));
         }
 
@@ -179,7 +179,7 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Host>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
+        public List<WithHostname<Ref.Host>> create(FlowDocument flow) throws MissingFieldsException {
             return Arrays.asList(
                     WithHostname.having(Ref.Host.of(flow.getSrcAddress())).andHostname(flow.getSrcHostname()),
                     WithHostname.having(Ref.Host.of(flow.getDstAddress())).andHostname(flow.getDstHostname())
@@ -206,7 +206,7 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Conversation>> create(NephronOptions opts, FlowDocument flow) throws MissingFieldsException {
+        public List<WithHostname<Ref.Conversation>> create(FlowDocument flow) throws MissingFieldsException {
             return singlePartWithoutHostName(Ref.Conversation.of(flow));
         }
 

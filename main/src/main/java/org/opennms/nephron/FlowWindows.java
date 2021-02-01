@@ -59,8 +59,8 @@ import com.google.common.collect.Lists;
  *
  * The assigned Windows are aware of the exporter of the flows making them non-equal if the the exporter differs.
  *
- * Note: The timestamps of the flow itself are discrete points in time and therefore considered start (inclusive) and
- * end (exclusive).
+ * Note: A flow is considered to cover the timespan [deltaWitched, lastSwitched], i.e. lastSwitched is considered
+ *       inclusive.
  */
 public class FlowWindows extends NonMergingWindowFn<FlowDocument, FlowWindows.FlowWindow> {
 
@@ -79,7 +79,7 @@ public class FlowWindows extends NonMergingWindowFn<FlowDocument, FlowWindows.Fl
         final long windowSize = this.size.getMillis();
 
         // We want to dispatch the flow to all the windows it may be a part of
-        // The flow ranges from [delta_switched, last_switched)
+        // The flow ranges from [delta_switched, last_switched]
         final FlowDocument flow = c.element();
 
         long deltaSwitchedMillis = flow.getDeltaSwitched().getValue();
