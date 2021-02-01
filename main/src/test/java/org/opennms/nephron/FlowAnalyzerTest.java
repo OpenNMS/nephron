@@ -46,8 +46,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import java.util.function.LongFunction;
 
 import org.apache.beam.sdk.coders.CoderRegistry;
@@ -91,8 +89,12 @@ public class FlowAnalyzerTest {
     static WindowingDef WINDOW_DEF = new WindowingDef(Duration.standardMinutes(1), EXPORTER_NODE.getNodeId());
     static Wnd WND = WINDOW_DEF.at(1_500_000_000_000l);
 
+//    private PipelineOptions flinkOptions = TestFlinkRunner
+//            .fromOptions(PipelineOptionsFactory.as(NephronOptions.class)).getPipelineOptions();
+
     @Rule
     public TestPipeline p = TestPipeline.fromOptions(PipelineOptionsFactory.as(NephronOptions.class));
+//    public TestPipeline p = TestPipeline.fromOptions(flinkOptions);
 
     @Before
     public void setUp() {
@@ -605,13 +607,16 @@ public class FlowAnalyzerTest {
                     this.setHostAddress("10.0.0.3");
                     this.setHostName("third.dst.example.com");
                 }}
-
         };
 
         PAssert.that(output)
                .containsInAnyOrder(summaries);
 
         p.run();
+    }
+
+    private CompoundKey exporterInterfaceKey(FlowDocument flow) throws Exception {
+        return CompoundKeyType.EXPORTER_INTERFACE.create(flow).get(0).value;
     }
 
     @Test
@@ -640,7 +645,7 @@ public class FlowAnalyzerTest {
                         (32 - 17) * 100)
                 .build()
                 .get(0);
-        final CompoundKey key1 = EXPORTER_INTERFACE.create(flow1).get(0).value;
+        final CompoundKey key1 = exporterInterfaceKey(flow1);
 
         // Start aligns with window
         final FlowDocument flow2 = new SyntheticFlowBuilder()
@@ -654,9 +659,11 @@ public class FlowAnalyzerTest {
                         (32 - 10) * 200)
                 .build()
                 .get(0);
-        final CompoundKey key2 = CompoundKeyType.EXPORTER_INTERFACE.create(flow2).get(0).value;
+        final CompoundKey key2 = exporterInterfaceKey(flow2);
 
         // Start and end aligns with window
+        // -> lastSwitched is considered inclusive
+        // -> set lastSwitched one millisecond smaller than the start of the next window
         final FlowDocument flow3 = new SyntheticFlowBuilder()
                 .withExporter("TestFlows", "Flow3", NODE_ID)
                 .withSnmpInterfaceId(98)
@@ -668,7 +675,7 @@ public class FlowAnalyzerTest {
                         (40 - 10) * 300)
                 .build()
                 .get(0);
-        final CompoundKey key3 = CompoundKeyType.EXPORTER_INTERFACE.create(flow3).get(0).value;
+        final CompoundKey key3 = exporterInterfaceKey(flow3);
 
         // Does not align with window but spans one more bucket with wrong alignment
         final FlowDocument flow4 = new SyntheticFlowBuilder()
@@ -682,7 +689,7 @@ public class FlowAnalyzerTest {
                         (37 - 12) * 400)
                 .build()
                 .get(0);
-        final CompoundKey key4 = CompoundKeyType.EXPORTER_INTERFACE.create(flow4).get(0).value;
+        final CompoundKey key4 = exporterInterfaceKey(flow4);
 
         final FlowDocument flow5 = new SyntheticFlowBuilder()
                 .withExporter("TestFlows", "Flow5", NODE_ID)
@@ -695,7 +702,7 @@ public class FlowAnalyzerTest {
                         (27 - 23) * 500)
                 .build()
                 .get(0);
-        final CompoundKey key5 = CompoundKeyType.EXPORTER_INTERFACE.create(flow5).get(0).value;
+        final CompoundKey key5 = exporterInterfaceKey(flow5);
 
         final TestStream<FlowDocument> flows = TestStream.create(new FlowDocumentProtobufCoder())
                 .addElements(
@@ -716,7 +723,7 @@ public class FlowAnalyzerTest {
         PAssert.that("Bucket 3", output).inWindow(window.apply(3)).containsInAnyOrder(flow1, flow2, flow3, flow4);
         PAssert.that("Bucket 4", output).inWindow(window.apply(4)).containsInAnyOrder();
 
-        final PCollection<KV<CompoundKey, Aggregate>> aggregates = output.apply(ParDo.of(new Pipeline.KeyFlowBy(EXPORTER_INTERFACE)));
+        final PCollection<KV<CompoundKey, Aggregate>> aggregates = output.apply(ParDo.of(new Pipeline.KeyFlowBy(CompoundKeyType.EXPORTER_INTERFACE)));
 
         PAssert.that("Bytes 0", aggregates).inWindow(window.apply(0)).containsInAnyOrder();
         PAssert.that("Bytes 1", aggregates).inWindow(window.apply(1)).containsInAnyOrder(

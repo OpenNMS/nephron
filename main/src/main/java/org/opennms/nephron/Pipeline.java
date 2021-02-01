@@ -587,7 +587,7 @@ public class Pipeline {
         return Window.into(UnalignedFixedWindows.of(fixedWindowSize))
                 .withTimestampCombiner(TimestampCombiner.END_OF_WINDOW)
                 .triggering(trigger)
-
+                .withOnTimeBehavior(Window.OnTimeBehavior.FIRE_IF_NON_EMPTY)
                 // After 4 hours, we assume no more data of interest will arrive, and the trigger stops executing
                 .withAllowedLateness(allowedLateness)
                 .accumulatingFiredPanes();
@@ -600,8 +600,6 @@ public class Pipeline {
      * values are determined for window based on the intersection of flows with their windows.
      */
     public static class KeyFlowBy extends DoFn<FlowDocument, KV<CompoundKey, Aggregate>> {
-
-        private static final Logger LOG = LoggerFactory.getLogger(Pipeline.class);
 
         private final CompoundKeyType type;
 

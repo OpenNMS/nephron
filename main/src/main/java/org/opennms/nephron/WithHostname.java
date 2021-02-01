@@ -33,7 +33,7 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 /**
  * Pairs an arbitrary value with a host name.
  *
- * Used by {@link CompoundKeyType#create(NephronOptions, FlowDocument)} to transport host names in a side channel.
+ * Used by {@link CompoundKeyType#create(FlowDocument)} to transport host names in a side channel.
  */
 public class WithHostname<T> {
     public final T value;

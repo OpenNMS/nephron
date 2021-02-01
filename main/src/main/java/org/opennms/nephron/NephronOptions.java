@@ -168,5 +168,4 @@ public interface NephronOptions extends PipelineOptions {
     long getElasticRetryDuration();
 
     void setElasticRetryDuration(long value);
-
 }
