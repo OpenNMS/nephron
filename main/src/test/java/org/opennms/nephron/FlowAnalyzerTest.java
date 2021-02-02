@@ -28,6 +28,7 @@
 
 package org.opennms.nephron;
 
+import static org.opennms.nephron.JacksonJsonCoder.TO_FLOW_SUMMARY;
 import static org.opennms.nephron.Pipeline.ReadFromKafka.getTimestamp;
 import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE;
 import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE_APPLICATION;
@@ -41,10 +42,12 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongFunction;
 
+import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
@@ -75,6 +78,8 @@ public class FlowAnalyzerTest {
     @Before
     public void setUp() {
         Pipeline.registerCoders(p);
+        final CoderRegistry coderRegistry = p.getCoderRegistry();
+        coderRegistry.registerCoderForClass(FlowSummary.class, new JacksonJsonCoder<>(FlowSummary.class));
     }
 
     @Test
@@ -102,7 +107,8 @@ public class FlowAnalyzerTest {
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()))
+                .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summary = new FlowSummary();
         summary.setGroupedByKey("SomeFs:SomeFid-98");
@@ -180,7 +186,8 @@ public class FlowAnalyzerTest {
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()));
+                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()))
+                .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();
         summaryFromOnTimePane.setGroupedByKey("SomeFs:SomeFid-98");
@@ -265,7 +272,8 @@ public class FlowAnalyzerTest {
 
         final TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
         final PCollection<FlowSummary> output = p.apply(flowStream)
-                                                 .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)));
+                                                 .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
+                                                 .apply(TO_FLOW_SUMMARY);
 
         final ExporterNode exporterNode = new ExporterNode();
         exporterNode.setForeignSource("SomeFs");
