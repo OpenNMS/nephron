@@ -73,7 +73,6 @@ import com.google.common.base.Strings;
  * @author jwhite
  */
 public class Groupings {
-    private static final Logger LOG = LoggerFactory.getLogger(Pipeline.class);
 
     @DefaultCoder(CompoundKeyCoder.class)
     public static abstract class CompoundKey {
@@ -138,65 +137,50 @@ public class Groupings {
         private final Counter flowsWithMissingFields = Metrics.counter(Groupings.class, "flowsWithMissingFields");
         private final Counter flowsInWindow = Metrics.counter("flows", "in_window");
 
-        private Optional<Aggregate> aggregatize(final FlowWindows.FlowWindow window, final FlowDocument flow, final String hostname) {
-            // The flow duration ranges [delta_switched, last_switched)
-            long flowDurationMs = flow.getLastSwitched().getValue() - flow.getDeltaSwitched().getValue();
-            if (flowDurationMs < 0) {
-                // Negative duration, pass
-                LOG.warn("Ignoring flow with negative duration: {}. Flow: {}", flowDurationMs, flow);
-                return Optional.empty();
-            }
+        public static long bytesInWindow(
+                long deltaSwitched,
+                long lastSwitchedInclusive,
+                double multipliedNumBytes,
+                long windowStart,
+                long windowEndInclusive
+        ) {
+            // The flow duration ranges [delta_switched, last_switched] (both bounds are inclusive)
+            long flowDurationMs = lastSwitchedInclusive - deltaSwitched + 1;
 
-            final double multiplier;
-            if (flowDurationMs == 0) {
-                // Double check that the flow is in fact in this window
-                if (flow.getDeltaSwitched().getValue() >= window.start().getMillis()
-                    && flow.getLastSwitched().getValue() <= window.end().getMillis()) {
-                    // Use the entirety of the flow bytes
-                    multiplier = 1.0;
-                } else {
-                    return Optional.empty();
-                }
+            // the start (inclusive) of the flow in this window
+            long overlapStart = Math.max(deltaSwitched, windowStart);
+            // the end (inclusive) of the flow in this window
+            long overlapEnd = Math.min(lastSwitchedInclusive, windowEndInclusive);
 
-            } else {
-                // Now determine how many milliseconds the flow overlaps with the window bounds
-                long flowWindowOverlapMs = Math.min(flow.getLastSwitched().getValue(), window.end().getMillis())
-                                           - Math.max(flow.getDeltaSwitched().getValue(), window.start().getMillis());
-                if (flowWindowOverlapMs < 0) {
-                    // Flow should not be in this windows! pass
-                    return Optional.empty();
-                }
+            // the end of the previous window (inclusive)
+            long previousEnd = overlapStart - 1;
 
-                // Output value proportional to the overlap with the window
-                multiplier = flowWindowOverlapMs / (double) flowDurationMs;
-            }
+            long bytesAtPreviousEnd = (long) ((previousEnd - deltaSwitched + 1) * multipliedNumBytes / flowDurationMs);
+            long bytesAtEnd = (long) ((overlapEnd - deltaSwitched + 1) * multipliedNumBytes / flowDurationMs);
 
-            // Track
-            flowsInWindow.inc();
+            return bytesAtEnd - bytesAtPreviousEnd;
+        }
 
-            double effectiveMultiplier = multiplier;
+        private Aggregate aggregatize(final FlowWindows.FlowWindow window, final FlowDocument flow, final String hostname) {
+            double multiplier = 1;
             if (flow.hasSamplingInterval()) {
                 double samplingInterval = flow.getSamplingInterval().getValue();
                 if (samplingInterval > 0) {
-                    effectiveMultiplier *= samplingInterval;
+                    multiplier = samplingInterval;
                 }
             }
-
-            // Rounding to whole numbers to avoid loosing some bytes on window bounds. This, in theory, shifts the
-            // window bound a little bit but makes sums correct.
-            final long bytes = Math.round(flow.getNumBytes().getValue() * effectiveMultiplier);
-
-            final long bytesIn;
-            final long bytesOut;
-            if (Direction.INGRESS.equals(flow.getDirection())) {
-                bytesIn = bytes;
-                bytesOut = 0;
-            } else {
-                bytesIn = 0;
-                bytesOut = bytes;
-            }
-
-            return Optional.of(new Aggregate(bytesIn, bytesOut, hostname));
+            long bytes = bytesInWindow(
+                    flow.getDeltaSwitched().getValue(),
+                    flow.getLastSwitched().getValue(),
+                    flow.getNumBytes().getValue() * multiplier,
+                    window.start().getMillis(),
+                    window.maxTimestamp().getMillis()
+            );
+            // Track
+            flowsInWindow.inc();
+            return Direction.INGRESS.equals(flow.getDirection()) ?
+                   new Aggregate(bytes, 0, hostname) :
+                   new Aggregate(0, bytes, hostname);
         }
 
         @ProcessElement
@@ -204,7 +188,8 @@ public class Groupings {
             final FlowDocument flow = c.element();
             try {
                 for (final WithHostname<? extends CompoundKey> key: key(flow)) {
-                    aggregatize(window, flow, key.hostname).ifPresent(aggregate -> c.output(KV.of(key.value, aggregate)));
+                    Aggregate aggregate = aggregatize(window, flow, key.hostname);
+                    c.output(KV.of(key.value, aggregate));
                 }
             } catch (MissingFieldsException mfe) {
                 flowsWithMissingFields.inc();
