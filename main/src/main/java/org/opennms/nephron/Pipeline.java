@@ -185,7 +185,7 @@ public class Pipeline {
             TotalAndSummary itf = aggregateParentTotal("itf_", tos.total);
 
             // Merge all the summary collections
-            PCollectionList<FlowSummary> flowSummaries = PCollectionList.of(itf.summary)
+            PCollectionList<FlowSummaryData> flowSummaries = PCollectionList.of(itf.summary)
                     .and(tos.summary)
                     .and(app.withTos.topK)
                     .and(app.withoutTos.topK)
@@ -197,27 +197,7 @@ public class Pipeline {
         }
     }
 
-    public static class WindowedFlows extends PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> {
-        private final Duration fixedWindowSize;
-        private final Duration maxFlowDuration;
-        private final Duration lateProcessingDelay;
-        private final Duration allowedLateness;
-
-        public WindowedFlows(Duration fixedWindowSize, Duration maxFlowDuration, Duration lateProcessingDelay, Duration allowedLateness) {
-            this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
-            this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
-            this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
-            this.allowedLateness = Objects.requireNonNull(allowedLateness);
-        }
-
-        @Override
-        public PCollection<FlowDocument> expand(PCollection<FlowDocument> input) {
-            return input.apply("attach_timestamp", attachTimestamps(maxFlowDuration))
-                    .apply("to_windows", toWindow(fixedWindowSize, lateProcessingDelay, allowedLateness));
-        }
-    }
-
-    public static class WriteToElasticsearch extends PTransform<PCollection<FlowSummary>, PDone> {
+    public static class WriteToElasticsearch extends PTransform<PCollection<FlowSummaryData>, PDone> {
         private final String elasticIndex;
         private final IndexStrategy indexStrategy;
         private final ElasticsearchIO.ConnectionConfiguration esConfig;
@@ -440,6 +420,8 @@ public class Pipeline {
 
                 // After some time, we assume no more data of interest will arrive, and the trigger stops executing
                 .withAllowedLateness(allowedLateness)
+                // replace the default OnTimeBehavior that is FIRE_ALWAYS
+                .withOnTimeBehavior(Window.OnTimeBehavior.FIRE_IF_NON_EMPTY)
                 // each pane is aggregated separately
                 // -> aggregation is done by elastic search if multiple flow summary documents exist for a window
                 .discardingFiredPanes();
@@ -540,10 +522,10 @@ public class Pipeline {
                 }))
                 .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()));
 
-        PCollection<FlowSummary> summary = parentTotal.apply(transformPrefix + "total_summary", ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, FlowSummary>() {
+        PCollection<FlowSummaryData> summary = parentTotal.apply(transformPrefix + "total_summary", ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, FlowSummaryData>() {
             @ProcessElement
-            public void processElement(ProcessContext c, IntervalWindow window) {
-                c.output(toFlowSummary(AggregationType.TOTAL, window, c.element()));
+            public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
+                c.output(toFlowSummaryData(AggregationType.TOTAL, window, c.element(), 0));
             }
         }));
         return new TotalAndSummary(parentTotal, summary);
@@ -582,7 +564,8 @@ public class Pipeline {
     ) {
         PCollection<KV<CompoundKey, Aggregate>> sum =
                 groupedByKey.apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()));
-        PCollection<FlowSummary> topK = sum
+
+        PCollection<KV<CompoundKey, KV<CompoundKey, Aggregate>>> groupedByOuterKey = sum
                 .apply(transformPrefix + "group_by_outer_key",
                         ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, KV<CompoundKey, Aggregate>>>() {
                             @ProcessElement
@@ -590,27 +573,33 @@ public class Pipeline {
                                 KV<CompoundKey, Aggregate> el = c.element();
                                 c.output(KV.of(el.getKey().getOuterKey(), el));
                             }
-                        }))
-                .apply(transformPrefix + "top_k_per_key", Top.perKey(k, new FlowBytesValueComparator()))
-                .apply(transformPrefix + "flatten", Values.create())
-                .apply(transformPrefix + "top_k_summary", ParDo.of(new DoFn<List<KV<CompoundKey, Aggregate>>, FlowSummary>() {
+                        }));
+
+        PCollection<KV<CompoundKey, List<KV<CompoundKey, Aggregate>>>> topKPerKey = groupedByOuterKey
+                .apply(transformPrefix + "top_k_per_key", Top.perKey(k, new FlowBytesValueComparator()));
+
+        PCollection<List<KV<CompoundKey, Aggregate>>> flattenedTopKPerKey = topKPerKey
+                .apply(transformPrefix + "flatten", Values.create());
+
+        PCollection<FlowSummaryData> topK = flattenedTopKPerKey
+                .apply(transformPrefix + "top_k_summary", ParDo.of(new DoFn<List<KV<CompoundKey, Aggregate>>, FlowSummaryData>() {
                     @ProcessElement
-                    public void processElement(ProcessContext c, IntervalWindow window) {
+                    public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
                         int ranking = 1;
                         for (KV<CompoundKey, Aggregate> el : c.element()) {
-                            FlowSummary flowSummary = toFlowSummary(AggregationType.TOPK, window, el);
-                            flowSummary.setRanking(ranking++);
+                            FlowSummaryData flowSummary = toFlowSummaryData(AggregationType.TOPK, window, el, ranking++);
                             c.output(flowSummary);
                         }
                     }
                 }));
-        return new SumAndTopK(sum, topK);
+
+        return new SumAndTopK(sum, groupedByOuterKey, topKPerKey, flattenedTopKPerKey, topK);
     }
 
     public static class TotalAndSummary {
         public final PCollection<KV<CompoundKey, Aggregate>> total;
-        public final PCollection<FlowSummary> summary;
-        public TotalAndSummary(PCollection<KV<CompoundKey, Aggregate>> total, PCollection<FlowSummary> summary) {
+        public final PCollection<FlowSummaryData> summary;
+        public TotalAndSummary(PCollection<KV<CompoundKey, Aggregate>> total, PCollection<FlowSummaryData> summary) {
             this.total = total;
             this.summary = summary;
         }
@@ -618,10 +607,18 @@ public class Pipeline {
 
     public static class SumAndTopK {
         public final PCollection<KV<CompoundKey, Aggregate>> sum;
-        public final PCollection<FlowSummary> topK;
 
-        public SumAndTopK(PCollection<KV<CompoundKey, Aggregate>> sum, PCollection<FlowSummary> topK) {
+        public final PCollection<KV<CompoundKey, KV<CompoundKey, Aggregate>>> groupedByOuterKey;
+        public final PCollection<KV<CompoundKey, List<KV<CompoundKey, Aggregate>>>> topKPerKey;
+        public final PCollection<List<KV<CompoundKey, Aggregate>>> flattenedTopKPerKey;
+
+        public final PCollection<FlowSummaryData> topK;
+
+        public SumAndTopK(PCollection<KV<CompoundKey, Aggregate>> sum, PCollection<KV<CompoundKey, KV<CompoundKey, Aggregate>>> groupedByOuterKey, PCollection<KV<CompoundKey, List<KV<CompoundKey, Aggregate>>>> topKPerKey, PCollection<List<KV<CompoundKey, Aggregate>>> flattenedTopKPerKey, PCollection<FlowSummaryData> topK) {
             this.sum = sum;
+            this.groupedByOuterKey = groupedByOuterKey;
+            this.topKPerKey = topKPerKey;
+            this.flattenedTopKPerKey = flattenedTopKPerKey;
             this.topK = topK;
         }
     }
