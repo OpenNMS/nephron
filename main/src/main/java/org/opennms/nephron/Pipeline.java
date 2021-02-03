@@ -467,7 +467,7 @@ public class Pipeline {
         return Window.<FlowDocument>into(FlowWindows.of(fixedWindowSize))
                 .withTimestampCombiner(TimestampCombiner.END_OF_WINDOW)
                 .triggering(trigger)
-
+                .withOnTimeBehavior(Window.OnTimeBehavior.FIRE_IF_NON_EMPTY)
                 // After 4 hours, we assume no more data of interest will arrive, and the trigger stops executing
                 .withAllowedLateness(allowedLateness)
                 .accumulatingFiredPanes();

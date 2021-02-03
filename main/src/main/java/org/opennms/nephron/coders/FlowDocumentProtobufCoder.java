@@ -31,14 +31,12 @@ package org.opennms.nephron.coders;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Collections;
-import java.util.List;
 
+import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
-import org.apache.beam.sdk.coders.Coder;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
-public class FlowDocumentProtobufCoder extends Coder<FlowDocument> {
+public class FlowDocumentProtobufCoder extends AtomicCoder<FlowDocument> {
     private final ByteArrayCoder delegate = ByteArrayCoder.of();
 
     @Override
@@ -52,12 +50,7 @@ public class FlowDocumentProtobufCoder extends Coder<FlowDocument> {
     }
 
     @Override
-    public List<? extends Coder<?>> getCoderArguments() {
-        return Collections.emptyList();
-    }
-
-    @Override
-    public void verifyDeterministic() {
-        // pass
+    public boolean consistentWithEquals() {
+        return true;
     }
 }

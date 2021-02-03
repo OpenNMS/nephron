@@ -42,19 +42,20 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongFunction;
 
+import org.apache.beam.runners.flink.TestFlinkRunner;
 import org.apache.beam.sdk.coders.CoderRegistry;
+import org.apache.beam.sdk.options.PipelineOptions;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.joda.time.Duration;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
@@ -69,11 +70,15 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 
-@Ignore
 public class FlowAnalyzerTest {
+
+    private PipelineOptions flinkOptions = TestFlinkRunner
+            .fromOptions(PipelineOptionsFactory.as(NephronOptions.class)).getPipelineOptions();
+
 
     @Rule
     public TestPipeline p = TestPipeline.create();
+//    public TestPipeline p = TestPipeline.fromOptions(flinkOptions);
 
     @Before
     public void setUp() {
@@ -84,15 +89,21 @@ public class FlowAnalyzerTest {
 
     @Test
     public void canComputeTotalBytesInWindow() {
+
+        long start = 1546318800000L;
+        long startPlusOneMinute = start + 60000;
+
         // Generate some flows
+        long totalIngressBytes = 5 * GIGABYTE + 10;
+        long totalEgressBytes = 2 * GIGABYTE + 2;
         final FlowGenerator flowGenerator = FlowGenerator.builder()
                 .withNumConversations(2)
                 .withNumFlowsPerConversation(5)
                 .withConversationDuration(2, TimeUnit.MINUTES)
-                .withStartTime(Instant.ofEpochMilli(1546318800000L))
+                .withStartTime(Instant.ofEpochMilli(start))
                 .withApplications("http", "https")
-                .withTotalIngressBytes(5*GIGABYTE)
-                .withTotalEgressBytes(2*GIGABYTE)
+                .withTotalIngressBytes(totalIngressBytes)
+                .withTotalEgressBytes(totalEgressBytes)
                 .withApplicationTrafficWeights(0.2d, 0.8d)
                 .build();
 
@@ -112,15 +123,16 @@ public class FlowAnalyzerTest {
 
         FlowSummary summary = new FlowSummary();
         summary.setGroupedByKey("SomeFs:SomeFid-98");
-        summary.setTimestamp(1546318860000L);
-        summary.setRangeStartMs(1546318800000L);
-        summary.setRangeEndMs(1546318860000L);
+        summary.setTimestamp(startPlusOneMinute);
+        summary.setRangeStartMs(start);
+        summary.setRangeEndMs(startPlusOneMinute);
         summary.setRanking(0);
         summary.setGroupedBy(EXPORTER_INTERFACE);
         summary.setAggregationType(AggregationType.TOTAL);
-        summary.setBytesIngress(1968526677L);
-        summary.setBytesEgress(644245094L);
-        summary.setBytesTotal(2612771771L);
+        // the flow spans two minutes, the window 1 minute -> divide by 2
+        summary.setBytesIngress(totalIngressBytes / 2);
+        summary.setBytesEgress(totalEgressBytes / 2);
+        summary.setBytesTotal((totalIngressBytes + totalEgressBytes) / 2);
         summary.setIfIndex(98);
 
         ExporterNode exporterNode = new ExporterNode();
@@ -163,7 +175,7 @@ public class FlowAnalyzerTest {
                     .withExporter("SomeFs", "SomeFid", 99)
                     .withSnmpInterfaceId(98)
                     .withApplication("SomeApplication")
-                    .withFlow(firstSwitched, lastSwitched,
+                    .withFlow(firstSwitched, lastSwitched.minusMillis(1),
                             "10.0.0.1", 88,
                             "10.0.0.3", 99,
                             numBytes)
@@ -438,7 +450,7 @@ public class FlowAnalyzerTest {
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withHostnames("first.src.example.com", "second.dst.example.com")
-                .withFlow(Instant.ofEpochSecond(17), Instant.ofEpochSecond(32),
+                .withFlow(Instant.ofEpochSecond(17), Instant.ofEpochSecond(32).minusMillis(1),
                           "10.0.0.1", 88,
                           "10.0.0.2", 99,
                           (32 - 17) * 100)
@@ -452,7 +464,7 @@ public class FlowAnalyzerTest {
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withHostnames("first.src.example.com", "second.dst.example.com")
-                .withFlow(Instant.ofEpochSecond(10), Instant.ofEpochSecond(32),
+                .withFlow(Instant.ofEpochSecond(10), Instant.ofEpochSecond(32).minusMillis(1),
                           "10.0.0.1", 88,
                           "10.0.0.2", 99,
                           (32 - 10) * 200)
@@ -466,7 +478,7 @@ public class FlowAnalyzerTest {
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withHostnames("first.src.example.com", "second.dst.example.com")
-                .withFlow(Instant.ofEpochSecond(10), Instant.ofEpochSecond(40),
+                .withFlow(Instant.ofEpochSecond(10), Instant.ofEpochSecond(40).minusMillis(1),
                           "10.0.0.1", 88,
                           "10.0.0.2", 99,
                           (40 - 10) * 300)
@@ -480,7 +492,7 @@ public class FlowAnalyzerTest {
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withHostnames("first.src.example.com", "second.dst.example.com")
-                .withFlow(Instant.ofEpochSecond(12), Instant.ofEpochSecond(37),
+                .withFlow(Instant.ofEpochSecond(12), Instant.ofEpochSecond(37).minusMillis(1),
                           "10.0.0.1", 88,
                           "10.0.0.2", 99,
                           (37 - 12) * 400)
