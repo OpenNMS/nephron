@@ -13,6 +13,7 @@
 
     <modules>
       <module>flink</module>
+      <module>jet</module>
     </modules>
 
 </project>

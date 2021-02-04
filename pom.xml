@@ -36,6 +36,7 @@
         <beam.version>2.24.0</beam.version>
         <elasticsearch.client.version>7.7.1</elasticsearch.client.version>
         <flink.artifact.name>beam-runners-flink-1.10</flink.artifact.name>
+        <jet.artifact.name>beam-runners-jet</jet.artifact.name>
         <java.version>1.8</java.version>
         <junit.version>4.13.1</junit.version>
         <kafka.version>2.6.0</kafka.version>
