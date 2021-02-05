@@ -50,6 +50,7 @@ import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
@@ -77,8 +78,8 @@ public class FlowAnalyzerTest {
 
 
     @Rule
-    public TestPipeline p = TestPipeline.create();
-//    public TestPipeline p = TestPipeline.fromOptions(flinkOptions);
+//    public TestPipeline p = TestPipeline.create();
+    public TestPipeline p = TestPipeline.fromOptions(flinkOptions);
 
     @Before
     public void setUp() {
@@ -87,10 +88,15 @@ public class FlowAnalyzerTest {
         coderRegistry.registerCoderForClass(FlowSummary.class, new JacksonJsonCoder<>(FlowSummary.class));
     }
 
+    private TimestampedValue timestampedValue(FlowDocument fd) {
+        return TimestampedValue.of(fd, getTimestamp(fd));
+    }
+
     @Test
     public void canComputeTotalBytesInWindow() {
 
-        long start = 1546318800000L;
+        Duration fixedWindowSize = Duration.standardMinutes(1);
+        long start = 1546318800000L - FlowWindows.windowOffsetForNode(99, fixedWindowSize.getMillis());
         long startPlusOneMinute = start + 60000;
 
         // Generate some flows
@@ -111,13 +117,13 @@ public class FlowAnalyzerTest {
         long timestampOffsetMillis = TimeUnit.MINUTES.toMillis(1);
         TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowDocumentProtobufCoder());
         for (FlowDocument flow : flowGenerator.streamFlows()) {
-            flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(flow, getTimestamp(flow)));
+            flowStreamBuilder = flowStreamBuilder.addElements(timestampedValue(flow));
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(Pipeline.toWindow(fixedWindowSize, Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
                 .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()))
                 .apply(TO_FLOW_SUMMARY);
 
@@ -142,9 +148,8 @@ public class FlowAnalyzerTest {
         summary.setExporter(exporterNode);
 
         PAssert.that(output)
-                .inWindow(new FlowWindows.FlowWindow(org.joda.time.Instant.ofEpochMilli(1546318800000L),
-                                                     org.joda.time.Instant.ofEpochMilli(1546318860000L),
-                                                     99))
+                .inWindow(new IntervalWindow(org.joda.time.Instant.ofEpochMilli(start),
+                        org.joda.time.Instant.ofEpochMilli(startPlusOneMinute)))
                 .containsInAnyOrder(summary);
 
         p.run();
@@ -152,7 +157,10 @@ public class FlowAnalyzerTest {
 
     @Test
     public void canHandleLateData() {
-        Instant start = Instant.ofEpochMilli(1500000000000L);
+        Duration fixedWindowSize = Duration.standardMinutes(1);
+        long startMs = 1500000000000L - FlowWindows.windowOffsetForNode(99, fixedWindowSize.getMillis());
+        Instant start = Instant.ofEpochMilli(startMs);
+
         List<Long> flowTimestampOffsets =
                 ImmutableList.of(
                         -3600_000L, // 1 hour ago - 100b
@@ -182,7 +190,7 @@ public class FlowAnalyzerTest {
                     .build().get(0);
 
             final org.joda.time.Instant flowTimestamp = getTimestamp(flow);
-            flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(flow, getTimestamp(flow)));
+            flowStreamBuilder = flowStreamBuilder.addElements(timestampedValue(flow));
 
             // Advance the watermark to the max timestamp
             if (lastWatermark == null || flowTimestamp.isAfter(lastWatermark)) {
@@ -197,15 +205,15 @@ public class FlowAnalyzerTest {
 
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(Pipeline.toWindow(Duration.standardMinutes(1), Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(Pipeline.toWindow(fixedWindowSize, Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
                 .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", new Groupings.KeyByExporterInterface()))
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();
         summaryFromOnTimePane.setGroupedByKey("SomeFs:SomeFid-98");
-        summaryFromOnTimePane.setTimestamp(1499996400000L);
-        summaryFromOnTimePane.setRangeStartMs(1499996340000L);
-        summaryFromOnTimePane.setRangeEndMs(1499996400000L);
+        summaryFromOnTimePane.setTimestamp(startMs - 3600000);
+        summaryFromOnTimePane.setRangeStartMs(startMs - 3660000);
+        summaryFromOnTimePane.setRangeEndMs(startMs - 3600000);
         summaryFromOnTimePane.setRanking(0);
         summaryFromOnTimePane.setGroupedBy(EXPORTER_INTERFACE);
         summaryFromOnTimePane.setAggregationType(AggregationType.TOTAL);
@@ -220,10 +228,9 @@ public class FlowAnalyzerTest {
         exporterNode.setNodeId(99);
         summaryFromOnTimePane.setExporter(exporterNode);
 
-        FlowWindows.FlowWindow windowWithLateArrival = new FlowWindows.FlowWindow(
+        IntervalWindow windowWithLateArrival = new IntervalWindow(
                 toJoda(start.minus(1, ChronoUnit.HOURS).minus(1, ChronoUnit.MINUTES)),
-                toJoda(start.minus(1, ChronoUnit.HOURS)),
-                exporterNode.getNodeId());
+                toJoda(start.minus(1, ChronoUnit.HOURS)));
 
         PAssert.that(output)
                 .inOnTimePane(windowWithLateArrival)
@@ -246,45 +253,46 @@ public class FlowAnalyzerTest {
     public void canAssociateHostnames() {
         TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowDocumentProtobufCoder());
 
-        flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(new SyntheticFlowBuilder()
+        Duration fixedWindowSize = Duration.standardMinutes(1);
+        long start = 1500000000000L - FlowWindows.windowOffsetForNode(99, fixedWindowSize.getMillis());
+        long startPlusOneMinute = start + 60000;
+
+        flowStreamBuilder = flowStreamBuilder.addElements(timestampedValue(new SyntheticFlowBuilder()
                                                                                       .withExporter("SomeFs", "SomeFid", 99)
                                                                                       .withSnmpInterfaceId(98)
                                                                                       .withApplication("SomeApplication")
                                                                                       .withHostnames("first.src.example.com", "second.dst.example.com")
-                                                                                      .withFlow(Instant.ofEpochMilli(1500000000000L), Instant.ofEpochMilli(1500000000100L),
+                                                                                      .withFlow(Instant.ofEpochMilli(start), Instant.ofEpochMilli(start + 100),
                                                                                                 "10.0.0.1", 88,
                                                                                                 "10.0.0.2", 99,
                                                                                                 42)
-                                                                                      .build().get(0),
-                                                                              org.joda.time.Instant.ofEpochMilli(1500000000000L)));
+                                                                                      .build().get(0)));
 
-        flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(new SyntheticFlowBuilder()
+        flowStreamBuilder = flowStreamBuilder.addElements(timestampedValue(new SyntheticFlowBuilder()
                                                                                       .withExporter("SomeFs", "SomeFid", 99)
                                                                                       .withSnmpInterfaceId(98)
                                                                                       .withApplication("SomeApplication")
                                                                                       .withHostnames("second.src.example.com", null)
-                                                                                      .withFlow(Instant.ofEpochMilli(1500000001000L), Instant.ofEpochMilli(1500000001100L),
+                                                                                      .withFlow(Instant.ofEpochMilli(start + 1000), Instant.ofEpochMilli(start + 1100),
                                                                                                 "10.0.0.2", 88,
                                                                                                 "10.0.0.3", 99,
                                                                                                 23)
-                                                                                      .build().get(0),
-                                                                              org.joda.time.Instant.ofEpochMilli(1500000001000L)));
+                                                                                      .build().get(0)));
 
-        flowStreamBuilder = flowStreamBuilder.addElements(TimestampedValue.of(new SyntheticFlowBuilder()
+        flowStreamBuilder = flowStreamBuilder.addElements(timestampedValue(new SyntheticFlowBuilder()
                                                                                       .withExporter("SomeFs", "SomeFid", 99)
                                                                                       .withSnmpInterfaceId(98)
                                                                                       .withApplication("SomeApplication")
                                                                                       .withHostnames(null, "third.dst.example.com")
-                                                                                      .withFlow(Instant.ofEpochMilli(1500000002000L), Instant.ofEpochMilli(1500000002100L),
+                                                                                      .withFlow(Instant.ofEpochMilli(start + 2000), Instant.ofEpochMilli(start + 2100),
                                                                                                 "10.0.0.1", 88,
                                                                                                 "10.0.0.3", 99,
                                                                                                 1337)
-                                                                                      .build().get(0),
-                                                                              org.joda.time.Instant.ofEpochMilli(1500000002000L)));
+                                                                                      .build().get(0)));
 
         final TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
         final PCollection<FlowSummary> output = p.apply(flowStream)
-                                                 .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
+                                                 .apply(new Pipeline.CalculateFlowStatistics(10, fixedWindowSize, Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
                                                  .apply(TO_FLOW_SUMMARY);
 
         final ExporterNode exporterNode = new ExporterNode();
@@ -295,9 +303,9 @@ public class FlowAnalyzerTest {
         final FlowSummary[] summaries = new FlowSummary[]{
                 new FlowSummary() {{
                     this.setGroupedByKey("SomeFs:SomeFid-98");
-                    this.setTimestamp(1500000060000L);
-                    this.setRangeStartMs(1500000000000L);
-                    this.setRangeEndMs(1500000060000L);
+                    this.setTimestamp(startPlusOneMinute);
+                    this.setRangeStartMs(start);
+                    this.setRangeEndMs(startPlusOneMinute);
                     this.setRanking(0);
                     this.setGroupedBy(EXPORTER_INTERFACE);
                     this.setAggregationType(AggregationType.TOTAL);
@@ -310,9 +318,9 @@ public class FlowAnalyzerTest {
 
                 new FlowSummary() {{
                     this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.1\",\"10.0.0.3\",\"SomeApplication\"]");
-                    this.setTimestamp(1500000060000L);
-                    this.setRangeStartMs(1500000000000L);
-                    this.setRangeEndMs(1500000060000L);
+                    this.setTimestamp(startPlusOneMinute);
+                    this.setRangeStartMs(start);
+                    this.setRangeEndMs(startPlusOneMinute);
                     this.setRanking(1);
                     this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
                     this.setAggregationType(AggregationType.TOPK);
@@ -326,9 +334,9 @@ public class FlowAnalyzerTest {
 
                 new FlowSummary() {{
                     this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.1\",\"10.0.0.2\",\"SomeApplication\"]");
-                    this.setTimestamp(1500000060000L);
-                    this.setRangeStartMs(1500000000000L);
-                    this.setRangeEndMs(1500000060000L);
+                    this.setTimestamp(startPlusOneMinute);
+                    this.setRangeStartMs(start);
+                    this.setRangeEndMs(startPlusOneMinute);
                     this.setRanking(2);
                     this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
                     this.setAggregationType(AggregationType.TOPK);
@@ -342,9 +350,9 @@ public class FlowAnalyzerTest {
 
                 new FlowSummary() {{
                     this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.2\",\"10.0.0.3\",\"SomeApplication\"]");
-                    this.setTimestamp(1500000060000L);
-                    this.setRangeStartMs(1500000000000L);
-                    this.setRangeEndMs(1500000060000L);
+                    this.setTimestamp(startPlusOneMinute);
+                    this.setRangeStartMs(start);
+                    this.setRangeEndMs(startPlusOneMinute);
                     this.setRanking(3);
                     this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
                     this.setAggregationType(AggregationType.TOPK);
@@ -358,9 +366,9 @@ public class FlowAnalyzerTest {
 
                 new FlowSummary() {{
                     this.setGroupedByKey("SomeFs:SomeFid-98-SomeApplication");
-                    this.setTimestamp(1500000060000L);
-                    this.setRangeStartMs(1500000000000L);
-                    this.setRangeEndMs(1500000060000L);
+                    this.setTimestamp(startPlusOneMinute);
+                    this.setRangeStartMs(start);
+                    this.setRangeEndMs(startPlusOneMinute);
                     this.setRanking(1);
                     this.setGroupedBy(EXPORTER_INTERFACE_APPLICATION);
                     this.setAggregationType(AggregationType.TOPK);
@@ -374,9 +382,9 @@ public class FlowAnalyzerTest {
 
                 new FlowSummary() {{
                     this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.1");
-                    this.setTimestamp(1500000060000L);
-                    this.setRangeStartMs(1500000000000L);
-                    this.setRangeEndMs(1500000060000L);
+                    this.setTimestamp(startPlusOneMinute);
+                    this.setRangeStartMs(start);
+                    this.setRangeEndMs(startPlusOneMinute);
                     this.setRanking(1);
                     this.setGroupedBy(EXPORTER_INTERFACE_HOST);
                     this.setAggregationType(AggregationType.TOPK);
@@ -391,9 +399,9 @@ public class FlowAnalyzerTest {
 
                 new FlowSummary() {{
                     this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.2");
-                    this.setTimestamp(1500000060000L);
-                    this.setRangeStartMs(1500000000000L);
-                    this.setRangeEndMs(1500000060000L);
+                    this.setTimestamp(startPlusOneMinute);
+                    this.setRangeStartMs(start);
+                    this.setRangeEndMs(startPlusOneMinute);
                     this.setRanking(3);
                     this.setGroupedBy(EXPORTER_INTERFACE_HOST);
                     this.setAggregationType(AggregationType.TOPK);
@@ -408,9 +416,9 @@ public class FlowAnalyzerTest {
 
                 new FlowSummary() {{
                     this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.3");
-                    this.setTimestamp(1500000060000L);
-                    this.setRangeStartMs(1500000000000L);
-                    this.setRangeEndMs(1500000060000L);
+                    this.setTimestamp(startPlusOneMinute);
+                    this.setRangeStartMs(start);
+                    this.setRangeEndMs(startPlusOneMinute);
                     this.setRanking(2);
                     this.setGroupedBy(EXPORTER_INTERFACE_HOST);
                     this.setAggregationType(AggregationType.TOPK);
@@ -424,6 +432,13 @@ public class FlowAnalyzerTest {
                 }}
         };
 
+//        PAssert.that(output).satisfies(iter -> {
+//            for (Object fs: iter) {
+//                System.out.println("res-fs: " + fs);
+//            }
+//            return null;
+//        });
+
         PAssert.that(output)
                .containsInAnyOrder(summaries);
 
@@ -434,15 +449,17 @@ public class FlowAnalyzerTest {
     public void testAttachedTimestamps() throws Exception {
         final int NODE_ID = 99;
 
-        final org.joda.time.Instant start = org.joda.time.Instant.EPOCH;
-        final Duration WS = Duration.standardSeconds(10);
+        final Duration fixedWindowSize = Duration.standardSeconds(10);
+        long fixedWindowSizeMillis = fixedWindowSize.getMillis();
+        long startMs = 1500000000000L - FlowWindows.windowOffsetForNode(NODE_ID, fixedWindowSizeMillis);
+        Instant start = Instant.ofEpochMilli(startMs);
 
-        final LongFunction<FlowWindows.FlowWindow> window = (n) -> new FlowWindows.FlowWindow(
-                org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(n + 0)),
-                org.joda.time.Instant.EPOCH.plus(WS.multipliedBy(n + 1)),
-                NODE_ID);
+        final LongFunction<IntervalWindow> window = (n) -> new IntervalWindow(
+                org.joda.time.Instant.ofEpochMilli(startMs + fixedWindowSizeMillis * n),
+                org.joda.time.Instant.ofEpochMilli(startMs + fixedWindowSizeMillis * (n + 1))
+        );
 
-        final Window<FlowDocument> windowed = Pipeline.toWindow(WS, Duration.standardMinutes(1), Duration.standardMinutes(5), Duration.standardMinutes(5));
+        final Window<FlowDocument> windowed = Pipeline.toWindow(fixedWindowSize, Duration.standardMinutes(1), Duration.standardMinutes(5), Duration.standardMinutes(5));
 
         // Does not align with window
         final FlowDocument flow1 = new SyntheticFlowBuilder()
@@ -450,7 +467,7 @@ public class FlowAnalyzerTest {
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withHostnames("first.src.example.com", "second.dst.example.com")
-                .withFlow(Instant.ofEpochSecond(17), Instant.ofEpochSecond(32).minusMillis(1),
+                .withFlow(start.plusSeconds(17), start.plusSeconds(32).minusMillis(1),
                           "10.0.0.1", 88,
                           "10.0.0.2", 99,
                           (32 - 17) * 100)
@@ -464,7 +481,7 @@ public class FlowAnalyzerTest {
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withHostnames("first.src.example.com", "second.dst.example.com")
-                .withFlow(Instant.ofEpochSecond(10), Instant.ofEpochSecond(32).minusMillis(1),
+                .withFlow(start.plusSeconds(10), start.plusSeconds(32).minusMillis(1),
                           "10.0.0.1", 88,
                           "10.0.0.2", 99,
                           (32 - 10) * 200)
@@ -478,7 +495,7 @@ public class FlowAnalyzerTest {
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withHostnames("first.src.example.com", "second.dst.example.com")
-                .withFlow(Instant.ofEpochSecond(10), Instant.ofEpochSecond(40).minusMillis(1),
+                .withFlow(start.plusSeconds(10), start.plusSeconds(40).minusMillis(1),
                           "10.0.0.1", 88,
                           "10.0.0.2", 99,
                           (40 - 10) * 300)
@@ -492,7 +509,7 @@ public class FlowAnalyzerTest {
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withHostnames("first.src.example.com", "second.dst.example.com")
-                .withFlow(Instant.ofEpochSecond(12), Instant.ofEpochSecond(37).minusMillis(1),
+                .withFlow(start.plusSeconds(12), start.plusSeconds(37).minusMillis(1),
                           "10.0.0.1", 88,
                           "10.0.0.2", 99,
                           (37 - 12) * 400)
@@ -505,7 +522,7 @@ public class FlowAnalyzerTest {
                 .withSnmpInterfaceId(98)
                 .withApplication("SomeApplication")
                 .withHostnames("first.src.example.com", "second.dst.example.com")
-                .withFlow(Instant.ofEpochSecond(23), Instant.ofEpochSecond(27),
+                .withFlow(start.plusSeconds(23), start.plusSeconds(27),
                           "10.0.0.1", 88,
                           "10.0.0.2", 99,
                           (27 - 23) * 500)
@@ -514,11 +531,11 @@ public class FlowAnalyzerTest {
         final Groupings.ExporterInterfaceKey key5 = Groupings.ExporterInterfaceKey.from(flow5);
 
         final TestStream<FlowDocument> flows = TestStream.create(new FlowDocumentProtobufCoder())
-                                                         .addElements(TimestampedValue.of(flow1, getTimestamp(flow1)),
-                                                                      TimestampedValue.of(flow2, getTimestamp(flow2)),
-                                                                      TimestampedValue.of(flow3, getTimestamp(flow3)),
-                                                                      TimestampedValue.of(flow4, getTimestamp(flow4)),
-                                                                      TimestampedValue.of(flow5, getTimestamp(flow5)))
+                                                         .addElements(timestampedValue(flow1),
+                                                                 timestampedValue(flow2),
+                                                                 timestampedValue(flow3),
+                                                                 timestampedValue(flow4),
+                                                                 timestampedValue(flow5))
                                                          .advanceWatermarkToInfinity();
 
         final PCollection<FlowDocument> output = p.apply(flows)

@@ -51,6 +51,7 @@ import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
+import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
@@ -210,7 +211,7 @@ public class Pipeline {
                     .apply(transformPrefix + "flatten", Values.create())
                     .apply(transformPrefix + "top_k_for_window", ParDo.of(new DoFn<List<KV<Groupings.CompoundKey, Aggregate>>, FlowSummaryData>() {
                         @ProcessElement
-                        public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
+                        public void processElement(ProcessContext c, IntervalWindow window) {
                             int ranking = 1;
                             for (KV<Groupings.CompoundKey, Aggregate> el : c.element()) {
                                 FlowSummaryData flowSummary = toFlowSummaryData(AggregationType.TOPK, window, el, ranking++);
@@ -240,7 +241,7 @@ public class Pipeline {
                     .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()))
                     .apply(transformPrefix + "total_bytes_for_window", ParDo.of(new DoFn<KV<Groupings.CompoundKey, Aggregate>, FlowSummaryData>() {
                         @ProcessElement
-                        public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
+                        public void processElement(ProcessContext c, IntervalWindow window) {
                             c.output(toFlowSummaryData(AggregationType.TOTAL, window, c.element(), 0));
                         }
                     }));
@@ -423,7 +424,7 @@ public class Pipeline {
     }
 
 
-    public static FlowSummaryData toFlowSummaryData(AggregationType aggregationType, FlowWindows.FlowWindow window, KV<Groupings.CompoundKey, Aggregate> el, int ranking) {
+    public static FlowSummaryData toFlowSummaryData(AggregationType aggregationType, IntervalWindow window, KV<Groupings.CompoundKey, Aggregate> el, int ranking) {
         return new FlowSummaryData(aggregationType, el.getKey(), el.getValue(), window.start().getMillis(), window.end().getMillis(), ranking);
     }
 

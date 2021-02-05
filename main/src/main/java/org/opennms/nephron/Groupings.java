@@ -48,6 +48,7 @@ import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.KV;
 import org.opennms.nephron.elastic.ExporterNode;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -161,7 +162,7 @@ public class Groupings {
             return bytesAtEnd - bytesAtPreviousEnd;
         }
 
-        private Aggregate aggregatize(final FlowWindows.FlowWindow window, final FlowDocument flow, final String hostname) {
+        private Aggregate aggregatize(final IntervalWindow window, final FlowDocument flow, final String hostname) {
             double multiplier = 1;
             if (flow.hasSamplingInterval()) {
                 double samplingInterval = flow.getSamplingInterval().getValue();
@@ -184,7 +185,7 @@ public class Groupings {
         }
 
         @ProcessElement
-        public void processElement(ProcessContext c, FlowWindows.FlowWindow window) {
+        public void processElement(ProcessContext c, IntervalWindow window) {
             final FlowDocument flow = c.element();
             try {
                 for (final WithHostname<? extends CompoundKey> key: key(flow)) {
