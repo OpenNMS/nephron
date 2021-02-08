@@ -28,6 +28,7 @@
 
 package org.opennms.nephron;
 
+import static org.joda.time.Instant.ofEpochMilli;
 import static org.opennms.nephron.JacksonJsonCoder.TO_FLOW_SUMMARY;
 import static org.opennms.nephron.Pipeline.ReadFromKafka.getTimestamp;
 import static org.opennms.nephron.elastic.GroupedBy.EXPORTER_INTERFACE;
@@ -148,8 +149,7 @@ public class FlowAnalyzerTest {
         summary.setExporter(exporterNode);
 
         PAssert.that(output)
-                .inWindow(new IntervalWindow(org.joda.time.Instant.ofEpochMilli(start),
-                        org.joda.time.Instant.ofEpochMilli(startPlusOneMinute)))
+                .inWindow(new IntervalWindow(ofEpochMilli(start), ofEpochMilli(startPlusOneMinute)))
                 .containsInAnyOrder(summary);
 
         p.run();
@@ -292,8 +292,12 @@ public class FlowAnalyzerTest {
 
         final TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
         final PCollection<FlowSummary> output = p.apply(flowStream)
-                                                 .apply(new Pipeline.CalculateFlowStatistics(10, fixedWindowSize, Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
-                                                 .apply(TO_FLOW_SUMMARY);
+                // disable early firings
+                // -> early panes prevent on-time panes if no new data arrives
+                // -> early panes seem to be somewhat indeterministic: aggregation is distributed over different nodes;
+                //    all of them seem to trigger (partial) early panes;
+                .apply(new Pipeline.CalculateFlowStatistics(10, fixedWindowSize, Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(TO_FLOW_SUMMARY);
 
         final ExporterNode exporterNode = new ExporterNode();
         exporterNode.setForeignSource("SomeFs");
@@ -432,13 +436,6 @@ public class FlowAnalyzerTest {
                 }}
         };
 
-//        PAssert.that(output).satisfies(iter -> {
-//            for (Object fs: iter) {
-//                System.out.println("res-fs: " + fs);
-//            }
-//            return null;
-//        });
-
         PAssert.that(output)
                .containsInAnyOrder(summaries);
 
@@ -455,8 +452,8 @@ public class FlowAnalyzerTest {
         Instant start = Instant.ofEpochMilli(startMs);
 
         final LongFunction<IntervalWindow> window = (n) -> new IntervalWindow(
-                org.joda.time.Instant.ofEpochMilli(startMs + fixedWindowSizeMillis * n),
-                org.joda.time.Instant.ofEpochMilli(startMs + fixedWindowSizeMillis * (n + 1))
+                ofEpochMilli(startMs + fixedWindowSizeMillis * n),
+                ofEpochMilli(startMs + fixedWindowSizeMillis * (n + 1))
         );
 
         final Window<FlowDocument> windowed = Pipeline.toWindow(fixedWindowSize, Duration.standardMinutes(1), Duration.standardMinutes(5), Duration.standardMinutes(5));
@@ -572,7 +569,7 @@ public class FlowAnalyzerTest {
     }
 
     private static org.joda.time.Instant toJoda(Instant instant) {
-        return org.joda.time.Instant.ofEpochMilli(instant.toEpochMilli());
+        return ofEpochMilli(instant.toEpochMilli());
     }
 
     private static FlowSummary clone(FlowSummary summary) {
