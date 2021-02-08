@@ -77,8 +77,8 @@ public class FlowAnalyzerTest {
 
 
     @Rule
-    public TestPipeline p = TestPipeline.create();
-//    public TestPipeline p = TestPipeline.fromOptions(flinkOptions);
+//    public TestPipeline p = TestPipeline.create();
+    public TestPipeline p = TestPipeline.fromOptions(flinkOptions);
 
     @Before
     public void setUp() {
@@ -424,7 +424,15 @@ public class FlowAnalyzerTest {
                 }}
         };
 
+        FlowWindows.FlowWindow window =
+                new FlowWindows.FlowWindow(
+                        org.joda.time.Instant.ofEpochMilli(1500000000000L),
+                        org.joda.time.Instant.ofEpochMilli(1500000060000L),
+                        99
+                );
+
         PAssert.that(output)
+               .inOnTimePane(window)
                .containsInAnyOrder(summaries);
 
         p.run();
