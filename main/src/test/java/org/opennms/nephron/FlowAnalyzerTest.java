@@ -311,7 +311,7 @@ public class FlowAnalyzerTest {
                 // -> early panes prevent on-time panes if no new data arrives
                 // -> early panes seem to be somewhat indeterministic: aggregation is distributed over different nodes;
                 //    all of them seem to trigger (partial) early panes;
-                .apply(new Pipeline.CalculateFlowStatistics(10, new Pipeline.WindowedFlows(WND.windowSize, Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2))))
+                .apply(new Pipeline.CalculateFlowStatistics(10, WND.windowSize, Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
                 .apply(TO_FLOW_SUMMARY);
 
         final FlowSummary[] summaries = new FlowSummary[]{

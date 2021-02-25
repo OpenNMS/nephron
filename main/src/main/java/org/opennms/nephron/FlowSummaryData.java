@@ -31,6 +31,7 @@ package org.opennms.nephron;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Objects;
 
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.Coder;
@@ -73,6 +74,23 @@ public class FlowSummaryData {
                '}';
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        FlowSummaryData that = (FlowSummaryData) o;
+        return windowStart == that.windowStart && windowEnd == that.windowEnd && ranking == that.ranking && aggregationType == that.aggregationType && key.equals(that.key) && aggregate.equals(that.aggregate);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(aggregationType, key, aggregate, windowStart, windowEnd, ranking);
+    }
+
     public static class FlowSummaryDataCoder extends AtomicCoder<FlowSummaryData> {
 
         private static Coder<Integer> INT_CODER = VarIntCoder.of();
@@ -102,5 +120,9 @@ public class FlowSummaryData {
             );
         }
 
+        @Override
+        public boolean consistentWithEquals() {
+            return true;
+        }
     }
 }

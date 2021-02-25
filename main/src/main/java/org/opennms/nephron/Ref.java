@@ -41,7 +41,7 @@ import com.google.gson.Gson;
 /**
  * Represents the value a compound key has for a dimension.
  */
-abstract class Ref {
+public abstract class Ref {
 
     /**
      * Returns a string representation of this key part.
