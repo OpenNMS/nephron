@@ -229,13 +229,13 @@ public class FlowGenerator {
                     .withApplication(applicationForConversation);
             if (flowIndex % 2 == 0) {
                 flowBuilder.withDirection(Direction.INGRESS)
-                        .withFlow(startOfFlow, startOfFlow.plusMillis(flowDurationMillis),
+                        .withFlow(startOfFlow, startOfFlow.plusMillis(flowDurationMillis).minusMillis(1),
                                 sourceIp, srcPort,
                                 dstIp, dstPort,
                                 ingressBytesPerFlow);
             } else {
                 flowBuilder.withDirection(Direction.EGRESS)
-                        .withFlow(startOfFlow, startOfFlow.plusMillis(flowDurationMillis),
+                        .withFlow(startOfFlow, startOfFlow.plusMillis(flowDurationMillis).minusMillis(1),
                                 dstIp, dstPort,
                                 sourceIp, srcPort,
                                 egressBytesPerFlow);
