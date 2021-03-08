@@ -37,7 +37,7 @@
         <elasticsearch.client.version>7.7.1</elasticsearch.client.version>
         <flink.artifact.name>beam-runners-flink-1.10</flink.artifact.name>
         <java.version>1.8</java.version>
-        <junit.version>4.13.1</junit.version>
+        <junit.version>4.13</junit.version>
         <kafka.version>2.6.0</kafka.version>
         <log4j.version>2.13.3</log4j.version>
         <opennms.version>26.1.0-SNAPSHOT</opennms.version>
@@ -172,10 +172,21 @@
                 <version>${elasticsearch.client.version}</version>
                 <scope>test</scope>
             </dependency>
+            <!--
+                if the jqwik dependency is added then the junit-vintage-engine must be added too
+                -> the auto-detection mechanism of the surefire plugin does no more add the
+                   junit-vintage-engine because jqwik already adds the jqwik-engine
+            -->
             <dependency>
                 <groupId>net.jqwik</groupId>
                 <artifactId>jqwik</artifactId>
                 <version>${jqwik.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.vintage</groupId>
+                <artifactId>junit-vintage-engine</artifactId>
+                <version>5.6.2</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>
@@ -221,8 +232,8 @@
                     <version>3.0.0-M4</version>
                 </plugin>
                 <plugin>
-                    <groupId>org.apache.maven.surefire</groupId>
-                    <artifactId>surefire</artifactId>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
                     <version>2.22.2</version>
                 </plugin>
             </plugins>
