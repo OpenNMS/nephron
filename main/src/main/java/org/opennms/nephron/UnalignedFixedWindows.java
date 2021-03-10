@@ -56,11 +56,9 @@ public class UnalignedFixedWindows extends NonMergingWindowFn<FlowDocument, Inte
      *
      * Shifted windows start at: shift + windowNumber(nodeId, windowSize, timestamp) * windowSize,
      */
-    public static long windowStartForTimestamp(
-            int nodeId,
+    public static long windowStartForTimestamp(int nodeId,
             long windowSize,
-            long timestamp
-    ) {
+            long timestamp) {
         long shift = perNodeShift(nodeId, windowSize);
         return timestamp - (timestamp - shift) % windowSize;
     }
