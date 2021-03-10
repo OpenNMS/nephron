@@ -116,6 +116,11 @@
                 <artifactId>rate-limited-logger</artifactId>
                 <version>2.0.1</version>
             </dependency>
+            <dependency>
+                <groupId>it.unimi.dsi</groupId>
+                <artifactId>fastutil</artifactId>
+                <version>8.5.2</version>
+            </dependency>
 
             <!-- Test dependencies -->
             <dependency>

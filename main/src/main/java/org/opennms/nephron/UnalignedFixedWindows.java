@@ -41,6 +41,8 @@ import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
+import it.unimi.dsi.fastutil.HashCommon;
+
 public class UnalignedFixedWindows extends NonMergingWindowFn<FlowDocument, IntervalWindow> {
 
     public static UnalignedFixedWindows of(Duration size) {
@@ -48,7 +50,7 @@ public class UnalignedFixedWindows extends NonMergingWindowFn<FlowDocument, Inte
     }
 
     public static long perNodeShift(int nodeId, long windowSize) {
-        return Math.abs(Integer.hashCode(nodeId)) % windowSize;
+        return Math.abs(HashCommon.mix(nodeId)) % windowSize;
     }
 
     /**
@@ -87,9 +89,7 @@ public class UnalignedFixedWindows extends NonMergingWindowFn<FlowDocument, Inte
 
     private final long size;
 
-    private UnalignedFixedWindows(
-            Duration size
-    ) {
+    private UnalignedFixedWindows(Duration size) {
         this.size = Objects.requireNonNull(size).getMillis();
     }
 
