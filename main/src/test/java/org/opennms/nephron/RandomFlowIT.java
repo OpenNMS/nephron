@@ -48,10 +48,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.LongSummaryStatistics;
 import java.util.Map;
+import java.util.Random;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 import org.apache.beam.runners.flink.FlinkPipelineOptions;
@@ -82,8 +84,10 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.catheter.Exporter;
+import org.opennms.nephron.catheter.FlowReport;
 import org.opennms.nephron.catheter.Simulation;
 import org.opennms.nephron.elastic.FlowSummary;
+import org.opennms.nephron.generator.Handler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.KafkaContainer;
@@ -186,9 +190,7 @@ public class RandomFlowIT {
 
         final Instant start = Instant.now().minus(Duration.ofSeconds(10));
 
-        final Simulation simulation = Simulation.builder()
-                .withBootstrapServers(this.kafka.getBootstrapServers())
-                .withFlowTopic(options.getFlowSourceTopic())
+        final Simulation simulation = Simulation.builder(new Handler(this.kafka.getBootstrapServers(), options.getFlowSourceTopic(), new Random()))
                 .withTickMs(Duration.ofMillis(100))
                 .withRealtime(true)
                 .withExporters(Exporter.builder()
@@ -310,9 +312,7 @@ public class RandomFlowIT {
 
         final Instant start = Instant.now().minus(Duration.ofSeconds(10));
 
-        final Simulation simulation = Simulation.builder()
-                .withBootstrapServers(this.kafka.getBootstrapServers())
-                .withFlowTopic(options.getFlowSourceTopic())
+        final Simulation simulation = Simulation.builder(new Handler(this.kafka.getBootstrapServers(), options.getFlowSourceTopic(), new Random()))
                 .withTickMs(Duration.ofMillis(100))
                 .withRealtime(true)
                 .withExporters(Exporter.builder()
@@ -474,9 +474,7 @@ public class RandomFlowIT {
 
         final Instant start = Instant.now().minus(Duration.ofSeconds(10));
 
-        final Simulation simulation = Simulation.builder()
-                .withBootstrapServers(this.kafka.getBootstrapServers())
-                .withFlowTopic(options.getFlowSourceTopic())
+        final Simulation simulation = Simulation.builder(new Handler(this.kafka.getBootstrapServers(), options.getFlowSourceTopic(), new Random()))
                 .withTickMs(Duration.ofMillis(100))
                 .withRealtime(true)
                 .withExporters(Exporter.builder()

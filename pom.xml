@@ -52,6 +52,7 @@
         <module>main</module>
         <module>proto</module>
         <module>catheter</module>
+        <module>generator</module>
     </modules>
 
     <dependencyManagement>
