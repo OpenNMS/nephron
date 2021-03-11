@@ -400,8 +400,12 @@ public class Pipeline {
                     }));
         }
 
+        public static long getTimestampMs(FlowDocument doc) {
+            return doc.getLastSwitched().getValue();
+        }
+
         public static Instant getTimestamp(FlowDocument doc) {
-            return Instant.ofEpochMilli(doc.getLastSwitched().getValue());
+            return Instant.ofEpochMilli(getTimestampMs(doc));
         }
     }
 
@@ -468,9 +472,10 @@ public class Pipeline {
 
                 long deltaSwitched = flow.getDeltaSwitched().getValue();
                 long lastSwitched = flow.getLastSwitched().getValue();
+                int nodeId = flow.getExporterNode().getNodeId();
 
-                long firstWindow = deltaSwitched / windowSizeMs; // the first window the flow falls into
-                long lastWindow = lastSwitched / windowSizeMs; // the last window the flow falls into (assuming lastSwitched is inclusive)
+                long firstWindow = UnalignedFixedWindows.windowNumber(nodeId, windowSizeMs, deltaSwitched); // the first window the flow falls into
+                long lastWindow = UnalignedFixedWindows.windowNumber(nodeId, windowSizeMs, lastSwitched); // the last window the flow falls into (assuming lastSwitched is inclusive)
                 long nbWindows = lastWindow - firstWindow + 1;
 
                 long timestamp = deltaSwitched;
@@ -545,7 +550,7 @@ public class Pipeline {
                             .plusDelayOf(earlyProcessingDelay));
         }
 
-        return Window.<FlowDocument>into(FixedWindows.of(fixedWindowSize))
+        return Window.into(UnalignedFixedWindows.of(fixedWindowSize))
                 .withTimestampCombiner(TimestampCombiner.END_OF_WINDOW)
                 .triggering(trigger)
 
