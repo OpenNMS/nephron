@@ -110,7 +110,7 @@ public class CompoundKey {
     }
 
     public String groupedByKey() {
-        return refs.stream().map(Ref::idAsString).collect(Collectors.joining("-"));
+        return refs.stream().map(Ref::idAsString).filter(s -> s != null).collect(Collectors.joining("-"));
     }
 
     public void populate(FlowSummary flow) {
