@@ -31,6 +31,7 @@ package org.opennms.nephron;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -84,6 +85,28 @@ public class CompoundKey {
     public CompoundKey getOuterKey() {
         return type.getParent() == null ? null :
                new CompoundKey(type.getParent(), refs.subList(0, type.getParent().getParts().length));
+    }
+
+    /**
+     * Project this key into a key of the given type.
+     *
+     * The projection is done by removing the key parts from this key that have no corresponding
+     * {@link RefType} in the given type.
+     */
+    public CompoundKey project(CompoundKeyType projectedType) {
+        List<Ref> l = new ArrayList<>();
+        int j = 0;
+        for (int i = 0; i < type.getParts().length; i++) {
+            if (type.getParts()[i] == projectedType.getParts()[j]) {
+                l.add(refs.get(i));
+                j++;
+            }
+        }
+        if (j != projectedType.getParts().length) {
+            // the parts of this key could do not match the parts of the projected type
+            throw new RuntimeException("key of type " + type + " can not be project into key of type " + projectedType);
+        }
+        return new CompoundKey(projectedType, l);
     }
 
     public String groupedByKey() {

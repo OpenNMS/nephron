@@ -28,6 +28,7 @@
 
 package org.opennms.nephron;
 
+import static org.joda.time.Instant.ofEpochMilli;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_APPLICATION;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_CONVERSATION;
@@ -36,7 +37,6 @@ import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERSATION;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST;
-import static org.joda.time.Instant.ofEpochMilli;
 import static org.opennms.nephron.JacksonJsonCoder.TO_FLOW_SUMMARY;
 import static org.opennms.nephron.Pipeline.ReadFromKafka.getTimestamp;
 import static org.opennms.nephron.flowgen.FlowGenerator.GIGABYTE;
@@ -53,8 +53,10 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
+import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
@@ -135,10 +137,9 @@ public class FlowAnalyzerTest {
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
-        // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(new Pipeline.WindowedFlows(WND.windowSize, Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", CompoundKeyType.EXPORTER_INTERFACE))
+                .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(Filter.by(fs -> fs.key.getType() == CompoundKeyType.EXPORTER_INTERFACE))
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summary = new FlowSummary();
@@ -169,9 +170,10 @@ public class FlowAnalyzerTest {
 
     @Test
     public void canHandleLateData() {
+        int nodeId = 99;
         Duration fixedWindowSize = Duration.standardMinutes(1);
         // choose a `start` that is the beginning of an unaligned window
-        long startMs = UnalignedFixedWindows.windowStartForTimestamp(99, fixedWindowSize.getMillis(), 1500000000000L);
+        long startMs = UnalignedFixedWindows.windowStartForTimestamp(nodeId, fixedWindowSize.getMillis(), 1500000000000L);
 
         Instant start = Instant.ofEpochMilli(startMs);
         List<Long> flowTimestampOffsets =
@@ -187,10 +189,10 @@ public class FlowAnalyzerTest {
 
         TestStream.Builder<FlowDocument> flowStreamBuilder = TestStream.create(new FlowDocumentProtobufCoder());
         long numBytes = 100;
-        org.joda.time.Instant lastWatermark = null;
+        org.joda.time.Instant lastWatermark = BoundedWindow.TIMESTAMP_MIN_VALUE;
         for (Long offset : flowTimestampOffsets) {
             final Instant firstSwitched = start.plusMillis(offset);
-            final Instant lastSwitched = firstSwitched.plusSeconds(30);;
+            final Instant lastSwitched = firstSwitched.plusSeconds(30);
 
             final FlowDocument flow = new SyntheticFlowBuilder()
                     .withExporter("SomeFs", "SomeFid", 99)
@@ -200,13 +202,14 @@ public class FlowAnalyzerTest {
                             "10.0.0.1", 88,
                             "10.0.0.3", 99,
                             numBytes)
+                    .withTos(0)
                     .build().get(0);
 
             final org.joda.time.Instant flowTimestamp = getTimestamp(flow);
             flowStreamBuilder = flowStreamBuilder.addElements(timestampedValue(flow));
 
             // Advance the watermark to the max timestamp
-            if (lastWatermark == null || flowTimestamp.isAfter(lastWatermark)) {
+            if (flowTimestamp.isAfter(lastWatermark)) {
                 flowStreamBuilder = flowStreamBuilder.advanceWatermarkTo(flowTimestamp);
                 lastWatermark = flowTimestamp;
             }
@@ -218,8 +221,8 @@ public class FlowAnalyzerTest {
 
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(new Pipeline.WindowedFlows(fixedWindowSize, Duration.standardMinutes(15), Duration.standardMinutes(1), Duration.standardMinutes(2), Duration.standardHours(2)))
-                .apply(new Pipeline.CalculateTotalBytes("CalculateTotalBytesByExporterAndInterface_", CompoundKeyType.EXPORTER_INTERFACE))
+                .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(Filter.by(fs -> fs.key.getType() == CompoundKeyType.EXPORTER_INTERFACE))
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();
@@ -248,15 +251,19 @@ public class FlowAnalyzerTest {
                 .inOnTimePane(windowWithLateArrival)
                 .containsInAnyOrder(summaryFromOnTimePane);
 
-        // We expect the summary in the late pane to include data from the first
-        // pane with additional flows
+        // We expect the summary in the late pane to include the late data only
         FlowSummary summaryFromLatePane = clone(summaryFromOnTimePane);
-        summaryFromLatePane.setBytesIngress(315L);
-        summaryFromLatePane.setBytesTotal(315L);
+        summaryFromLatePane.setBytesIngress(112L);
+        summaryFromLatePane.setBytesTotal(112L);
 
         PAssert.that(output)
-                .inFinalPane(windowWithLateArrival)
+                .inLatePane(windowWithLateArrival)
                 .containsInAnyOrder(summaryFromLatePane);
+
+        // we expect no other results than in the on-time pane and in the late pane
+        PAssert.that(output)
+                .inWindow(windowWithLateArrival)
+                .containsInAnyOrder(summaryFromOnTimePane, summaryFromLatePane);
 
         p.run();
     }
