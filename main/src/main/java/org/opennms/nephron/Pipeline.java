@@ -40,7 +40,6 @@ import java.util.Properties;
 
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
-import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
@@ -159,34 +158,20 @@ public class Pipeline {
 
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummaryData>> {
         private final int topK;
-        private final Duration fixedWindowSize;
-        private final Duration maxFlowDuration;
-        private final Duration earlyProcessingDelay;
-        private final Duration lateProcessingDelay;
-        private final Duration allowedLateness;
+        private final PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing;
 
-        public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration maxFlowDuration, Duration earlyProcessingDelay, Duration lateProcessingDelay, Duration allowedLateness) {
+        public CalculateFlowStatistics(int topK, PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing) {
             this.topK = topK;
-            this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
-            this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
-            this.earlyProcessingDelay = Objects.requireNonNull(earlyProcessingDelay);
-            this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
-            this.allowedLateness = Objects.requireNonNull(allowedLateness);
+            this.windowing = windowing;
         }
 
         public CalculateFlowStatistics(NephronOptions options) {
-            this(options.getTopK(),
-                 Duration.millis(options.getFixedWindowSizeMs()),
-                 Duration.millis(options.getMaxFlowDurationMs()),
-                 Duration.millis(options.getEarlyProcessingDelayMs()),
-                 Duration.millis(options.getLateProcessingDelayMs()),
-                 Duration.millis(options.getAllowedLatenessMs()));
+            this(options.getTopK(), new WindowedFlows(options));
         }
 
         @Override
         public PCollection<FlowSummaryData> expand(PCollection<FlowDocument> input) {
-            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
-                    new WindowedFlows(fixedWindowSize, maxFlowDuration, earlyProcessingDelay, lateProcessingDelay, allowedLateness));
+            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows", windowing);
 
             PCollection<KV<CompoundKey, Aggregate>> keyedByConvWithTos =
                     windowedStreamOfFlows.apply("key_by_conv", ParDo.of(new KeyByConvWithTos()));
@@ -251,6 +236,16 @@ public class Pipeline {
             this.earlyProcessingDelay = Objects.requireNonNull(earlyProcessingDelay);
             this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
             this.allowedLateness = Objects.requireNonNull(allowedLateness);
+        }
+
+        public WindowedFlows(NephronOptions options) {
+            this(
+                    Duration.millis(options.getFixedWindowSizeMs()),
+                    Duration.millis(options.getMaxFlowDurationMs()),
+                    Duration.millis(options.getEarlyProcessingDelayMs()),
+                    Duration.millis(options.getLateProcessingDelayMs()),
+                    Duration.millis(options.getAllowedLatenessMs())
+            );
         }
 
         @Override
