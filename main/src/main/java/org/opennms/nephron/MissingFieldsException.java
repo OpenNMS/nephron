@@ -34,7 +34,7 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
  * Thrown when we are unable to derive a {@link CompoundKey} from
  * a {@link FlowDocument} due to one or more missing fields.
  */
-public class MissingFieldsException extends Exception {
+public class MissingFieldsException extends RuntimeException {
     private final FlowDocument flow;
 
     public MissingFieldsException(String field, FlowDocument flow) {

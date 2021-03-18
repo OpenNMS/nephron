@@ -31,9 +31,6 @@ package org.opennms.nephron;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
 
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.NullableCoder;
@@ -52,16 +49,12 @@ abstract class RefType<T extends Ref> {
 
     public abstract T decode(InputStream is) throws IOException;
 
-    public abstract List<WithHostname<T>> create(FlowDocument flow) throws MissingFieldsException;
+    public abstract T create(FlowDocument flow) throws MissingFieldsException;
 
     public abstract void populate(T ref, FlowSummary summary);
 
     private final static Coder<String> STRING_CODER = NullableCoder.of(StringUtf8Coder.of());
     private final static Coder<Integer> INT_CODER = NullableCoder.of(VarIntCoder.of());
-
-    private static <T> List<WithHostname<T>> singlePartWithoutHostName(T t) {
-        return Collections.singletonList(WithHostname.<T>having(t).withoutHostname());
-    }
 
     public static final RefType<Ref.Node> EXPORTER_PART = new RefType<Ref.Node>() {
         @Override
@@ -81,8 +74,8 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Node>> create(FlowDocument flow) throws MissingFieldsException {
-            return singlePartWithoutHostName(Ref.Node.of(flow));
+        public Ref.Node create(FlowDocument flow) throws MissingFieldsException {
+            return Ref.Node.of(flow);
         }
 
         @Override
@@ -109,8 +102,8 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Interface>> create(FlowDocument flow) throws MissingFieldsException {
-            return singlePartWithoutHostName(Ref.Interface.of(flow));
+        public Ref.Interface create(FlowDocument flow) throws MissingFieldsException {
+            return Ref.Interface.of(flow);
         }
 
         @Override
@@ -131,8 +124,8 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Dscp>> create(FlowDocument flow) throws MissingFieldsException {
-            return singlePartWithoutHostName(Ref.Dscp.of(flow));
+        public Ref.Dscp create(FlowDocument flow) throws MissingFieldsException {
+            return Ref.Dscp.of(flow);
         }
 
         @Override
@@ -155,8 +148,8 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Application>> create(FlowDocument flow) throws MissingFieldsException {
-            return singlePartWithoutHostName(Ref.Application.of(flow));
+        public Ref.Application create(FlowDocument flow) throws MissingFieldsException {
+            return Ref.Application.of(flow);
         }
 
         @Override
@@ -179,11 +172,11 @@ abstract class RefType<T extends Ref> {
         }
 
         @Override
-        public List<WithHostname<Ref.Host>> create(FlowDocument flow) throws MissingFieldsException {
-            return Arrays.asList(
-                    WithHostname.having(Ref.Host.of(flow.getSrcAddress())).andHostname(flow.getSrcHostname()),
-                    WithHostname.having(Ref.Host.of(flow.getDstAddress())).andHostname(flow.getDstHostname())
-            );
+        public Ref.Host create(FlowDocument flow) throws MissingFieldsException {
+            // considers the src address only (the dst address is ignored)
+            // -> the aggregation that is keyed by hosts is derived from the aggregation that is keyed by conversations
+            // -> the src and dst address of flows is considered there (cf. the ProjConvWithTos transformation)
+            return Ref.Host.of(flow.getSrcAddress());
         }
 
         @Override
@@ -195,24 +188,32 @@ abstract class RefType<T extends Ref> {
     public static final RefType<Ref.Conversation> CONVERSATION_PART = new RefType<Ref.Conversation>() {
         @Override
         public void encode(Ref.Conversation ref, OutputStream os) throws IOException {
-            STRING_CODER.encode(ref.getConversationKey(), os);
+            STRING_CODER.encode(ref.location, os);
+            INT_CODER.encode(ref.protocol, os);
+            STRING_CODER.encode(ref.smallerAddress, os);
+            STRING_CODER.encode(ref.largerAddress, os);
+            STRING_CODER.encode(ref.application, os);
         }
 
         @Override
         public Ref.Conversation decode(InputStream is) throws IOException {
-            Ref.Conversation ref = new Ref.Conversation();
-            ref.setConversationKey(STRING_CODER.decode(is));
-            return ref;
+            return new Ref.Conversation(
+                    STRING_CODER.decode(is),
+                    INT_CODER.decode(is),
+                    STRING_CODER.decode(is),
+                    STRING_CODER.decode(is),
+                    STRING_CODER.decode(is)
+            );
         }
 
         @Override
-        public List<WithHostname<Ref.Conversation>> create(FlowDocument flow) throws MissingFieldsException {
-            return singlePartWithoutHostName(Ref.Conversation.of(flow));
+        public Ref.Conversation create(FlowDocument flow) throws MissingFieldsException {
+            return Ref.Conversation.of(flow);
         }
 
         @Override
         public void populate(Ref.Conversation ref, FlowSummary summary) {
-            summary.setConversationKey(ref.getConversationKey());
+            summary.setConversationKey(ref.asConversationKey());
         }
     };
 

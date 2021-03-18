@@ -77,6 +77,10 @@ public class CompoundKey {
         return refs;
     }
 
+    public Ref lastRef() {
+        return refs.get(refs.size() - 1);
+    }
+
     /**
      * Build the parent, or "outer" key for the current key.
      *
@@ -109,8 +113,15 @@ public class CompoundKey {
         return new CompoundKey(projectedType, l);
     }
 
+    public CompoundKey changeLastRef(CompoundKeyType newType, Ref lastRef) {
+        List newRefs = new ArrayList(refs.size());
+        newRefs.addAll(refs);
+        newRefs.set(refs.size() - 1, lastRef);
+        return new CompoundKey(newType, newRefs);
+    }
+
     public String groupedByKey() {
-        return refs.stream().map(Ref::idAsString).filter(s -> s != null).collect(Collectors.joining("-"));
+        return refs.stream().map(Ref::idAsString).collect(Collectors.joining("-"));
     }
 
     public void populate(FlowSummary flow) {
