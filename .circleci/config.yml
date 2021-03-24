@@ -49,7 +49,7 @@ jobs:
       - run:
           name: Run the tests
           command: |
-            mvn -DskipITs=false integration-test
+            mvn -DskipITs=false verify
 
       - run:
           name: Save test results
