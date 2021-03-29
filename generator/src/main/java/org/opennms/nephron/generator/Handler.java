@@ -135,7 +135,7 @@ public class Handler implements BiConsumer<Exporter, FlowReport>, Closeable {
         flowBuilder.setDstHostname(dstAddr.hostname);
         flowBuilder.setFirstSwitched(UInt64Value.of(report.getStart().plus(exporter.getClockOffset()).toEpochMilli()));
         flowBuilder.setDeltaSwitched(UInt64Value.of(report.getStart().plus(exporter.getClockOffset()).toEpochMilli()));
-        flowBuilder.setLastSwitched(UInt64Value.of(report.getEnd().plus(exporter.getClockOffset()).toEpochMilli()));
+        flowBuilder.setLastSwitched(UInt64Value.of(report.getEnd().minusMillis(1).plus(exporter.getClockOffset()).toEpochMilli()));
         flowBuilder.setNumBytes(UInt64Value.of(report.getBytes()));
         flowBuilder.setConvoKey(convoKey);
         flowBuilder.setInputSnmpIfindex(UInt32Value.of(exporter.getInputSnmp()));
