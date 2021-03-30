@@ -53,7 +53,6 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 import org.apache.beam.runners.flink.FlinkPipelineOptions;
@@ -84,7 +83,6 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.catheter.Exporter;
-import org.opennms.nephron.catheter.FlowReport;
 import org.opennms.nephron.catheter.Simulation;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.generator.Handler;
