@@ -168,4 +168,9 @@ public interface NephronOptions extends PipelineOptions {
     long getElasticRetryDuration();
 
     void setElasticRetryDuration(long value);
+
+    @Description("Kafka Client Properties")
+    String getKafkaClientProperties();
+
+    void setKafkaClientProperties(String kafkaClientProperties);
 }
