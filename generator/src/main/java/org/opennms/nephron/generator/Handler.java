@@ -29,6 +29,8 @@
 package org.opennms.nephron.generator;
 
 import java.io.Closeable;
+import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -37,9 +39,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.Random;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -77,7 +79,28 @@ public class Handler implements BiConsumer<Exporter, FlowReport>, Closeable {
     public Handler(final String bootstrapServers,
                    final String flowTopic,
                    final Random random) {
+        this(bootstrapServers, flowTopic, random, null);
+    }
+
+    public Handler(final String bootstrapServers,
+                   final String flowTopic,
+                   final Random random,
+                   final File propertiesFile) {
         final Map<String, Object> producerProps = new HashMap<>();
+
+        if (propertiesFile != null) {
+            try {
+                final Properties properties = new Properties();
+                properties.load(new FileReader(propertiesFile));
+                for (Map.Entry<Object, Object> entry : properties.entrySet()) {
+                    producerProps.put(entry.getKey().toString(), entry.getValue());
+                }
+            } catch (IOException e) {
+                LOG.error("Error reading properties file", e);
+                throw new RuntimeException("Error reading properties file", e);
+            }
+        }
+
         producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);

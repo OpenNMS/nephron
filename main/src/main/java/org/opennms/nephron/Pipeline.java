@@ -28,12 +28,15 @@
 
 package org.opennms.nephron;
 
+import java.io.FileReader;
+import java.io.IOException;
 import java.io.Serializable;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
@@ -51,7 +54,6 @@ import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
-import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.transforms.windowing.Window;
@@ -102,8 +104,23 @@ public class Pipeline {
         org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
-        // Read from Kafka
         Map<String, Object> kafkaConsumerConfig = new HashMap<>();
+        Map<String, Object> kafkaProducerConfig = new HashMap<>();
+
+        if (!Strings.isNullOrEmpty(options.getKafkaClientProperties())) {
+            final Properties properties = new Properties();
+            try {
+                properties.load(new FileReader(options.getKafkaClientProperties()));
+            } catch (IOException e) {
+                LOG.error("Error loading properties file", e);
+                throw new RuntimeException("Error reading properties file", e);
+            }
+            for(Map.Entry<Object,Object> entry : properties.entrySet()) {
+                kafkaConsumerConfig.put(entry.getKey().toString(), entry.getValue());
+                kafkaProducerConfig.put(entry.getKey().toString(), entry.getValue());
+            }
+        }
+
         kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, options.getGroupId());
         // Auto-commit should be disabled when checkpointing is on:
         // the state in the checkpoints are used to derive the offsets instead
@@ -119,7 +136,7 @@ public class Pipeline {
 
         // Optionally write out to Kafka as well
         if (options.getFlowDestTopic() != null) {
-            flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic()));
+            flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic(), kafkaProducerConfig));
         }
 
         return p;
@@ -373,11 +390,11 @@ public class Pipeline {
         public PCollection<FlowDocument> expand(PBegin input) {
             final NephronOptions options = input.getPipeline().getOptions().as(NephronOptions.class);
             return input.apply(KafkaIO.<String, FlowDocument>read()
-                    .withBootstrapServers(bootstrapServers)
                     .withTopic(topic)
                     .withKeyDeserializer(StringDeserializer.class)
                     .withValueDeserializer(KafkaInputFlowDeserializer.class)
                     .withConsumerConfigUpdates(kafkaConsumerConfig)
+                    .withBootstrapServers(bootstrapServers) // Order matters: bootstrap server overwrite consumer properties
                     .withTimestampPolicyFactory(getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs())))
                     .withoutMetadata()
             ).apply(Values.create())
@@ -412,17 +429,20 @@ public class Pipeline {
     public static class WriteToKafka extends PTransform<PCollection<FlowSummaryData>, PDone> {
         private final String bootstrapServers;
         private final String topic;
+        private final Map<String, Object> kafkaProducerConfig;
 
-        public WriteToKafka(String bootstrapServers, String topic) {
+        public WriteToKafka(String bootstrapServers, String topic, Map<String, Object> kafkaProducerConfig) {
             this.bootstrapServers = Objects.requireNonNull(bootstrapServers);
             this.topic = Objects.requireNonNull(topic);
+            this.kafkaProducerConfig = kafkaProducerConfig;
         }
 
         @Override
         public PDone expand(PCollection<FlowSummaryData> input) {
             return input.apply(toJson())
                     .apply(KafkaIO.<Void, String>write()
-                            .withBootstrapServers(bootstrapServers)
+                            .withProducerConfigUpdates(kafkaProducerConfig)
+                            .withBootstrapServers(bootstrapServers) // Order matters: bootstrap server overwrite producer properties
                             .withTopic(topic)
                             .withValueSerializer(StringSerializer.class)
                             .values()
