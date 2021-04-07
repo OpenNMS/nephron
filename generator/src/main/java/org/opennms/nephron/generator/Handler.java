@@ -97,6 +97,7 @@ public class Handler implements BiConsumer<Exporter, FlowReport>, Closeable {
                 }
             } catch (IOException e) {
                 LOG.error("Error reading properties file", e);
+                throw new RuntimeException("Error reading properties file", e);
             }
         }
 

@@ -113,6 +113,7 @@ public class Pipeline {
                 properties.load(new FileReader(options.getKafkaClientProperties()));
             } catch (IOException e) {
                 LOG.error("Error loading properties file", e);
+                throw new RuntimeException("Error reading properties file", e);
             }
             for(Map.Entry<Object,Object> entry : properties.entrySet()) {
                 kafkaConsumerConfig.put(entry.getKey().toString(), entry.getValue());
@@ -393,7 +394,7 @@ public class Pipeline {
                     .withKeyDeserializer(StringDeserializer.class)
                     .withValueDeserializer(KafkaInputFlowDeserializer.class)
                     .withConsumerConfigUpdates(kafkaConsumerConfig)
-                    .withBootstrapServers(bootstrapServers)
+                    .withBootstrapServers(bootstrapServers) // Order matters: bootstrap server overwrite consumer properties
                     .withTimestampPolicyFactory(getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs())))
                     .withoutMetadata()
             ).apply(Values.create())
@@ -441,7 +442,7 @@ public class Pipeline {
             return input.apply(toJson())
                     .apply(KafkaIO.<Void, String>write()
                             .withProducerConfigUpdates(kafkaProducerConfig)
-                            .withBootstrapServers(bootstrapServers)
+                            .withBootstrapServers(bootstrapServers) // Order matters: bootstrap server overwrite producer properties
                             .withTopic(topic)
                             .withValueSerializer(StringSerializer.class)
                             .values()
