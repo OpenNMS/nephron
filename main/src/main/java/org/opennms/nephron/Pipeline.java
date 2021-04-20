@@ -568,8 +568,8 @@ public class Pipeline {
             // Track
             flowsInWindow.inc();
             return Direction.INGRESS.equals(flow.getDirection()) ?
-                   new Aggregate(bytes, 0, hostname, flow.getEcn().getValue()):
-                   new Aggregate(0, bytes, hostname, flow.getEcn().getValue());
+                   new Aggregate(bytes, 0, hostname, flow.hasEcn() ? flow.getEcn().getValue() : null):
+                   new Aggregate(0, bytes, hostname, flow.hasEcn() ? flow.getEcn().getValue() : null);
         }
 
         @ProcessElement
