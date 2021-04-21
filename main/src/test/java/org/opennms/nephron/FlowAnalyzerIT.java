@@ -223,7 +223,6 @@ public class FlowAnalyzerIT {
         // Basic sanity check on the flow summary
         FlowSummary firstFlowSummary = flowSummaries.get(0);
         assertThat(firstFlowSummary.getGroupedByKey(), notNullValue());
-        assertThat(firstFlowSummary.getId(), containsString(firstFlowSummary.getGroupedByKey()));
         assertThat(firstFlowSummary.getRangeEndMs(), greaterThanOrEqualTo(firstFlowSummary.getRangeStartMs()));
         assertThat(firstFlowSummary.getRanking(), greaterThanOrEqualTo(0));
 
