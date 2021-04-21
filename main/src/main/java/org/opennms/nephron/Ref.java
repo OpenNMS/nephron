@@ -42,6 +42,9 @@ import com.google.common.base.Strings;
  */
 abstract class Ref {
 
+    /**
+     * Returns a string representation of this key part.
+     */
     abstract String idAsString();
 
     public static class Node extends Ref {
