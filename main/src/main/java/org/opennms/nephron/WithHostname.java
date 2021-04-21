@@ -1,8 +1,8 @@
 /*******************************************************************************
  * This file is part of OpenNMS(R).
  *
- * Copyright (C) 2020 The OpenNMS Group, Inc.
- * OpenNMS(R) is Copyright (C) 1999-2020 The OpenNMS Group, Inc.
+ * Copyright (C) 2021 The OpenNMS Group, Inc.
+ * OpenNMS(R) is Copyright (C) 1999-2021 The OpenNMS Group, Inc.
  *
  * OpenNMS(R) is a registered trademark of The OpenNMS Group, Inc.
  *
@@ -26,31 +26,41 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.nephron.coders;
+package org.opennms.nephron;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-
-import org.apache.beam.sdk.coders.AtomicCoder;
-import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
-public class FlowDocumentProtobufCoder extends AtomicCoder<FlowDocument> {
-    private final ByteArrayCoder delegate = ByteArrayCoder.of();
+/**
+ * Pairs an arbitrary value with a host name.
+ *
+ * Used by {@link CompoundKeyType#create(FlowDocument)} to transport host names in a side channel.
+ */
+public class WithHostname<T> {
+    public final T value;
+    public final String hostname;
 
-    @Override
-    public void encode(FlowDocument value, OutputStream outStream) throws IOException {
-        delegate.encode(value.toByteArray(), outStream);
+    public WithHostname(final T value, final String hostname) {
+        this.value = value;
+        this.hostname = hostname;
     }
 
-    @Override
-    public FlowDocument decode(InputStream inStream) throws IOException {
-        return FlowDocument.parseFrom(delegate.decode(inStream));
+    public static class Builder<T> {
+        private final T value;
+
+        private Builder(final T value) {
+            this.value = value;
+        }
+
+        public WithHostname<T> withoutHostname() {
+            return new WithHostname<>(this.value, null);
+        }
+
+        public WithHostname<T> andHostname(final String hostname) {
+            return new WithHostname<>(this.value, hostname);
+        }
     }
 
-    @Override
-    public boolean consistentWithEquals() {
-        return true;
+    public static <T> Builder<T> having(final T value) {
+        return new Builder<>(value);
     }
 }

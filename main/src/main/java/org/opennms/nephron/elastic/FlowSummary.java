@@ -30,6 +30,8 @@ package org.opennms.nephron.elastic;
 
 import java.util.Objects;
 
+import org.opennms.nephron.CompoundKeyType;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -54,7 +56,7 @@ public class FlowSummary {
     private int ranking;
 
     @JsonProperty("grouped_by")
-    private GroupedBy groupedBy;
+    private CompoundKeyType groupedBy;
 
     @JsonProperty("grouped_by_key")
     private String groupedByKey;
@@ -70,6 +72,15 @@ public class FlowSummary {
 
     @JsonProperty("bytes_total")
     private Long bytesTotal;
+
+    @JsonProperty("dscp")
+    private Integer dscp;
+
+    @JsonProperty("congestion_encountered")
+    private Boolean congestionEncountered;
+
+    @JsonProperty("non_ect")
+    private Boolean nonEcnCapableTransport;
 
     @JsonProperty("exporter")
     private ExporterNode exporter;
@@ -137,11 +148,11 @@ public class FlowSummary {
         this.ranking = ranking;
     }
 
-    public GroupedBy getGroupedBy() {
+    public CompoundKeyType getGroupedBy() {
         return groupedBy;
     }
 
-    public void setGroupedBy(GroupedBy groupedBy) {
+    public void setGroupedBy(CompoundKeyType groupedBy) {
         this.groupedBy = groupedBy;
     }
 
@@ -225,6 +236,30 @@ public class FlowSummary {
         this.conversationKey = conversationKey;
     }
 
+    public Integer getDscp() {
+        return dscp;
+    }
+
+    public void setDscp(Integer dscp) {
+        this.dscp = dscp;
+    }
+
+    public Boolean getCongestionEncountered() {
+        return congestionEncountered;
+    }
+
+    public void setCongestionEncountered(Boolean congestionEncountered) {
+        this.congestionEncountered = congestionEncountered;
+    }
+
+    public Boolean getNonEcnCapableTransport() {
+        return nonEcnCapableTransport;
+    }
+
+    public void setNonEcnCapableTransport(Boolean nonEcnCapableTransport) {
+        this.nonEcnCapableTransport = nonEcnCapableTransport;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -241,6 +276,9 @@ public class FlowSummary {
                 Objects.equals(bytesIngress, that.bytesIngress) &&
                 Objects.equals(bytesEgress, that.bytesEgress) &&
                 Objects.equals(bytesTotal, that.bytesTotal) &&
+                Objects.equals(dscp, that.dscp) &&
+                Objects.equals(congestionEncountered, that.congestionEncountered) &&
+                Objects.equals(nonEcnCapableTransport, that.nonEcnCapableTransport) &&
                 Objects.equals(exporter, that.exporter) &&
                 Objects.equals(ifIndex, that.ifIndex) &&
                 Objects.equals(application, that.application) &&
@@ -251,7 +289,7 @@ public class FlowSummary {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, timestamp, groupedByKey, rangeStartMs, rangeEndMs, ranking, groupedBy, aggregationType, bytesIngress, bytesEgress, bytesTotal, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
+        return Objects.hash(id, timestamp, rangeStartMs, rangeEndMs, ranking, groupedBy, groupedByKey, aggregationType, bytesIngress, bytesEgress, bytesTotal, dscp, congestionEncountered, nonEcnCapableTransport, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
     }
 
     @Override
@@ -268,6 +306,9 @@ public class FlowSummary {
                 ", bytesIngress=" + bytesIngress +
                 ", bytesEgress=" + bytesEgress +
                 ", bytesTotal=" + bytesTotal +
+                ", dscp=" + dscp +
+                ", congestionEncountered=" + congestionEncountered +
+                ", nonEcnCapableTransport=" + nonEcnCapableTransport +
                 ", exporter=" + exporter +
                 ", ifIndex=" + ifIndex +
                 ", application='" + application + '\'' +

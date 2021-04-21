@@ -36,6 +36,7 @@ import java.io.OutputStream;
 import java.util.Objects;
 
 import org.apache.beam.sdk.coders.AtomicCoder;
+import org.apache.beam.sdk.coders.BooleanCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.DefaultCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
@@ -49,17 +50,36 @@ public class Aggregate {
     private long bytesOut;
 
     private String hostname;
+    private boolean congestionEncountered;
+    private boolean nonEcnCapableTransport;
 
-    public Aggregate(long bytesIn, long bytesOut,
-                     final String hostname) {
+    public Aggregate(long bytesIn, long bytesOut, String hostname, boolean ce, boolean nonEct) {
         this.bytesIn = bytesIn;
         this.bytesOut = bytesOut;
         this.hostname = hostname;
+        this.congestionEncountered = ce;
+        this.nonEcnCapableTransport = nonEct;
+    }
+
+    public Aggregate(long bytesIn, long bytesOut, String hostname, Integer ecn) {
+        this.bytesIn = bytesIn;
+        this.bytesOut = bytesOut;
+        this.hostname = hostname;
+        if (ecn != null) {
+            this.congestionEncountered = ecn == 3;
+            this.nonEcnCapableTransport = ecn == 0;
+        } else {
+            this.congestionEncountered = false;
+            this.nonEcnCapableTransport = true;
+        }
     }
 
     public static Aggregate merge(final Aggregate a, final Aggregate b) {
         return new Aggregate(a.bytesIn + b.bytesIn, a.bytesOut + b.bytesOut,
-                             a.hostname != null ? a.hostname : b.hostname);
+                a.hostname != null ? a.hostname : b.hostname,
+                a.congestionEncountered || b.congestionEncountered,
+                a.nonEcnCapableTransport || b.nonEcnCapableTransport
+        );
     }
 
     public long getBytesIn() {
@@ -78,19 +98,29 @@ public class Aggregate {
         return this.bytesIn + this.bytesOut;
     }
 
+    public boolean isCongestionEncountered() {
+        return congestionEncountered;
+    }
+
+    public boolean isNonEcnCapableTransport() {
+        return nonEcnCapableTransport;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof Aggregate)) return false;
         Aggregate flowBytes = (Aggregate) o;
         return bytesIn == flowBytes.bytesIn &&
-                bytesOut == flowBytes.bytesOut &&
-                Objects.equals(hostname, flowBytes.hostname);
+               bytesOut == flowBytes.bytesOut &&
+               congestionEncountered == flowBytes.congestionEncountered &&
+               nonEcnCapableTransport == flowBytes.nonEcnCapableTransport &&
+               Objects.equals(hostname, flowBytes.hostname);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(bytesIn, bytesOut);
+        return Objects.hash(bytesIn, bytesOut, hostname, congestionEncountered, nonEcnCapableTransport);
     }
 
     @Override
@@ -98,35 +128,24 @@ public class Aggregate {
         return "Aggregate{" +
                 "bytesIn=" + bytesIn +
                 ", bytesOut=" + bytesOut +
-                ", hostname=" + hostname +
+               ", hostname='" + hostname + '\'' +
+               ", congestionEncountered=" + congestionEncountered +
+               ", nonEcnCapableTransport=" + nonEcnCapableTransport +
                '}';
     }
 
     public static class AggregateCoder extends AtomicCoder<Aggregate> {
         private final Coder<Long> LONG_CODER = VarLongCoder.of();
         private final Coder<String> STRING_CODER = StringUtf8Coder.of();
+        private final Coder<Boolean> BOOLEAN_CODER = BooleanCoder.of();
 
         @Override
         public void encode(Aggregate value, OutputStream outStream) throws IOException {
-            // TODO: FIXME: Hack for NPEs
-            // Caused by: java.lang.NullPointerException
-            //	at org.opennms.nephron.FlowBytes$FlowBytesCoder.encode(FlowBytes.java:112)
-            //	at org.opennms.nephron.FlowBytes$FlowBytesCoder.encode(FlowBytes.java:107)
-            //	at org.apache.beam.sdk.coders.Coder.encode(Coder.java:136)
-            //	at org.apache.beam.sdk.coders.KvCoder.encode(KvCoder.java:71)
-            //	at org.apache.beam.sdk.coders.KvCoder.encode(KvCoder.java:36)
-            //	at org.apache.beam.sdk.util.WindowedValue$FullWindowedValueCoder.encode(WindowedValue.java:588)
-            //	at org.apache.beam.sdk.util.WindowedValue$FullWindowedValueCoder.encode(WindowedValue.java:539)
-            if (value == null) {
-                RATE_LIMITED_LOG.error("Got null FlowBytes value. Encoding as 0s.");
-                LONG_CODER.encode(0L, outStream);
-                LONG_CODER.encode(0L, outStream);
-                STRING_CODER.encode("", outStream);
-                return;
-            }
             LONG_CODER.encode(value.bytesIn, outStream);
             LONG_CODER.encode(value.bytesOut, outStream);
             STRING_CODER.encode(Strings.nullToEmpty(value.hostname), outStream);
+            BOOLEAN_CODER.encode(value.congestionEncountered, outStream);
+            BOOLEAN_CODER.encode(value.nonEcnCapableTransport, outStream);
         }
 
         @Override
@@ -134,7 +153,15 @@ public class Aggregate {
             final long bytesIn = LONG_CODER.decode(inStream);
             final long bytesOut = LONG_CODER.decode(inStream);
             final String hostname = STRING_CODER.decode(inStream);
-            return new Aggregate(bytesIn, bytesOut, Strings.emptyToNull(hostname));
+            final boolean congestionEncountered = BOOLEAN_CODER.decode(inStream);
+            final boolean nonEcnCapableTransport = BOOLEAN_CODER.decode(inStream);
+            return new Aggregate(bytesIn, bytesOut, Strings.emptyToNull(hostname),
+                    congestionEncountered, nonEcnCapableTransport);
+        }
+
+        @Override
+        public boolean consistentWithEquals() {
+            return true;
         }
     }
 }
