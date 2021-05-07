@@ -80,6 +80,7 @@ import org.elasticsearch.search.sort.SortOrder;
 import org.hamcrest.Matcher;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.catheter.Exporter;
@@ -98,6 +99,7 @@ import com.google.common.io.Resources;
 /**
  * Complete end-to-end test - reading & writing to/from Kafka
  */
+@Ignore("flaps in CircleCI, see NMS-13282")
 public class RandomFlowIT {
     private static final Logger LOG = LoggerFactory.getLogger(RandomFlowIT.class);
 
