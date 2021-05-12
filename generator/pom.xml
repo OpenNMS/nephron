@@ -60,7 +60,7 @@
         <dependency>
             <groupId>org.opennms.catheter</groupId>
             <artifactId>catheter</artifactId>
-            <version>1.0.1</version>
+            <version>1.0.2-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>org.apache.kafka</groupId>
