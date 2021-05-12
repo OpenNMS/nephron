@@ -8,6 +8,7 @@ jobs:
 
     environment:
       MAVEN_OPTS: -Xmx2048m
+      JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
 
     steps:
       # Disabled while submodules are used
@@ -69,8 +70,12 @@ jobs:
             - project
 
   deploy:
-    docker:
-      - image: maven:3-openjdk-11
+    machine:
+      image: ubuntu-2004:202010-01
+
+    environment:
+      MAVEN_OPTS: -Xmx2048m
+      JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
 
     steps:
       - attach_workspace:
