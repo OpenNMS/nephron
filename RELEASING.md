@@ -1,39 +1,55 @@
 # Releasing
 
-Update pom versions:
+## Update and Tag Catheter
+
+(note, you do not need to build/deploy, it will be done as part of the nephron build)
 ```
-mvn versions:set -DnewVersion=0.1.1
+cd catheter
+git checkout master
+git pull
+mvn versions:set -DnewVersion=1.0.2
+git commit -a -m 'release: Catheter v1.0.2'
+git tag -u opennms@opennms.org -s v1.0.2
+cd ..
 ```
 
-Commit pom update:
+## Update and Tag Nephron
+
 ```
-mvn commit
+mvn versions:set -DnewVersion=0.2.2
+git commit -a -m 'release: Nephron v0.2.2'
+git tag -u opennms@opennms.org -s v0.2.2
+git push origin v0.2.2
 ```
 
-Tag:
-```
-git tag -a v0.1.1
-```
+## Release Nephron
 
-Deploy:
 ```
+# the "release" profile turns on GPG signing
 mvn -Prelease clean deploy
 ```
 
-> The `release` profile enables GPG signing of the artifacts.
+Because of the way the submodules work, you will need to release Catheter to Maven Central manually.
 
-Update pom versions again:
-```
-mvn versions:set -DnewVersion=0.1.2-SNAPSHOT
-```
+1. go to [the sonatype repo interface](https://oss.sonatype.org/#stagingRepositories)
+2. select the staging repository that contains catheter
+3. "close" it
+4. "release" it
 
-Commit pom update:
-```
-mvn commit
-```
+## Update Nephron and Catheter versions
 
-Push commits and tags:
 ```
+cd catheter
+mvn versions:set -DnewVersion=1.0.3-SNAPSHOT
+git commit -a -m '1.0.2 -> 1.0.3-SNAPSHOT'
+# catheter submodule is checked out as read-only by default, set the repo explicitly when pushing
+git push git@github.com:opennms-forge/catheter.git
+git push --tags git@github.com:opennms-forge/catheter.git
+cd ..
+
+mvn versions:set -DnewVersion=0.2.3-SNAPSHOT
+git commit -a -m '0.2.2 -> 0.2.3-SNAPSHOT'
 git push
 git push --tags
 ```
+
