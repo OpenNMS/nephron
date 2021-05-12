@@ -1,3 +1,8 @@
+0.2.1
+=====
+
+This was a re-release of 0.2.0 to fix some issues with deploying to Maven Central.
+
 0.2.0
 =====
 
