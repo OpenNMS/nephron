@@ -17,6 +17,8 @@ cd ..
 
 ```
 mvn versions:set -DnewVersion=0.2.2
+# edit pom to use released Catheter version
+vim generator/pom.xml main/pom.xml
 git commit -a -m 'release: Nephron v0.2.2'
 git tag -u opennms@opennms.org -s v0.2.2
 git push origin v0.2.2
@@ -48,6 +50,8 @@ git push --tags git@github.com:opennms-forge/catheter.git
 cd ..
 
 mvn versions:set -DnewVersion=0.2.3-SNAPSHOT
+# edit pom to use snapshot Catheter version
+vim generator/pom.xml main/pom.xml
 git commit -a -m '0.2.2 -> 0.2.3-SNAPSHOT'
 git push
 git push --tags
