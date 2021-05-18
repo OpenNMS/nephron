@@ -62,10 +62,6 @@ public class UnalignedFixedWindows extends NonMergingWindowFn<FlowDocument, Inte
             long windowSize,
             long timestamp) {
         long shift = perNodeShift(nodeId, windowSize);
-        if (timestamp < shift) {
-            throw new RuntimeException("timestamp too small; it lies before the first window - timestamp: " +
-                                       timestamp + "; windowShift: " + shift);
-        }
         return timestamp - (timestamp - shift) % windowSize;
     }
 
