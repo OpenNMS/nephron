@@ -8,7 +8,7 @@ jobs:
 
     environment:
       MAVEN_OPTS: -Xmx2048m
-      JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
+      JAVA_HOME: /usr/lib/jvm/java-11-openjdk-amd64
 
     steps:
       # Disabled while submodules are used
@@ -75,7 +75,7 @@ jobs:
 
     environment:
       MAVEN_OPTS: -Xmx2048m
-      JAVA_HOME: /usr/lib/jvm/java-8-openjdk-amd64
+      JAVA_HOME: /usr/lib/jvm/java-11-openjdk-amd64
 
     steps:
       - attach_workspace:
