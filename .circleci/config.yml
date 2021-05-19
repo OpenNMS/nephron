@@ -22,10 +22,6 @@ jobs:
       - checkout
 
       - run: |
-           echo "JAVA_HOME: $JAVA_HOME"
-           java -version
-
-      - run: |
            git submodule sync --recursive
            git submodule update --init --recursive
 
