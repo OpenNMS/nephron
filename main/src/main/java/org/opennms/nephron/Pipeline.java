@@ -41,7 +41,9 @@ import java.util.Properties;
 
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
+import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
+import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Distribution;
@@ -307,7 +309,8 @@ public class Pipeline {
     }
 
     public static TimestampPolicyFactory<String, FlowDocument> getKafkaInputTimestampPolicyFactory(Duration maxDelay) {
-        return (tp, previousWatermark) -> new FlowTimestampPolicy(maxDelay, previousWatermark);
+        return (tp, previousWatermark) ->
+                new CustomTimestampPolicyWithLimitedDelay<>(ReadFromKafka::getTimestamp, maxDelay, previousWatermark);
     }
 
     public static class ReadFromKafka extends PTransform<PBegin, PCollection<FlowDocument>> {
@@ -357,6 +360,10 @@ public class Pipeline {
 
         public static long getTimestampMs(FlowDocument doc) {
             return doc.getLastSwitched().getValue();
+        }
+
+        private static Instant getTimestamp(KafkaRecord<String, FlowDocument> record) {
+            return getTimestamp(record.getKV().getValue());
         }
 
         public static Instant getTimestamp(FlowDocument doc) {
