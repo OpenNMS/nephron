@@ -441,6 +441,14 @@ public class Pipeline {
                 long lastSwitched = flow.getLastSwitched().getValue();
                 int nodeId = flow.getExporterNode().getNodeId();
 
+                long shift = UnalignedFixedWindows.perNodeShift(nodeId, windowSizeMs);
+                if (deltaSwitched < shift) {
+                    RATE_LIMITED_LOG.warn("Skipping output for flow whose start is too small w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
+                            Instant.ofEpochMilli(deltaSwitched), Instant.ofEpochMilli(lastSwitched), Instant.ofEpochMilli(deltaSwitched), c.timestamp(),
+                            flow);
+                    return;
+                }
+
                 long firstWindow = UnalignedFixedWindows.windowNumber(nodeId, windowSizeMs, deltaSwitched); // the first window the flow falls into
                 long lastWindow = UnalignedFixedWindows.windowNumber(nodeId, windowSizeMs, lastSwitched); // the last window the flow falls into (assuming lastSwitched is inclusive)
                 long nbWindows = lastWindow - firstWindow + 1;
@@ -453,7 +461,7 @@ public class Pipeline {
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.checkTimestamp(SimpleDoFnRunner.java:607)
                         //                    at org.apache.beam.runners.core.SimpleDoFnRunner$DoFnProcessContext.outputWithTimestamp(SimpleDoFnRunner.java:573)
                         //                    at org.opennms.nephron.FlowAnalyzer$1.processElement(FlowAnalyzer.java:96)
-                        RATE_LIMITED_LOG.warn("Skipping output for flow w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
+                        RATE_LIMITED_LOG.warn("Skipping output for flow that reaches back too far w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
                                 Instant.ofEpochMilli(deltaSwitched), Instant.ofEpochMilli(lastSwitched), Instant.ofEpochMilli(timestamp), c.timestamp(),
                                 flow);
                     } else {
