@@ -99,7 +99,11 @@ public enum CompoundKeyType {
         }
     }
 
-    CompoundKey create(FlowDocument flow) {
-        return new CompoundKey(this, Arrays.stream(parts).map(p -> p.create(flow)).collect(Collectors.toList()));
+    CompoundKey create(FlowDocument flow) throws MissingFieldsException {
+        List<Ref> refs = new ArrayList<>(parts.length);
+        for (RefType refType: parts) {
+            refs.add(refType.create(flow));
+        }
+        return new CompoundKey(this, refs);
     }
 }
