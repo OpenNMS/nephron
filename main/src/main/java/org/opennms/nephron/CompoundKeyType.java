@@ -39,7 +39,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -99,54 +99,11 @@ public enum CompoundKeyType {
         }
     }
 
-    /**
-     * Creates a compound key that may be accompanied by a host name from a flow document.
-     * <p>
-     * The key parts of the created key are created by delegating to the {@link RefType}s of this compound key type.
-     */
-    List<WithHostname<CompoundKey>> create(FlowDocument flow) throws MissingFieldsException {
-        // the method returns a list of compound keys
-        // -> a list of lists of the corresponding key parts must be determined
-        // -> each key part type contributes a list of choices for that key part
-        // -> the lists of choices is "exploded" into list of lists of key parts
-        List<List<WithHostname<Ref>>> refss = null;
-        for (RefType part : parts) {
-            // each key part type yields a list of choices (refs)
-            // -> all current lists in refss have to be extended by all choices
-            List<WithHostname<Ref>> refs = part.create(flow);
-            if (refss == null) {
-                // first part
-                // -> each choice yields a singleton list of key parts
-                refss = refs.stream().map(whn -> Collections.singletonList(whn)).collect(Collectors.toList());
-            } else {
-                // append choices to current lists
-                // -> determine the next refss list
-                List<List<WithHostname<Ref>>> next = new ArrayList<>();
-                // for each current list and each choice:
-                // -> copy the current list, extends it by the choice and add it to the next refss
-                for (List<WithHostname<Ref>> prefix : refss) {
-                    for (WithHostname<Ref> suffix : refs) {
-                        List<WithHostname<Ref>> l = new ArrayList<>();
-                        l.addAll(prefix);
-                        l.add(suffix);
-                        next.add(l);
-                    }
-                }
-                refss = next;
-            }
+    CompoundKey create(FlowDocument flow) throws MissingFieldsException {
+        List<Ref> refs = new ArrayList<>(parts.length);
+        for (RefType refType: parts) {
+            refs.add(refType.create(flow));
         }
-        // convert the list of part lists into a list of compound keys that may be accompanied by a host name
-        return refss
-                .stream()
-                .map(refs -> {
-                    // get the host name if it is available on the last part
-                    // -> considering the host name on the last part only avoids duplicated storage of the
-                    //    IP <-> hostname relation; (that relation is used in hostname resolution)
-                    String hostname = refs.get(refs.size() - 1).hostname;
-                    CompoundKey key = new CompoundKey(this, refs.stream().map(whn -> whn.value).collect(Collectors.toList()));
-                    return WithHostname.having(key).andHostname(hostname);
-                })
-                .collect(Collectors.toList());
+        return new CompoundKey(this, refs);
     }
-
 }

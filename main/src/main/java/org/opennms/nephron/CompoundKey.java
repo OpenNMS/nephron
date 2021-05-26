@@ -77,6 +77,10 @@ public class CompoundKey {
         return refs;
     }
 
+    public Ref lastRef() {
+        return refs.get(refs.size() - 1);
+    }
+
     /**
      * Build the parent, or "outer" key for the current key.
      *
@@ -107,6 +111,13 @@ public class CompoundKey {
             throw new RuntimeException("key of type " + type + " can not be project into key of type " + projectedType);
         }
         return new CompoundKey(projectedType, l);
+    }
+
+    public CompoundKey changeLastRef(CompoundKeyType newType, Ref lastRef) {
+        List newRefs = new ArrayList(refs.size());
+        newRefs.addAll(refs);
+        newRefs.set(refs.size() - 1, lastRef);
+        return new CompoundKey(newType, newRefs);
     }
 
     public String groupedByKey() {

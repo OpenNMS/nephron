@@ -36,6 +36,7 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.opennms.netmgt.flows.persistence.model.NodeInfo;
 
 import com.google.common.base.Strings;
+import com.google.gson.Gson;
 
 /**
  * Represents the value a compound key has for a dimension.
@@ -244,13 +245,12 @@ abstract class Ref {
 
         public static Application of(String application) {
             Application applicationRef = new Application();
-            applicationRef.setApplication(application);
+            applicationRef.setApplication(Strings.isNullOrEmpty(application) ? FlowSummary.UNKNOWN_APPLICATION_NAME_KEY : application);
             return applicationRef;
         }
 
         public static Application of(FlowDocument flow) {
-            String application = flow.getApplication();
-            return Strings.isNullOrEmpty(application) ? of(FlowSummary.UNKNOWN_APPLICATION_NAME_KEY) : of(application);
+            return of(flow.getApplication());
         }
 
         public String getApplication() {
@@ -331,49 +331,98 @@ abstract class Ref {
     }
 
     public static class Conversation extends Ref {
-        private String conversationKey;
 
-        public static Conversation of(String conversationKey) {
-            Conversation conversationRef = new Conversation();
-            conversationRef.setConversationKey(conversationKey);
-            return conversationRef;
+        public final String location;
+        public final Integer protocol;
+        public final String smallerAddress;
+        public final String largerAddress;
+        public final String application;
+
+        public Conversation(String location, Integer protocol, String smallerAddress, String largerAddress, String application) {
+            this.location = location;
+            this.protocol = protocol;
+            this.smallerAddress = smallerAddress;
+            this.largerAddress = largerAddress;
+            this.application = application;
         }
 
         public static Conversation of(FlowDocument flow) {
-            return of(flow.getConvoKey());
-        }
-
-        public String getConversationKey() {
-            return conversationKey;
-        }
-
-        public void setConversationKey(String conversationKey) {
-            this.conversationKey = conversationKey;
+            String src = Strings.nullToEmpty(flow.getSrcAddress());
+            String dst = Strings.nullToEmpty(flow.getDstAddress());
+            String smaller, larger;
+            if (src.compareTo(dst) < 0) {
+                smaller = src;
+                larger = dst;
+            } else {
+                smaller = dst;
+                larger = src;
+            }
+            return new Conversation(
+                    flow.getLocation(),
+                    flow.hasProtocol() ? flow.getProtocol().getValue() : null,
+                    smaller,
+                    larger,
+                    flow.getApplication()
+            );
         }
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
             Conversation that = (Conversation) o;
-            return Objects.equals(conversationKey, that.conversationKey);
+            return Objects.equals(location, that.location) &&
+                   Objects.equals(protocol, that.protocol) &&
+                   Objects.equals(smallerAddress, that.smallerAddress) &&
+                   Objects.equals(largerAddress, that.largerAddress) &&
+                   Objects.equals(application, that.application);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(conversationKey);
+            return Objects.hash(location, protocol, smallerAddress, largerAddress, application);
         }
 
         @Override
         public String toString() {
-            return "ConversationRef{" +
-                    "conversationKey='" + conversationKey + '\'' +
-                    '}';
+            return "Conversation{" +
+                   "location='" + location + '\'' +
+                   ", protocol=" + protocol +
+                   ", smallerAddress='" + smallerAddress + '\'' +
+                   ", largerAddress='" + largerAddress + '\'' +
+                   ", application='" + application + '\'' +
+                   '}';
+        }
+
+        public boolean hasCompleteConversationKey() {
+            return location != null && protocol != null && !Strings.isNullOrEmpty(smallerAddress) && !Strings.isNullOrEmpty(largerAddress);
+        }
+
+        public String asConversationKey() {
+            StringBuilder sb = new StringBuilder();
+            sb.append('[')
+                    .append(GSON.toJson(location))
+                    .append(',')
+                    .append(protocol)
+                    .append(',')
+                    .append(GSON.toJson(smallerAddress))
+                    .append(',')
+                    .append(GSON.toJson(largerAddress))
+                    .append(',')
+                    .append(GSON.toJson(application))
+                    .append(']');
+            return sb.toString();
         }
 
         @Override
         public String idAsString() {
-            return conversationKey;
+            return asConversationKey();
         }
     }
+
+    private static Gson GSON = new Gson();
 }

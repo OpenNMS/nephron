@@ -31,7 +31,6 @@ package org.opennms.nephron;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -51,6 +50,7 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
@@ -62,7 +62,10 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
+import org.apache.beam.sdk.values.PCollectionTuple;
 import org.apache.beam.sdk.values.PDone;
+import org.apache.beam.sdk.values.TupleTag;
+import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -183,20 +186,31 @@ public class Pipeline {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
                     new WindowedFlows(fixedWindowSize, maxFlowDuration, earlyProcessingDelay, lateProcessingDelay, allowedLateness));
 
-            SumsAndTopKs app = aggregateSumsAndTopKs("app_", windowedStreamOfFlows,
-                    CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION,
-                    CompoundKeyType.EXPORTER_INTERFACE_APPLICATION,
-                    topK
-            );
-            SumsAndTopKs host = aggregateSumsAndTopKs("host_", windowedStreamOfFlows,
-                    CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST,
-                    CompoundKeyType.EXPORTER_INTERFACE_HOST,
-                    topK
-            );
-            SumsAndTopKs conv = aggregateSumsAndTopKs("conv_", windowedStreamOfFlows,
-                    CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERSATION,
+            PCollection<KV<CompoundKey, Aggregate>> keyedByConvWithTos =
+                    windowedStreamOfFlows.apply("key_by_conv", ParDo.of(new KeyByConvWithTos()));
+
+            SumsAndTopKs conv = aggregateSumsAndTopKs("conv_", keyedByConvWithTos,
                     CompoundKeyType.EXPORTER_INTERFACE_CONVERSATION,
-                    topK
+                    topK,
+                    k -> ((Ref.Conversation)k.lastRef()).hasCompleteConversationKey()
+            );
+
+            PCollectionTuple projected =
+                    conv.withTos.sum.apply("proj_conv", ParDo.of(new ProjConvWithTos()).withOutputTags(BY_APP, TupleTagList.of(BY_HOST)));
+
+            PCollection<KV<CompoundKey, Aggregate>> keyedByAppWithTos = projected.get(BY_APP);
+            PCollection<KV<CompoundKey, Aggregate>> keyedByHostWithTos = projected.get(BY_HOST);
+
+            SumsAndTopKs app = aggregateSumsAndTopKs("app_", keyedByAppWithTos,
+                    CompoundKeyType.EXPORTER_INTERFACE_APPLICATION,
+                    topK,
+                    k -> true
+            );
+
+            SumsAndTopKs host = aggregateSumsAndTopKs("host_", keyedByHostWithTos,
+                    CompoundKeyType.EXPORTER_INTERFACE_HOST,
+                    topK,
+                    k -> true
             );
 
             // exporter/interface and exporter/interface/tos aggregations are used as "parents" when the
@@ -218,6 +232,9 @@ public class Pipeline {
             return flowSummaries.apply(Flatten.pCollections());
         }
     }
+
+    private static TupleTag<KV<CompoundKey, Aggregate>> BY_HOST = new TupleTag<KV<CompoundKey, Aggregate>>(){};
+    private static TupleTag<KV<CompoundKey, Aggregate>> BY_APP = new TupleTag<KV<CompoundKey, Aggregate>>(){};
 
     public static class WindowedFlows extends PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> {
         private final Duration fixedWindowSize;
@@ -504,7 +521,9 @@ public class Pipeline {
         flowSummary.setCongestionEncountered(fsd.aggregate.isCongestionEncountered());
         flowSummary.setNonEcnCapableTransport(fsd.aggregate.isNonEcnCapableTransport());
 
-        flowSummary.setHostName(fsd.aggregate.getHostname());
+        if (fsd.key.getType() == CompoundKeyType.EXPORTER_INTERFACE_HOST || fsd.key.getType() == CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST) {
+            flowSummary.setHostName(Strings.emptyToNull(fsd.aggregate.getHostname()));
+        }
         flowSummary.setRanking(fsd.ranking);
 
         return flowSummary;
@@ -539,18 +558,11 @@ public class Pipeline {
     }
 
     /**
-     * Maps flow documents into pairs of compound keys and aggregates.
-     *
-     * The {@link CompoundKey} is determined by the {@link CompoundKeyType} given in the constructor. {@link Aggregate}
-     * values are determined for window based on the intersection of flows with their windows.
+     * Maps flow documents into pairs of compound keys (of type EXPORTER_INTERFACE_TOS_CONVERSATION) and aggregates.
+     * <p>
+     * {@link Aggregate} values are determined for window based on the intersection of flows with their windows.
      */
-    public static class KeyFlowBy extends DoFn<FlowDocument, KV<CompoundKey, Aggregate>> {
-
-        private final CompoundKeyType type;
-
-        public KeyFlowBy(CompoundKeyType type) {
-            this.type = type;
-        }
+    public static class KeyByConvWithTos extends DoFn<FlowDocument, KV<CompoundKey, Aggregate>> {
 
         private final Counter flowsWithMissingFields = Metrics.counter(Pipeline.class, "flowsWithMissingFields");
         private final Counter flowsInWindow = Metrics.counter("flows", "in_window");
@@ -579,7 +591,7 @@ public class Pipeline {
             return bytesAtEnd - bytesAtPreviousEnd;
         }
 
-        private Aggregate aggregatize(final IntervalWindow window, final FlowDocument flow, final String hostname) {
+        private Aggregate aggregatize(final IntervalWindow window, final FlowDocument flow, final String hostname, String hostname2) {
             double multiplier = 1;
             if (flow.hasSamplingInterval()) {
                 double samplingInterval = flow.getSamplingInterval().getValue();
@@ -597,27 +609,50 @@ public class Pipeline {
             // Track
             flowsInWindow.inc();
             return Direction.INGRESS.equals(flow.getDirection()) ?
-                   new Aggregate(bytes, 0, hostname, flow.hasEcn() ? flow.getEcn().getValue() : null):
-                   new Aggregate(0, bytes, hostname, flow.hasEcn() ? flow.getEcn().getValue() : null);
+                   new Aggregate(bytes, 0, hostname, hostname2, flow.hasEcn() ? flow.getEcn().getValue() : null) :
+                   new Aggregate(0, bytes, hostname, hostname2, flow.hasEcn() ? flow.getEcn().getValue() : null);
         }
 
         @ProcessElement
         public void processElement(ProcessContext c, IntervalWindow window) {
             final FlowDocument flow = c.element();
             try {
-                for (final WithHostname<? extends CompoundKey> key: key(flow)) {
-                    Aggregate aggregate = aggregatize(window, flow, key.hostname);
-                    c.output(KV.of(key.value, aggregate));
+                CompoundKey key = CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERSATION.create(flow);
+                String src = Strings.nullToEmpty(flow.getSrcAddress());
+                String dst = Strings.nullToEmpty(flow.getDstAddress());
+                String hostname, hostname2;
+                if (src.compareTo(dst) < 0) {
+                    hostname = flow.getSrcHostname();
+                    hostname2 = flow.getDstHostname();
+                } else {
+                    hostname2 = flow.getSrcHostname();
+                    hostname = flow.getDstHostname();
                 }
+                Aggregate aggregate = aggregatize(window, flow, hostname, hostname2);
+                c.output(KV.of(key, aggregate));
             } catch (MissingFieldsException mfe) {
                 flowsWithMissingFields.inc();
             }
         }
 
-        public Collection<WithHostname<CompoundKey>> key(FlowDocument flow) throws MissingFieldsException {
-            return type.create(flow);
-        }
     }
+
+    public static class ProjConvWithTos extends DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, Aggregate>> {
+
+        @ProcessElement
+        public void processElement(@Element KV<CompoundKey, Aggregate> kv, MultiOutputReceiver out) {
+            Ref.Conversation rc = (Ref.Conversation)kv.getKey().lastRef();
+            Aggregate a = kv.getValue();
+            CompoundKey appKey = kv.getKey().changeLastRef(CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION, Ref.Application.of(rc.application));
+            out.get(BY_APP).output(KV.of(appKey, a.withHostname(null)));
+            CompoundKey hostKey1 = kv.getKey().changeLastRef(CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST, Ref.Host.of(rc.smallerAddress));
+            out.get(BY_HOST).output(KV.of(hostKey1, a.withHostname(a.getHostname())));
+            CompoundKey hostKey2 = kv.getKey().changeLastRef(CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST, Ref.Host.of(rc.largerAddress));
+            out.get(BY_HOST).output(KV.of(hostKey2, a.withHostname(a.getHostname2())));
+        }
+
+    }
+
     public static TotalAndSummary aggregateParentTotal(
             String transformPrefix,
             PCollection<KV<CompoundKey, Aggregate>> child
@@ -643,14 +678,12 @@ public class Pipeline {
 
     public static SumsAndTopKs aggregateSumsAndTopKs(
             String transformPrefix,
-            PCollection<FlowDocument> input,
-            CompoundKeyType typeWithTos,
+            PCollection<KV<CompoundKey, Aggregate>> groupedByKeyWithTos,
             CompoundKeyType typeWithoutTos,
-            int k
+            int k,
+            SerializableFunction<CompoundKey, Boolean> includeKeyInTopK
     ) {
-        PCollection<KV<CompoundKey, Aggregate>> groupedByKeyWithTos =
-                input.apply(transformPrefix + "group_with_tos", ParDo.of(new KeyFlowBy(typeWithTos)));
-        SumAndTopK withTos = aggregateSumAndTopK(transformPrefix + "with_tos_", groupedByKeyWithTos, k);
+        SumAndTopK withTos = aggregateSumAndTopK(transformPrefix + "with_tos_", groupedByKeyWithTos, k, includeKeyInTopK);
 
         PCollection<KV<CompoundKey, Aggregate>> groupedByKeyWithoutTos =
                 withTos.sum.apply(
@@ -662,7 +695,7 @@ public class Pipeline {
                                 c.output(KV.of(el.getKey().project(typeWithoutTos), el.getValue()));
                             }
                         }));
-        SumAndTopK withoutTos = aggregateSumAndTopK(transformPrefix + "without_tos_", groupedByKeyWithoutTos, k);
+        SumAndTopK withoutTos = aggregateSumAndTopK(transformPrefix + "without_tos_", groupedByKeyWithoutTos, k, includeKeyInTopK);
 
         return new SumsAndTopKs(withTos, withoutTos);
     }
@@ -670,17 +703,21 @@ public class Pipeline {
     public static SumAndTopK aggregateSumAndTopK(
             String transformPrefix,
             PCollection<KV<CompoundKey, Aggregate>> groupedByKey,
-            int k
+            int k,
+            SerializableFunction<CompoundKey, Boolean> includeKeyInTopK
     ) {
         PCollection<KV<CompoundKey, Aggregate>> sum =
                 groupedByKey.apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()));
+
         PCollection<FlowSummaryData> topK = sum
                 .apply(transformPrefix + "group_by_outer_key",
                         ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, KV<CompoundKey, Aggregate>>>() {
                             @ProcessElement
                             public void processElement(ProcessContext c) {
                                 KV<CompoundKey, Aggregate> el = c.element();
-                                c.output(KV.of(el.getKey().getOuterKey(), el));
+                                if (includeKeyInTopK.apply(el.getKey())) {
+                                    c.output(KV.of(el.getKey().getOuterKey(), el));
+                                }
                             }
                         }))
                 .apply(transformPrefix + "top_k_per_key", Top.perKey(k, new FlowBytesValueComparator()))

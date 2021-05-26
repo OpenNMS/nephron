@@ -36,7 +36,7 @@ import net.jqwik.api.ForAll;
 import net.jqwik.api.Property;
 import net.jqwik.api.Provide;
 
-public class KeyFlowByTest {
+public class KeyConvWithTosTest {
 
     @Property
     public boolean test(
@@ -50,7 +50,7 @@ public class KeyFlowByTest {
         long sampled = LongStream
                 .range(fd.deltaSwitched / windowSize, fd.lastSwitched / windowSize + 1)
                 .map(i ->
-                        Pipeline.KeyFlowBy.bytesInWindow(
+                        Pipeline.KeyByConvWithTos.bytesInWindow(
                                 fd.deltaSwitched,
                                 fd.lastSwitched,
                                 fd.bytes * multiplier,

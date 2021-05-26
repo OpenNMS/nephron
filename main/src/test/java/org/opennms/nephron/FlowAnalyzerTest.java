@@ -617,13 +617,13 @@ public class FlowAnalyzerTest {
         };
 
         PAssert.that(output)
-               .containsInAnyOrder(summaries);
+                .containsInAnyOrder(summaries);
 
         p.run();
     }
 
-    private CompoundKey exporterInterfaceKey(FlowDocument flow) throws Exception {
-        return CompoundKeyType.EXPORTER_INTERFACE.create(flow).get(0).value;
+    private CompoundKey exporterInterfaceTosConvKey(FlowDocument flow) throws Exception {
+        return EXPORTER_INTERFACE_TOS_CONVERSATION.create(flow);
     }
 
     @Test
@@ -652,7 +652,7 @@ public class FlowAnalyzerTest {
                         (32 - 17) * 100)
                 .build()
                 .get(0);
-        final CompoundKey key1 = exporterInterfaceKey(flow1);
+        final CompoundKey key1 = exporterInterfaceTosConvKey(flow1);
 
         // Start aligns with window
         final FlowDocument flow2 = new SyntheticFlowBuilder()
@@ -666,7 +666,7 @@ public class FlowAnalyzerTest {
                         (32 - 10) * 200)
                 .build()
                 .get(0);
-        final CompoundKey key2 = exporterInterfaceKey(flow2);
+        final CompoundKey key2 = exporterInterfaceTosConvKey(flow2);
 
         // Start and end aligns with window
         // -> lastSwitched is considered inclusive
@@ -682,7 +682,7 @@ public class FlowAnalyzerTest {
                         (40 - 10) * 300)
                 .build()
                 .get(0);
-        final CompoundKey key3 = exporterInterfaceKey(flow3);
+        final CompoundKey key3 = exporterInterfaceTosConvKey(flow3);
 
         // Does not align with window but spans one more bucket with wrong alignment
         final FlowDocument flow4 = new SyntheticFlowBuilder()
@@ -696,7 +696,7 @@ public class FlowAnalyzerTest {
                         (37 - 12) * 400)
                 .build()
                 .get(0);
-        final CompoundKey key4 = exporterInterfaceKey(flow4);
+        final CompoundKey key4 = exporterInterfaceTosConvKey(flow4);
 
         final FlowDocument flow5 = new SyntheticFlowBuilder()
                 .withExporter("TestFlows", "Flow5", NODE_ID)
@@ -709,7 +709,7 @@ public class FlowAnalyzerTest {
                         (27 - 23) * 500)
                 .build()
                 .get(0);
-        final CompoundKey key5 = exporterInterfaceKey(flow5);
+        final CompoundKey key5 = exporterInterfaceTosConvKey(flow5);
 
         final TestStream<FlowDocument> flows = TestStream.create(new FlowDocumentProtobufCoder())
                 .addElements(
@@ -730,28 +730,32 @@ public class FlowAnalyzerTest {
         PAssert.that("Bucket 3", output).inWindow(window.apply(3)).containsInAnyOrder(flow1, flow2, flow3, flow4);
         PAssert.that("Bucket 4", output).inWindow(window.apply(4)).containsInAnyOrder();
 
-        final PCollection<KV<CompoundKey, Aggregate>> aggregates = output.apply(ParDo.of(new Pipeline.KeyFlowBy(CompoundKeyType.EXPORTER_INTERFACE)));
+        final PCollection<KV<CompoundKey, Aggregate>> aggregates = output.apply(ParDo.of(new Pipeline.KeyByConvWithTos()));
 
         PAssert.that("Bytes 0", aggregates).inWindow(window.apply(0)).containsInAnyOrder();
         PAssert.that("Bytes 1", aggregates).inWindow(window.apply(1)).containsInAnyOrder(
-                KV.of(key1, new Aggregate(300, 0, null, 0)), // 100/s * 3s
-                KV.of(key2, new Aggregate(2000, 0, null, 0)), // 200/s * 10s
-                KV.of(key3, new Aggregate(3000, 0, null, 0)), // 300/s * 10s
-                KV.of(key4, new Aggregate(3200, 0, null, 0))); // 400/s * 8s
+                KV.of(key1, aggregate(300)), // 100/s * 3s
+                KV.of(key2, aggregate(2000)), // 200/s * 10s
+                KV.of(key3, aggregate(3000)), // 300/s * 10s
+                KV.of(key4, aggregate(3200))); // 400/s * 8s
         PAssert.that("Bytes 2", aggregates).inWindow(window.apply(2)).containsInAnyOrder(
-                KV.of(key1, new Aggregate(1000, 0, null, 0)), // 100/s * 10s
-                KV.of(key2, new Aggregate(2000, 0, null, 0)), // 200/s * 10s
-                KV.of(key3, new Aggregate(3000, 0, null, 0)), // 300/s * 10s
-                KV.of(key4, new Aggregate(4000, 0, null, 0)), // 400/s * 10s
-                KV.of(key5, new Aggregate(2000, 0, null, 0))); // 500/s * 4s
+                KV.of(key1, aggregate(1000)), // 100/s * 10s
+                KV.of(key2, aggregate(2000)), // 200/s * 10s
+                KV.of(key3, aggregate(3000)), // 300/s * 10s
+                KV.of(key4, aggregate(4000)), // 400/s * 10s
+                KV.of(key5, aggregate(2000))); // 500/s * 4s
         PAssert.that("Bytes 3", aggregates).inWindow(window.apply(3)).containsInAnyOrder(
-                KV.of(key1, new Aggregate(200, 0, null, 0)), // 100/s * 2s
-                KV.of(key2, new Aggregate(400, 0, null, 0)), // 200/s * 2s
-                KV.of(key3, new Aggregate(3000, 0, null, 0)), // 300/s * 10s
-                KV.of(key4, new Aggregate(2800, 0, null, 0))); // 400/s * 7s
+                KV.of(key1, aggregate(200)), // 100/s * 2s
+                KV.of(key2, aggregate(400)), // 200/s * 2s
+                KV.of(key3, aggregate(3000)), // 300/s * 10s
+                KV.of(key4, aggregate(2800))); // 400/s * 7s
         PAssert.that("Bytes 4", aggregates).inWindow(window.apply(4)).containsInAnyOrder();
 
         p.run();
+    }
+
+    private static Aggregate aggregate(long bytes) {
+        return new Aggregate(bytes, 0, "first.src.example.com", "second.dst.example.com", 0);
     }
 
     private static TestStream<FlowDocument> testStream(int tos1, int tos2) {
