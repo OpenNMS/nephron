@@ -69,7 +69,7 @@ import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
@@ -330,7 +330,7 @@ public class Pipeline {
         }
     }
 
-    public static TimestampPolicyFactory<String, FlowDocument> getKafkaInputTimestampPolicyFactory(Duration maxDelay) {
+    public static TimestampPolicyFactory<byte[], FlowDocument> getKafkaInputTimestampPolicyFactory(Duration maxDelay) {
         return (tp, previousWatermark) ->
                 new CustomTimestampPolicyWithLimitedDelay<>(ReadFromKafka::getTimestamp, maxDelay, previousWatermark);
     }
@@ -363,22 +363,22 @@ public class Pipeline {
 
         @Override
         public PCollection<FlowDocument> expand(PBegin input) {
-            return input.apply(KafkaIO.<String, FlowDocument>read()
+            return input.apply(KafkaIO.<byte[], FlowDocument>read()
                     .withTopic(topic)
-                    .withKeyDeserializer(StringDeserializer.class)
+                    .withKeyDeserializer(ByteArrayDeserializer.class)
                     .withValueDeserializer(KafkaInputFlowDeserializer.class)
                     .withConsumerConfigUpdates(kafkaConsumerConfig)
                     .withBootstrapServers(bootstrapServers) // Order matters: bootstrap server overwrite consumer properties
                     .withTimestampPolicyFactory(timestampPolicyFactory)
                     .withoutMetadata()
-            ).apply(Values.create())
-                    .apply("init", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
+            )
+                    .apply("init", ParDo.of(new DoFn<KV<byte[], FlowDocument>, FlowDocument>() {
                         @ProcessElement
                         public void processElement(ProcessContext c) {
                             // Add deltaSwitched if missing, was observed a few times
-                            FlowDocument flow = c.element();
+                            FlowDocument flow = c.element().getValue();
                             if (!flow.hasDeltaSwitched()) {
-                                flow = FlowDocument.newBuilder(c.element())
+                                flow = FlowDocument.newBuilder(flow)
                                         .setDeltaSwitched(flow.getFirstSwitched())
                                         .build();
                             }
@@ -395,7 +395,7 @@ public class Pipeline {
             return doc.getLastSwitched().getValue();
         }
 
-        public static Instant getTimestamp(KafkaRecord<String, FlowDocument> record) {
+        public static Instant getTimestamp(KafkaRecord<byte[], FlowDocument> record) {
             return getTimestamp(record.getKV().getValue());
         }
 
