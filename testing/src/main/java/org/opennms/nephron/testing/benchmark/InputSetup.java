@@ -82,13 +82,13 @@ public abstract class InputSetup {
 
     abstract void generate() throws Exception;
 
-    private static TimestampPolicyFactory<String, FlowDocument> createTimestampPolicyFactory(
+    private static TimestampPolicyFactory<byte[], FlowDocument> createTimestampPolicyFactory(
             long maxIdx,
             Duration maxInputDelay,
             Duration maxInputIdleDuration,
             Duration maxRunDuration
     ) {
-        return (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<String, FlowDocument>(
+        return (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<byte[], FlowDocument>(
                 Pipeline.ReadFromKafka::getTimestamp,
                 maxInputDelay,
                 previousWatermark
@@ -99,7 +99,7 @@ public abstract class InputSetup {
             private boolean closed = false;
 
             @Override
-            public Instant getTimestampForRecord(PartitionContext ctx, KafkaRecord<String, FlowDocument> record) {
+            public Instant getTimestampForRecord(PartitionContext ctx, KafkaRecord<byte[], FlowDocument> record) {
                 counter++;
                 idleSince = Instant.now();
                 return super.getTimestampForRecord(ctx, record);
@@ -135,7 +135,7 @@ public abstract class InputSetup {
             // Auto-commit should be disabled when checkpointing is on:
             // the state in the checkpoints are used to derive the offsets instead
             kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, options.getAutoCommit());
-            TimestampPolicyFactory<String, FlowDocument> tpf = InputSetup.createTimestampPolicyFactory(
+            TimestampPolicyFactory<byte[], FlowDocument> tpf = InputSetup.createTimestampPolicyFactory(
                     sourceConfig.maxIdx,
                     Duration.millis(options.getDefaultMaxInputDelayMs()),
                     Duration.standardSeconds(options.getMaxInputIdleSecs()),

@@ -38,12 +38,9 @@ import static org.opennms.nephron.RefType.INTERFACE_PART;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
 
 import org.apache.beam.repackaged.core.org.apache.commons.lang3.ArrayUtils;
+import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 /**
@@ -70,40 +67,58 @@ public enum CompoundKeyType {
     EXPORTER_INTERFACE_TOS_HOST(EXPORTER_INTERFACE_TOS, HOST_PART);
 
     private CompoundKeyType parent;
-    private RefType<Ref>[] parts;
+    private RefType[] parts;
 
-    CompoundKeyType(CompoundKeyType parent, RefType<? extends Ref>... parts) {
+    CompoundKeyType(CompoundKeyType parent, RefType... parts) {
         this.parent = parent;
-        this.parts = parent == null ? (RefType<Ref>[]) parts : ArrayUtils.addAll(parent.parts, (RefType<Ref>[]) parts);
+        this.parts = parent == null ? parts : ArrayUtils.addAll(parent.parts, parts);
     }
 
     public CompoundKeyType getParent() {
         return parent;
     }
 
-    public RefType<Ref>[] getParts() {
+    public RefType[] getParts() {
         return parts;
     }
 
     CompoundKey decode(InputStream is) throws IOException {
-        List<Ref> refs = new ArrayList<>(parts.length);
-        for (int i = 0; i < parts.length; i++) {
-            refs.add(parts[i].decode(is));
+        CompoundKeyData.Builder builder = new CompoundKeyData.Builder();
+        for (RefType refType: parts) {
+            refType.decode(builder, is);
         }
-        return new CompoundKey(this, refs);
+        return new CompoundKey(this, builder.build());
     }
 
-    void encode(List<Ref> refs, OutputStream os) throws IOException {
-        for (int i = 0; i < parts.length; i++) {
-            parts[i].encode(refs.get(i), os);
+    void encode(CompoundKeyData data, OutputStream os) throws IOException {
+        for (RefType refType: parts) {
+            refType.encode(data, os);
         }
     }
 
     public CompoundKey create(FlowDocument flow) throws MissingFieldsException {
-        List<Ref> refs = new ArrayList<>(parts.length);
+        CompoundKeyData.Builder builder = new CompoundKeyData.Builder();
         for (RefType refType: parts) {
-            refs.add(refType.create(flow));
+            refType.create(builder, flow);
         }
-        return new CompoundKey(this, refs);
+        return new CompoundKey(this, builder.build());
     }
+
+    void populate(CompoundKeyData data, FlowSummary flow) {
+        flow.setGroupedBy(this);
+        flow.setGroupedByKey(groupedByKey(data));
+        for (RefType refType: parts) {
+            refType.populate(data, flow);
+        }
+    }
+
+    String groupedByKey(CompoundKeyData data) {
+        StringBuilder sb = new StringBuilder();
+        for (RefType refType: parts) {
+            if (sb.length() > 0) sb.append('-');
+            refType.groupedByKey(data, sb);
+        }
+        return sb.toString();
+    }
+
 }

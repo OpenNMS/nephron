@@ -132,7 +132,7 @@ public class Pipeline {
         // Auto-commit should be disabled when checkpointing is on:
         // the state in the checkpoints are used to derive the offsets instead
         kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, options.getAutoCommit());
-        TimestampPolicyFactory<String, FlowDocument> timestampPolicyFactory = getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs()));
+        TimestampPolicyFactory<byte[], FlowDocument> timestampPolicyFactory = getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs()));
         PCollection<FlowDocument> streamOfFlows = p.apply(new ReadFromKafka(options.getBootstrapServers(),
                 options.getFlowSourceTopic(), kafkaConsumerConfig, timestampPolicyFactory));
 
@@ -185,7 +185,7 @@ public class Pipeline {
             SumsAndTopKs conv = aggregateSumsAndTopKs("conv_", keyedByConvWithTos,
                     CompoundKeyType.EXPORTER_INTERFACE_CONVERSATION,
                     topK,
-                    k -> ((Ref.Conversation)k.lastRef()).hasCompleteConversationKey()
+                    k -> k.isCompleteConversationKey()
             );
 
             PCollectionTuple projected =
@@ -347,13 +347,13 @@ public class Pipeline {
         // -> use a gauge instead
         private final Gauge flowsFromKafkaDrift = Metrics.gauge("flows", "from_kafka_drift");
 
-        private final TimestampPolicyFactory<String, FlowDocument> timestampPolicyFactory;
+        private final TimestampPolicyFactory<byte[], FlowDocument> timestampPolicyFactory;
 
         public ReadFromKafka(
                 String bootstrapServers,
                 String topic,
                 Map<String, Object> kafkaConsumerConfig,
-                TimestampPolicyFactory<String, FlowDocument> timestampPolicyFactory
+                TimestampPolicyFactory<byte[], FlowDocument> timestampPolicyFactory
         ) {
             this.bootstrapServers = Objects.requireNonNull(bootstrapServers);
             this.topic = Objects.requireNonNull(topic);
@@ -664,13 +664,26 @@ public class Pipeline {
 
         @ProcessElement
         public void processElement(@Element KV<CompoundKey, Aggregate> kv, MultiOutputReceiver out) {
-            Ref.Conversation rc = (Ref.Conversation)kv.getKey().lastRef();
+            CompoundKey convKey = kv.getKey();
             Aggregate a = kv.getValue();
-            CompoundKey appKey = kv.getKey().changeLastRef(CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION, Ref.Application.of(rc.application));
+            // the CompoundKeyData of a conversation key of type EXPORTER_INTERFACE_TOS_CONVERSATION
+            // contains all fields that are required for a key of type EXPORTER_INTERFACE_TOS_APPLICATION
+            // -> the key can be cast
+            CompoundKey appKey = convKey.cast(CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION);
             out.get(BY_APP).output(KV.of(appKey, a.withHostname(null)));
-            CompoundKey hostKey1 = kv.getKey().changeLastRef(CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST, Ref.Host.of(rc.smallerAddress));
+            // the CompoundKeyData of a conversation key of type EXPORTER_INTERFACE_TOS_CONVERSATION
+            // contains all fields that are required for a key of type EXPORTER_INTERFACE_TOS_HOST
+            // -> the key can be cast
+            CompoundKey hostKey1 = convKey.cast(CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST);
             out.get(BY_HOST).output(KV.of(hostKey1, a.withHostname(a.getHostname())));
-            CompoundKey hostKey2 = kv.getKey().changeLastRef(CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST, Ref.Host.of(rc.largerAddress));
+            // the CompoundKeyData of a conversation key of type EXPORTER_INTERFACE_TOS_CONVERSATION
+            // contains all fields that are required for a key of type EXPORTER_INTERFACE_TOS_HOST
+            // and a second host address, namely the larger address of the conversation
+            // -> use the larget address and construct a corresponding key
+            CompoundKey hostKey2 = new CompoundKey(
+                    CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST,
+                    new CompoundKeyData.Builder(convKey.data).withAddress(convKey.data.largerAddress).build()
+            );
             out.get(BY_HOST).output(KV.of(hostKey2, a.withHostname(a.getHostname2())));
         }
 
@@ -715,7 +728,7 @@ public class Pipeline {
                             @ProcessElement
                             public void processElement(ProcessContext c) {
                                 KV<CompoundKey, Aggregate> el = c.element();
-                                c.output(KV.of(el.getKey().project(typeWithoutTos), el.getValue()));
+                                c.output(KV.of(el.getKey().cast(typeWithoutTos), el.getValue()));
                             }
                         }));
         SumAndTopK withoutTos = aggregateSumAndTopK(transformPrefix + "without_tos_", groupedByKeyWithoutTos, k, includeKeyInTopK);
