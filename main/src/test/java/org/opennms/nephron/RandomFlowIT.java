@@ -80,7 +80,6 @@ import org.elasticsearch.search.sort.SortOrder;
 import org.hamcrest.Matcher;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.catheter.Exporter;
