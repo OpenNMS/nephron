@@ -65,7 +65,7 @@ public class TestingProbe<T> implements Serializable {
     private static final long ERRONEOUS_METRIC_VALUE = -1;
 
     private class MonitorDoFn extends DoFn<T, T> {
-        final Counter elementCounter = Metrics.counter(namespace, elemenCounterName);
+        final Counter elementCounter = Metrics.counter(namespace, elementCounterName);
         final Distribution processingTime = Metrics.distribution(namespace, processingTimeDistributionName);
 
         @ProcessElement
@@ -77,14 +77,14 @@ public class TestingProbe<T> implements Serializable {
     }
 
     public final String namespace;
-    public final String elemenCounterName;
+    public final String elementCounterName;
     public final String processingTimeDistributionName;
     private final MonitorDoFn doFn;
     private final PTransform<PCollection<? extends T>, PCollection<T>> transform;
 
     public TestingProbe(String namespace, String prefix) {
         this.namespace = namespace;
-        this.elemenCounterName = prefix + ".elements";
+        this.elementCounterName = prefix + ".elements";
         this.processingTimeDistributionName = prefix + ".processingTime";
         doFn = new MonitorDoFn();
         transform = ParDo.of(doFn);
@@ -103,17 +103,17 @@ public class TestingProbe<T> implements Serializable {
                 .metrics()
                 .queryMetrics(
                         MetricsFilter.builder()
-                                .addNameFilter(MetricNameFilter.named(namespace, elemenCounterName))
+                                .addNameFilter(MetricNameFilter.named(namespace, elementCounterName))
                                 .build());
         Iterable<MetricResult<Long>> counters = metrics.getCounters();
 
-        checkIfMetricResultIsUnique(elemenCounterName, counters);
+        checkIfMetricResultIsUnique(elementCounterName, counters);
 
         try {
             MetricResult<Long> metricResult = counters.iterator().next();
             return metricResult.getAttempted();
         } catch (NoSuchElementException e) {
-            LOG.error("Failed to get metric {}, from namespace {}", elemenCounterName, namespace);
+            LOG.error("Failed to get metric {}, from namespace {}", elementCounterName, namespace);
         }
         return ERRONEOUS_METRIC_VALUE;
     }
