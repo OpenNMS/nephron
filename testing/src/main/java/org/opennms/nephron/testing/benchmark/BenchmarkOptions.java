@@ -34,8 +34,14 @@ import org.opennms.nephron.testing.flowgen.FlowGenOptions;
 
 public interface BenchmarkOptions extends FlowGenOptions {
 
+    @Description("Maximum time the input may be idle before it is \"closed\" by advancing its watermark to infinity.")
+    @Default.Integer(15)
+    Integer getMaxInputIdleSecs();
+
+    void setMaxInputIdleSecs(Integer num);
+
     @Description("Maximum time a benchmark run may take.")
-    @Default.Integer(60)
+    @Default.Integer(120)
     Integer getMaxRunSecs();
 
     void setMaxRunSecs(Integer num);

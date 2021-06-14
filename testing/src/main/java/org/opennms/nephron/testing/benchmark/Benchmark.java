@@ -71,20 +71,32 @@ public class Benchmark {
     // --flowsPerWindow=100
     // --flowsPerSecond=10000
     public static void main(String[] args) throws Exception {
-        boolean blockOnRunFound = false;
-        String blockOnRunArg = "--blockOnRun=false";
-        for (String arg: args) {
-            blockOnRunFound = blockOnRunArg.equals(arg);
-        }
-        if (!blockOnRunFound) {
-            var tmp = new String[args.length + 1];
-            System.arraycopy(args, 0, tmp, 0, args.length);
-            tmp[args.length] = blockOnRunArg;
-        }
+        args = ensureArg("--blockOnRun=false", args);
         PipelineOptionsFactory.register(NephronOptions.class);
         PipelineOptionsFactory.register(FlowGenOptions.class);
         var options = PipelineOptionsFactory.fromArgs(args).withValidation().as(BenchmarkOptions.class);
         new Benchmark(options).run();
+    }
+
+    private static String[] ensureArg(String argAssignment, String[] args) {
+        if (argValue(argAssignment, args) != null) {
+            return args;
+        } else {
+            var newArgs = new String[args.length + 1];
+            System.arraycopy(args, 0, newArgs, 0, args.length);
+            newArgs[args.length] = argAssignment;
+            return newArgs;
+        }
+    }
+
+    private static String argValue(String arg, String[] args) {
+        String leftHandSide = arg.substring(0, arg.indexOf('=') + 1);
+        for (String a: args) {
+            if (a.startsWith(leftHandSide)) {
+                return a.substring(leftHandSide.length() + 1);
+            }
+        }
+        return null;
     }
 
     private final BenchmarkOptions options;
@@ -152,6 +164,7 @@ public class Benchmark {
         LOG.info("benchmark finished");
 
         System.out.println("Benchmark result");
+        System.out.println(String.format("input                : %s", options.getInput().name()));
         System.out.println(String.format("termination          : %s", terminationReason != null ? terminationReason.name() : "<unknown>"));
         System.out.println(String.format("input count          : %d", benchmarkResult.snapshot.in.count));
         System.out.println(String.format("expected input count : %d", inputSetup.sourceConfig.maxIdx));

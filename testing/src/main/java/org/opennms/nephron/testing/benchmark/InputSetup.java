@@ -85,6 +85,7 @@ public abstract class InputSetup {
     private static TimestampPolicyFactory<String, FlowDocument> createTimestampPolicyFactory(
             long maxIdx,
             Duration maxInputDelay,
+            Duration maxInputIdleDuration,
             Duration maxRunDuration
     ) {
         return (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<String, FlowDocument>(
@@ -94,16 +95,25 @@ public abstract class InputSetup {
         ) {
             private long counter = 0;
             private Instant start = Instant.now();
+            private Instant idleSince = Instant.now();
+            private boolean closed = false;
+
             @Override
             public Instant getTimestampForRecord(PartitionContext ctx, KafkaRecord<String, FlowDocument> record) {
                 counter++;
+                idleSince = Instant.now();
                 return super.getTimestampForRecord(ctx, record);
             }
 
             @Override
             public Instant getWatermark(PartitionContext ctx) {
                 // does not work if the source is split
-                if (counter >= maxIdx || new Duration(start, Instant.now()).isLongerThan(maxRunDuration)) {
+                if (closed ||
+                    counter >= maxIdx ||
+                    new Duration(idleSince, Instant.now()).isLongerThan(maxInputIdleDuration) ||
+                    new Duration(start, Instant.now()).isLongerThan(maxRunDuration)
+                ) {
+                    closed = true;
                     return BoundedWindow.TIMESTAMP_MAX_VALUE;
                 } else {
                     return super.getWatermark(ctx);
@@ -128,6 +138,7 @@ public abstract class InputSetup {
             TimestampPolicyFactory<String, FlowDocument> tpf = InputSetup.createTimestampPolicyFactory(
                     sourceConfig.maxIdx,
                     Duration.millis(options.getDefaultMaxInputDelayMs()),
+                    Duration.standardSeconds(options.getMaxInputIdleSecs()),
                     Duration.standardSeconds(options.getMaxRunSecs())
             );
 
