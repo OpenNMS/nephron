@@ -58,8 +58,6 @@ import java.util.stream.Collectors;
 import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.TestFlinkRunner;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration;
-import org.apache.flink.test.util.MiniClusterWithClientResource;
 import org.apache.http.HttpHost;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -102,11 +100,6 @@ import com.google.common.io.Resources;
 public class RandomFlowIT {
     private static final Logger LOG = LoggerFactory.getLogger(RandomFlowIT.class);
 
-    @Rule
-    public MiniClusterWithClientResource miniClusterResource = new MiniClusterWithClientResource(new MiniClusterResourceConfiguration.Builder()
-                                                                                                                .setNumberTaskManagers(2)
-                                                                                                                .setNumberSlotsPerTaskManager(3)
-                                                                                                                .build());
     @Rule
     public KafkaContainer kafka = new KafkaContainer();
 
