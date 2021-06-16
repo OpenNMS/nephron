@@ -49,7 +49,7 @@ public class SourceConfig implements Serializable {
             lastSwitchedPolicy = FlowConfig.uniformInWindowLastSwitchedPolicy(options);
         } else {
             lastSwitchedPolicy = FlowConfig.CURRENT_TIME_LAST_SWITCHED_POLICY;
-            if (options.getFlowsPerSecond() != 0 && options.getFlowsPerSecond() != Long.MAX_VALUE) {
+            if (options.getFlowsPerSecond() > 0) {
                 options.setFlowsPerWindow(options.getFlowsPerSecond() * options.getFixedWindowSizeMs() / 1000);
             } else {
                 options.setFlowsPerSecond(options.getFlowsPerWindow() * 1000 / options.getFixedWindowSizeMs());

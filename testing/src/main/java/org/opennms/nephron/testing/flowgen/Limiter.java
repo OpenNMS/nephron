@@ -39,7 +39,7 @@ public abstract class Limiter {
     public abstract boolean check(long incr);
 
     public static Limiter of(long flowsPerSecond) {
-        if (flowsPerSecond <= 0 || flowsPerSecond == Long.MAX_VALUE) {
+        if (flowsPerSecond <= 0) {
             return Limiter.OFF;
         } else {
             return new Limiter.FlowsPerSecond(flowsPerSecond);

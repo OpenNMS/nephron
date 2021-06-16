@@ -74,6 +74,7 @@ public class FlowConfig implements Serializable {
     public final int minInterface;
     public final int numInterfaces;
 
+    public final int numProtocols;
     public final int numApplications;
     public final int numHosts;
 
@@ -100,11 +101,12 @@ public class FlowConfig implements Serializable {
      */
     public final double flowDurationLambda;
 
-    public FlowConfig(int minExporter, int numExporters, int minInterface, int numInterfaces, int numApplications, int numHosts, int numEcns, int numDscps, SerializableFunction<Long, Instant> lastSwitched, Duration lastSwitchedSigma, double flowDurationLambda) {
+    public FlowConfig(int minExporter, int numExporters, int minInterface, int numInterfaces, int numProtocols, int numApplications, int numHosts, int numEcns, int numDscps, SerializableFunction<Long, Instant> lastSwitched, Duration lastSwitchedSigma, double flowDurationLambda) {
         this.minExporter = minExporter;
         this.numExporters = numExporters;
         this.minInterface = minInterface;
         this.numInterfaces = numInterfaces;
+        this.numProtocols = numProtocols;
         this.numApplications = numApplications;
         this.numHosts = numHosts;
         this.numEcns = numEcns;
@@ -120,6 +122,7 @@ public class FlowConfig implements Serializable {
                 opts.getNumExporters(),
                 opts.getMinInterface(),
                 opts.getNumInterfaces(),
+                opts.getNumProtocols(),
                 opts.getNumApplications(),
                 opts.getNumHosts(),
                 opts.getNumEcns(),

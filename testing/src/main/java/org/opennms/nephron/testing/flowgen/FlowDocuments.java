@@ -113,6 +113,8 @@ public class FlowDocuments {
             minAddr = dstAddress;
         }
 
+        String application = "app" + fd.fd1.application;
+
         String convoKey = new StringBuilder()
                 .append('[')
                 .append("\"Default\"")
@@ -126,10 +128,12 @@ public class FlowDocuments {
                 .append('"')
                 .append(maxAddr)
                 .append('"')
-                .append(",null")
+                .append(",")
+                .append('"')
+                .append(application)
+                .append('"')
                 .append(']')
                 .toString();
-
 
         FlowDocument f = FlowDocument
                 .newBuilder()
@@ -142,9 +146,9 @@ public class FlowDocuments {
                 )
                 .setLocation("Default")
                 .setProtocol(UInt32Value.of(fd.fd1.protocol))
-                .setInputSnmpIfindex(UInt32Value.of(fd.fd1.interfaceIdx))
-                .setOutputSnmpIfindex(UInt32Value.of(fd.fd1.interfaceIdx))
-                .setApplication("app" + fd.fd1.protocol)
+                .setInputSnmpIfindex(UInt32Value.of(fd.fd1.inputInterfaceIdx))
+                .setOutputSnmpIfindex(UInt32Value.of(fd.fd1.outputInterfaceIdx))
+                .setApplication(application)
                 .setSrcAddress(srcAddress)
                 .setSrcHostname("host" + fd.fd1.srcAddr)
                 .setDstAddress(dstAddress)
@@ -167,9 +171,11 @@ public class FlowDocuments {
         Arbitrary<FlowData1> flowData1 = Combinators.combine(
                 Arbitraries.integers().between(cfg.minExporter, cfg.minExporter + cfg.numExporters - 1),
                 Arbitraries.integers().between(cfg.minInterface, cfg.minInterface + cfg.numInterfaces - 1),
-                Arbitraries.integers().between(1, cfg.numApplications),
+                Arbitraries.integers().between(cfg.minInterface, cfg.minInterface + cfg.numInterfaces - 1),
+                Arbitraries.integers().between(0, cfg.numProtocols - 1),
                 Arbitraries.integers().between(1, cfg.numHosts),
-                Arbitraries.integers().between(1, cfg.numHosts)
+                Arbitraries.integers().between(1, cfg.numHosts),
+                Arbitraries.integers().between(0, cfg.numApplications - 1)
         ).as(FlowData1::new);
 
         Arbitrary<FlowData2> flowData2 = Combinators.combine(
@@ -190,17 +196,21 @@ public class FlowDocuments {
 
     public static class FlowData1 {
         public final int nodeId;
-        public final int interfaceIdx;
+        public final int inputInterfaceIdx;
+        public final int outputInterfaceIdx;
         public final int protocol;
         public final int srcAddr;
         public final int dstAddr;
+        public final int application;
 
-        public FlowData1(int nodeId, int interfaceIdx, int protocol, int srcAddr, int dstAddr) {
+        public FlowData1(int nodeId, int inputInterfaceIdx, int outputInterfaceIdx, int protocol, int srcAddr, int dstAddr, int application) {
             this.nodeId = nodeId;
-            this.interfaceIdx = interfaceIdx;
+            this.inputInterfaceIdx = inputInterfaceIdx;
+            this.outputInterfaceIdx = outputInterfaceIdx;
             this.protocol = protocol;
             this.srcAddr = srcAddr;
             this.dstAddr = dstAddr;
+            this.application = application;
         }
 
     }

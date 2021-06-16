@@ -83,6 +83,12 @@ public interface FlowGenOptions extends NephronOptions {
 
     @Description("The number of applications.")
     @Default.Integer(10)
+    Integer getNumProtocols();
+
+    void setNumProtocols(Integer num);
+
+    @Description("The number of applications.")
+    @Default.Integer(10)
     Integer getNumApplications();
 
     void setNumApplications(Integer num);
@@ -139,8 +145,8 @@ public interface FlowGenOptions extends NephronOptions {
 
     void setStartMs(Long num);
 
-    @Description("Rate limitation for generating flows. Set to 0 or Long.MAX_VALUE to disable. If not set in non-playback mode then it is calculated according to flowsPerWindow and windowSize.")
-    @Default.Long(Long.MAX_VALUE)
+    @Description("Rate limitation for generating flows. Set to non-positive value to disable. If not set in non-playback mode then it is calculated according to flowsPerWindow and windowSize.")
+    @Default.Long(0)
     Long getFlowsPerSecond();
 
     void setFlowsPerSecond(Long value);
