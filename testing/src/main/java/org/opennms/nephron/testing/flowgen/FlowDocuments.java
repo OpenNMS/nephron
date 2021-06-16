@@ -101,8 +101,8 @@ public class FlowDocuments {
         Instant lastSwitched = cfg.lastSwitched.apply(idx).plus(fd.fd2.lastSwitchedOffset);
         Instant deltaSwitched = lastSwitched.minus(fd.fd2.flowDuration);
 
-        String srcAddress = "192.168.1." + fd.fd1.srcAddr;
-        String dstAddress = "192.168.1." + fd.fd1.dstAddr;
+        String srcAddress = ipAddress(fd.fd1.srcAddr);
+        String dstAddress = ipAddress(fd.fd1.dstAddr);
 
         String minAddr, maxAddr;
         if (srcAddress.compareTo(dstAddress) < 0) {
@@ -165,6 +165,10 @@ public class FlowDocuments {
         return f;
     }
 
+    public static String ipAddress(int ip) {
+        return String.format("%d.%d.%d.%d", (ip >> 24 & 0xff), (ip >> 16 & 0xff), (ip >> 8 & 0xff), (ip & 0xff));
+    }
+
     public static Arbitrary<FlowData> getFlowDataArbitrary(FlowConfig cfg) {
         // the combine method does support up to 8 arguments
         // -> split the necessary information for generating flows into two pieces
@@ -173,8 +177,8 @@ public class FlowDocuments {
                 Arbitraries.integers().between(cfg.minInterface, cfg.minInterface + cfg.numInterfaces - 1),
                 Arbitraries.integers().between(cfg.minInterface, cfg.minInterface + cfg.numInterfaces - 1),
                 Arbitraries.integers().between(0, cfg.numProtocols - 1),
-                Arbitraries.integers().between(1, cfg.numHosts),
-                Arbitraries.integers().between(1, cfg.numHosts),
+                Arbitraries.integers().between(0, cfg.numHosts - 1),
+                Arbitraries.integers().between(0, cfg.numHosts - 1),
                 Arbitraries.integers().between(0, cfg.numApplications - 1)
         ).as(FlowData1::new);
 
