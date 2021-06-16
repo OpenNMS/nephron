@@ -118,7 +118,7 @@ public class SyntheticFlowSource extends UnboundedSource<FlowDocument, FlowReade
 
     @Override
     public Coder<FlowDocument> getOutputCoder() {
-        // TODO why do we need this? the FlowDocumentProbufCoder was registered with the pipeline
+        // TODO swachter: why do we need this? the FlowDocumentProbufCoder was registered with the pipeline
         return new FlowDocumentProtobufCoder();
     }
 }
