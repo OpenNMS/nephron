@@ -286,7 +286,7 @@ public class Benchmark {
                 return false;
             }
             InOutSnapshot that = (InOutSnapshot) o;
-            return in.equals(that.in) && out.equals(that.out);
+            return Objects.equals(this.in, that.in) && Objects.equals(this.out, that.out);
         }
 
         @Override
