@@ -83,7 +83,7 @@ public class FlowSummaryData {
             return false;
         }
         FlowSummaryData that = (FlowSummaryData) o;
-        return windowStart == that.windowStart && windowEnd == that.windowEnd && ranking == that.ranking && aggregationType == that.aggregationType && key.equals(that.key) && aggregate.equals(that.aggregate);
+        return windowStart == that.windowStart && windowEnd == that.windowEnd && ranking == that.ranking && aggregationType == that.aggregationType && Objects.equals(this.key, that.key) && Objects.equals(this.aggregate, that.aggregate);
     }
 
     @Override
