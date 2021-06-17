@@ -50,7 +50,7 @@ public class KeyConvWithTosTest {
         long sampled = LongStream
                 .range(fd.deltaSwitched / windowSize, fd.lastSwitched / windowSize + 1)
                 .map(i ->
-                        Pipeline.KeyByConvWithTos.bytesInWindow(
+                        Pipeline.bytesInWindow(
                                 fd.deltaSwitched,
                                 fd.lastSwitched,
                                 fd.bytes * multiplier,

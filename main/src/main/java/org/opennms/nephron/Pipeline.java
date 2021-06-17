@@ -45,7 +45,7 @@ import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.metrics.Counter;
-import org.apache.beam.sdk.metrics.Distribution;
+import org.apache.beam.sdk.metrics.Gauge;
 import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -132,8 +132,9 @@ public class Pipeline {
         // Auto-commit should be disabled when checkpointing is on:
         // the state in the checkpoints are used to derive the offsets instead
         kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, options.getAutoCommit());
+        TimestampPolicyFactory<String, FlowDocument> timestampPolicyFactory = getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs()));
         PCollection<FlowDocument> streamOfFlows = p.apply(new ReadFromKafka(options.getBootstrapServers(),
-                options.getFlowSourceTopic(), kafkaConsumerConfig));
+                options.getFlowSourceTopic(), kafkaConsumerConfig, timestampPolicyFactory));
 
         // Calculate the flow summary statistics
         PCollection<FlowSummaryData> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
@@ -159,34 +160,24 @@ public class Pipeline {
 
     public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummaryData>> {
         private final int topK;
-        private final Duration fixedWindowSize;
-        private final Duration maxFlowDuration;
-        private final Duration earlyProcessingDelay;
-        private final Duration lateProcessingDelay;
-        private final Duration allowedLateness;
+        private final PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing;
+
+        public CalculateFlowStatistics(int topK, PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing) {
+            this.topK = topK;
+            this.windowing = windowing;
+        }
 
         public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration maxFlowDuration, Duration earlyProcessingDelay, Duration lateProcessingDelay, Duration allowedLateness) {
-            this.topK = topK;
-            this.fixedWindowSize = Objects.requireNonNull(fixedWindowSize);
-            this.maxFlowDuration = Objects.requireNonNull(maxFlowDuration);
-            this.earlyProcessingDelay = Objects.requireNonNull(earlyProcessingDelay);
-            this.lateProcessingDelay = Objects.requireNonNull(lateProcessingDelay);
-            this.allowedLateness = Objects.requireNonNull(allowedLateness);
+            this(topK, new WindowedFlows(fixedWindowSize, maxFlowDuration, earlyProcessingDelay, lateProcessingDelay, allowedLateness));
         }
 
         public CalculateFlowStatistics(NephronOptions options) {
-            this(options.getTopK(),
-                 Duration.millis(options.getFixedWindowSizeMs()),
-                 Duration.millis(options.getMaxFlowDurationMs()),
-                 Duration.millis(options.getEarlyProcessingDelayMs()),
-                 Duration.millis(options.getLateProcessingDelayMs()),
-                 Duration.millis(options.getAllowedLatenessMs()));
+            this(options.getTopK(), new WindowedFlows(options));
         }
 
         @Override
         public PCollection<FlowSummaryData> expand(PCollection<FlowDocument> input) {
-            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows",
-                    new WindowedFlows(fixedWindowSize, maxFlowDuration, earlyProcessingDelay, lateProcessingDelay, allowedLateness));
+            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows", windowing);
 
             PCollection<KV<CompoundKey, Aggregate>> keyedByConvWithTos =
                     windowedStreamOfFlows.apply("key_by_conv", ParDo.of(new KeyByConvWithTos()));
@@ -253,6 +244,16 @@ public class Pipeline {
             this.allowedLateness = Objects.requireNonNull(allowedLateness);
         }
 
+        public WindowedFlows(NephronOptions options) {
+            this(
+                    Duration.millis(options.getFixedWindowSizeMs()),
+                    Duration.millis(options.getMaxFlowDurationMs()),
+                    Duration.millis(options.getEarlyProcessingDelayMs()),
+                    Duration.millis(options.getLateProcessingDelayMs()),
+                    Duration.millis(options.getAllowedLatenessMs())
+            );
+        }
+
         @Override
         public PCollection<FlowDocument> expand(PCollection<FlowDocument> input) {
             return input.apply("attach_timestamp", attachTimestamps(fixedWindowSize, maxFlowDuration))
@@ -266,7 +267,11 @@ public class Pipeline {
         private final ElasticsearchIO.ConnectionConfiguration esConfig;
 
         private final Counter flowsToEs = Metrics.counter("flows", "to_es");
-        private final Distribution flowsToEsDrift = Metrics.distribution("flows", "to_es_drift");
+        // a distribution would be more interesting for flowsToEsDrift
+        // -> Unfortunately histograms are not supported Beam/Flink/Prometheus
+        //    (cf. https://issues.apache.org/jira/browse/BEAM-10928)
+        // -> use a gauge instead
+        private final Gauge flowsToEsDrift = Metrics.gauge("flows", "to_es_drift");
 
         private int elasticRetryCount;
         private long elasticRetryDuration;
@@ -317,7 +322,7 @@ public class Pipeline {
 
                                     // Metrics
                                     flowsToEs.inc();
-                                    flowsToEsDrift.update(System.currentTimeMillis() - flowTimestamp.toEpochMilli());
+                                    flowsToEsDrift.set(System.currentTimeMillis() - flowTimestamp.toEpochMilli());
 
                                     return indexName;
                                 }
@@ -336,24 +341,35 @@ public class Pipeline {
         private final Map<String, Object> kafkaConsumerConfig;
 
         private final Counter flowsFromKafka = Metrics.counter("flows", "from_kafka");
-        private final Distribution flowsFromKafkaDrift = Metrics.distribution("flows", "from_kafka_drift");
+        // a distribution would be more interesting for from_kafka_drift
+        // -> Unfortunately histograms are not supported Beam/Flink/Prometheus
+        //    (cf. https://issues.apache.org/jira/browse/BEAM-10928)
+        // -> use a gauge instead
+        private final Gauge flowsFromKafkaDrift = Metrics.gauge("flows", "from_kafka_drift");
 
-        public ReadFromKafka(String bootstrapServers, String topic, Map<String, Object> kafkaConsumerConfig) {
+        private final TimestampPolicyFactory<String, FlowDocument> timestampPolicyFactory;
+
+        public ReadFromKafka(
+                String bootstrapServers,
+                String topic,
+                Map<String, Object> kafkaConsumerConfig,
+                TimestampPolicyFactory<String, FlowDocument> timestampPolicyFactory
+        ) {
             this.bootstrapServers = Objects.requireNonNull(bootstrapServers);
             this.topic = Objects.requireNonNull(topic);
             this.kafkaConsumerConfig = Objects.requireNonNull(kafkaConsumerConfig);
+            this.timestampPolicyFactory = timestampPolicyFactory;
         }
 
         @Override
         public PCollection<FlowDocument> expand(PBegin input) {
-            final NephronOptions options = input.getPipeline().getOptions().as(NephronOptions.class);
             return input.apply(KafkaIO.<String, FlowDocument>read()
                     .withTopic(topic)
                     .withKeyDeserializer(StringDeserializer.class)
                     .withValueDeserializer(KafkaInputFlowDeserializer.class)
                     .withConsumerConfigUpdates(kafkaConsumerConfig)
                     .withBootstrapServers(bootstrapServers) // Order matters: bootstrap server overwrite consumer properties
-                    .withTimestampPolicyFactory(getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs())))
+                    .withTimestampPolicyFactory(timestampPolicyFactory)
                     .withoutMetadata()
             ).apply(Values.create())
                     .apply("init", ParDo.of(new DoFn<FlowDocument, FlowDocument>() {
@@ -370,7 +386,7 @@ public class Pipeline {
 
                             // Metrics
                             flowsFromKafka.inc();
-                            flowsFromKafkaDrift.update(System.currentTimeMillis() - flow.getTimestamp());
+                            flowsFromKafkaDrift.set(System.currentTimeMillis() - flow.getLastSwitched().getValue());
                         }
                     }));
         }
@@ -379,7 +395,7 @@ public class Pipeline {
             return doc.getLastSwitched().getValue();
         }
 
-        private static Instant getTimestamp(KafkaRecord<String, FlowDocument> record) {
+        public static Instant getTimestamp(KafkaRecord<String, FlowDocument> record) {
             return getTimestamp(record.getKV().getValue());
         }
 
@@ -574,52 +590,6 @@ public class Pipeline {
         private final Counter flowsWithMissingFields = Metrics.counter(Pipeline.class, "flowsWithMissingFields");
         private final Counter flowsInWindow = Metrics.counter("flows", "in_window");
 
-        public static long bytesInWindow(
-                long deltaSwitched,
-                long lastSwitchedInclusive,
-                double multipliedNumBytes,
-                long windowStart,
-                long windowEndInclusive
-        ) {
-            // The flow duration ranges [delta_switched, last_switched] (both bounds are inclusive)
-            long flowDurationMs = lastSwitchedInclusive - deltaSwitched + 1;
-
-            // the start (inclusive) of the flow in this window
-            long overlapStart = Math.max(deltaSwitched, windowStart);
-            // the end (inclusive) of the flow in this window
-            long overlapEnd = Math.min(lastSwitchedInclusive, windowEndInclusive);
-
-            // the end of the previous window (inclusive)
-            long previousEnd = overlapStart - 1;
-
-            long bytesAtPreviousEnd = (long) ((previousEnd - deltaSwitched + 1) * multipliedNumBytes / flowDurationMs);
-            long bytesAtEnd = (long) ((overlapEnd - deltaSwitched + 1) * multipliedNumBytes / flowDurationMs);
-
-            return bytesAtEnd - bytesAtPreviousEnd;
-        }
-
-        private Aggregate aggregatize(final IntervalWindow window, final FlowDocument flow, final String hostname, String hostname2) {
-            double multiplier = 1;
-            if (flow.hasSamplingInterval()) {
-                double samplingInterval = flow.getSamplingInterval().getValue();
-                if (samplingInterval > 0) {
-                    multiplier = samplingInterval;
-                }
-            }
-            long bytes = bytesInWindow(
-                    flow.getDeltaSwitched().getValue(),
-                    flow.getLastSwitched().getValue(),
-                    flow.getNumBytes().getValue() * multiplier,
-                    window.start().getMillis(),
-                    window.maxTimestamp().getMillis()
-            );
-            // Track
-            flowsInWindow.inc();
-            return Direction.INGRESS.equals(flow.getDirection()) ?
-                   new Aggregate(bytes, 0, hostname, hostname2, flow.hasEcn() ? flow.getEcn().getValue() : null) :
-                   new Aggregate(0, bytes, hostname, hostname2, flow.hasEcn() ? flow.getEcn().getValue() : null);
-        }
-
         @ProcessElement
         public void processElement(ProcessContext c, IntervalWindow window) {
             final FlowDocument flow = c.element();
@@ -636,12 +606,58 @@ public class Pipeline {
                     hostname = flow.getDstHostname();
                 }
                 Aggregate aggregate = aggregatize(window, flow, hostname, hostname2);
+                flowsInWindow.inc();
                 c.output(KV.of(key, aggregate));
             } catch (MissingFieldsException mfe) {
                 flowsWithMissingFields.inc();
             }
         }
 
+    }
+
+    public static long bytesInWindow(
+            long deltaSwitched,
+            long lastSwitchedInclusive,
+            double multipliedNumBytes,
+            long windowStart,
+            long windowEndInclusive
+    ) {
+        // The flow duration ranges [delta_switched, last_switched] (both bounds are inclusive)
+        long flowDurationMs = lastSwitchedInclusive - deltaSwitched + 1;
+
+        // the start (inclusive) of the flow in this window
+        long overlapStart = Math.max(deltaSwitched, windowStart);
+        // the end (inclusive) of the flow in this window
+        long overlapEnd = Math.min(lastSwitchedInclusive, windowEndInclusive);
+
+        // the end of the previous window (inclusive)
+        long previousEnd = overlapStart - 1;
+
+        long bytesAtPreviousEnd = (long) ((previousEnd - deltaSwitched + 1) * multipliedNumBytes / flowDurationMs);
+        long bytesAtEnd = (long) ((overlapEnd - deltaSwitched + 1) * multipliedNumBytes / flowDurationMs);
+
+        return bytesAtEnd - bytesAtPreviousEnd;
+    }
+
+    public static Aggregate aggregatize(final IntervalWindow window, final FlowDocument flow, final String hostname, String hostname2) {
+        double multiplier = 1;
+        if (flow.hasSamplingInterval()) {
+            double samplingInterval = flow.getSamplingInterval().getValue();
+            if (samplingInterval > 0) {
+                multiplier = samplingInterval;
+            }
+        }
+        long bytes = bytesInWindow(
+                flow.getDeltaSwitched().getValue(),
+                flow.getLastSwitched().getValue(),
+                flow.getNumBytes().getValue() * multiplier,
+                window.start().getMillis(),
+                window.maxTimestamp().getMillis()
+        );
+        // Track
+        return Direction.INGRESS.equals(flow.getDirection()) ?
+               new Aggregate(bytes, 0, hostname, hostname2, flow.hasEcn() ? flow.getEcn().getValue() : null) :
+               new Aggregate(0, bytes, hostname, hostname2, flow.hasEcn() ? flow.getEcn().getValue() : null);
     }
 
     public static class ProjConvWithTos extends DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, Aggregate>> {

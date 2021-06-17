@@ -43,7 +43,7 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 /**
  * Describes a dimensions flow data can be grouped into.
  */
-abstract class RefType<T extends Ref> {
+public abstract class RefType<T extends Ref> {
 
     public abstract void encode(T ref, OutputStream os) throws IOException;
 

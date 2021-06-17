@@ -7,20 +7,14 @@
     </Appenders>
     <Loggers>
         <!--
-        <Logger name="org.apache.beam.sdk.util.WindowTracing" level="DEBUG">
-            <AppenderRef ref="Console"/>
-        </Logger>
+        <Logger name="org.apache.beam.sdk.util.WindowTracing" level="DEBUG"/>
         -->
-        <Logger name="org.apache.beam.sdk.io.kafka" level="DEBUG">
-            <AppenderRef ref="Console"/>
-        </Logger>
-        <Logger name="org.apache.kafka.clients" level="INFO">
-            <AppenderRef ref="Console"/>
-        </Logger>
+        <Logger name="org.apache.beam.sdk.io.kafka" level="WARN"/>
+        <Logger name="org.apache.kafka.clients" level="WARN"/>
+        <Logger name="org.apache.kafka.common" level="WARN"/>
         <!-- Keep this one at INFO for metrics -->
-        <Logger name="org.opennms.nephron.flows" level="INFO">
-            <AppenderRef ref="Console"/>
-        </Logger>
+        <Logger name="org.opennms.nephron.flows" level="INFO"/>
+        <Logger name="org.opennms.nephron.testing" level="DEBUG"/>
         <Root level="INFO">
             <AppenderRef ref="Console"/>
         </Root>
