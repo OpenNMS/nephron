@@ -78,7 +78,7 @@ public class CompoundKey {
      * @return the outer key, or null if no such key exists
      */
     public CompoundKey getOuterKey() {
-        return type.getParent() == null ? null : new CompoundKey(type.getParent(), data);
+        return type.getParent() == null ? null : this.cast(type.getParent());
     }
 
     /**
