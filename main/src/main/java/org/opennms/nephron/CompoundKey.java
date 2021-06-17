@@ -46,39 +46,30 @@ import org.opennms.nephron.elastic.FlowSummary;
 /**
  * Represents a compound key.
  *
- * A compound key is used to group flows into different dimensions. A compound key is made up from a list of
- * {@link Ref} values.
+ * A compound key is used to group flows into different dimensions. A compound key consists of a type that defines
+ * the used dimensions and a data class that contains the fields that determine the value of the key in these dimensions.
+ *
+ * The {@link CompoundKeyData} class can store the fields for all dimensions in order to reduce memory churn. Instances
+ * of the {@code CompoundKeyData} class can be shared between different compound key instances because the equality check
+ * and hashCode calculation does only consider the fields that correspond to the dimension that are used in the
+ * referencing key.
  */
 @DefaultCoder(CompoundKey.CompoundKeyCoder.class)
 public class CompoundKey {
 
-    private final CompoundKeyType type;
-    private final List<Ref> refs;
+    public final CompoundKeyType type;
+    public final CompoundKeyData data;
 
     /**
      * Constructs a CompoundKey.
-     * <p>
-     * The {@link RefType}s of the given type must correspond to the given refs.
      */
-    CompoundKey(CompoundKeyType type, List<Ref> refs) {
-        if (type.getParts().length != refs.size()) {
-            throw new RuntimeException("size of compound key type parts and given refs do not match - #parts: "
-                                       + type.getParts().length + "; #refs: " + refs.size());
-        }
+    CompoundKey(CompoundKeyType type, CompoundKeyData data) {
         this.type = type;
-        this.refs = refs;
+        this.data = data;
     }
 
     public CompoundKeyType getType() {
         return type;
-    }
-
-    public List<Ref> getRefs() {
-        return refs;
-    }
-
-    public Ref lastRef() {
-        return refs.get(refs.size() - 1);
     }
 
     /**
@@ -87,49 +78,38 @@ public class CompoundKey {
      * @return the outer key, or null if no such key exists
      */
     public CompoundKey getOuterKey() {
-        return type.getParent() == null ? null :
-               new CompoundKey(type.getParent(), refs.subList(0, type.getParent().getParts().length));
+        return type.getParent() == null ? null : this.cast(type.getParent());
     }
 
     /**
-     * Project this key into a key of the given type.
+     * Cast this key into a key of the given type.
      *
-     * The projection is done by removing the key parts from this key that have no corresponding
-     * {@link RefType} in the given type.
+     * It is required that the {@link CompoundKeyData} instance of this key has all fields set
+     * that are required by the target type.
      */
-    public CompoundKey project(CompoundKeyType projectedType) {
-        List<Ref> l = new ArrayList<>();
-        int j = 0;
-        for (int i = 0; i < type.getParts().length; i++) {
-            if (type.getParts()[i] == projectedType.getParts()[j]) {
-                l.add(refs.get(i));
-                j++;
-            }
-        }
-        if (j != projectedType.getParts().length) {
-            // the parts of this key could do not match the parts of the projected type
-            throw new RuntimeException("key of type " + type + " can not be project into key of type " + projectedType);
-        }
-        return new CompoundKey(projectedType, l);
-    }
-
-    public CompoundKey changeLastRef(CompoundKeyType newType, Ref lastRef) {
-        List newRefs = new ArrayList(refs.size());
-        newRefs.addAll(refs);
-        newRefs.set(refs.size() - 1, lastRef);
-        return new CompoundKey(newType, newRefs);
+    public CompoundKey cast(CompoundKeyType targetType) {
+        return new CompoundKey(targetType, data);
     }
 
     public String groupedByKey() {
-        return refs.stream().map(Ref::idAsString).collect(Collectors.joining("-"));
+        return type.groupedByKey(data);
     }
 
     public void populate(FlowSummary flow) {
-        flow.setGroupedBy(type);
-        flow.setGroupedByKey(groupedByKey());
-        for (int i = 0; i < type.getParts().length; i++) {
-            type.getParts()[i].populate(refs.get(i), flow);
-        }
+        type.populate(data, flow);
+    }
+
+    /**
+     * Checks if this key includes the conversation dimension as its last part and that all required fields for the
+     * conversation dimension are set.
+     *
+     * This check is used to determine if a conversation is considered in the TopK aggregation for conversations.
+     * If the key of a conversation is not complete then it is not considered there.
+     */
+    public boolean isCompleteConversationKey() {
+        RefType[] parts = type.getParts();
+        int l = parts.length;
+        return parts[l - 1].isCompleteConversationRef(data);
     }
 
     @Override
@@ -140,22 +120,28 @@ public class CompoundKey {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        CompoundKey cKey = (CompoundKey) o;
-        return type == cKey.type &&
-               Objects.equals(refs, cKey.refs);
+        CompoundKey that = (CompoundKey) o;
+        if (type != that.type) {
+            return false;
+        }
+        // only the part of the data is considered that is related to one of the RefTypes of this key
+        for (RefType refType: type.getParts()) {
+            if (!refType.equals(data, that.data)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(type, refs);
-    }
-
-    @Override
-    public String toString() {
-        return "CompoundKey{" +
-               "type=" + type +
-               ", refs=" + refs +
-               '}';
+        int hash = 17;
+        hash = hash * 31 + type.hashCode();
+        // only the part of the data is considered that is related to one of the RefTypes of this key
+        for (RefType refType: type.getParts()) {
+            hash = hash * 31 + refType.hashCode(data);
+        }
+        return hash;
     }
 
     private final static Coder<Integer> INT_CODER = NullableCoder.of(VarIntCoder.of());
@@ -164,7 +150,7 @@ public class CompoundKey {
         @Override
         public void encode(CompoundKey value, OutputStream outStream) throws IOException {
             INT_CODER.encode(value.getType().ordinal(), outStream);
-            value.getType().encode(value.getRefs(), outStream);
+            value.type.encode(value.data, outStream);
         }
 
         @Override
