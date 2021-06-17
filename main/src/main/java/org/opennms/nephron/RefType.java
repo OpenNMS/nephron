@@ -48,7 +48,7 @@ import com.google.common.base.Strings;
 /**
  * Describes the dimensions flow data can be grouped into.
  */
-abstract class RefType {
+public abstract class RefType {
 
     public abstract void encode(CompoundKeyData data, OutputStream os) throws IOException;
 
