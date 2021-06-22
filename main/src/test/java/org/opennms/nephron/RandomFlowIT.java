@@ -29,8 +29,11 @@
 package org.opennms.nephron;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE;
 import static org.opennms.nephron.Pipeline.registerCoders;
@@ -51,6 +54,7 @@ import java.util.Random;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -78,6 +82,7 @@ import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
+import org.hamcrest.Matcher;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -386,6 +391,38 @@ public class RandomFlowIT {
             var ss = groupedSummaryStatistics.get(key);
             assertThat("missing flow summary statistic for key: " + key, ss, is(notNullValue()));
         }
+
+        var maxTimestamps = groupedSummaryStatistics.keySet().stream()
+                .collect(Collectors.groupingBy(k -> k.key, Collectors.toList()))
+                .entrySet().stream()
+                .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue().stream().mapToLong(x -> x.window.toEpochMilli()).max().orElse(0)));
+
+        var minTimestamps = groupedSummaryStatistics.keySet().stream()
+                .collect(Collectors.groupingBy(k -> k.key, Collectors.toList()))
+                .entrySet().stream()
+                .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue().stream().mapToLong(x -> x.window.toEpochMilli()).min().orElse(0)));
+
+        final Map<String, Long> expected = new TreeMap<>();
+
+        expected.put("Test:Router1-12", 11_000_000L);
+        expected.put("Test:Router2-13", 12_000_000L);
+        expected.put("Test:Router3-14", 13_000_000L);
+
+        final long allowedError = 100;
+
+        for (var entry : groupedSummaryStatistics.entrySet()) {
+            // skip the first and last window because traffic volume may be incomplete in these
+            String key = entry.getKey().key;
+            if (entry.getKey().window.toEpochMilli() == minTimestamps.get(key)) continue;
+            if (entry.getKey().window.toEpochMilli() == maxTimestamps.get(key)) continue;
+            assertThat("traffic volume not matched in window: " + entry.getKey(), entry.getValue().getSum(), longCloseTo(expected.get(key), allowedError));
+
+        }
+
+    }
+
+    private static Matcher<Long> longCloseTo(final long value, final long delta) {
+        return allOf(greaterThanOrEqualTo(value - delta), lessThanOrEqualTo(value + delta));
     }
 
     private CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options, QueryBuilder query) {
