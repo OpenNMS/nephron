@@ -72,7 +72,7 @@ public abstract class Limiter {
             if (allowance > flowsPerSeconds * 1000) {
                 allowance = flowsPerSeconds * 1000;
             }
-            if (allowance > incr * 1000) {
+            if (allowance >= incr * 1000) {
                 allowance -= incr * 1000;
                 return true;
             } else {

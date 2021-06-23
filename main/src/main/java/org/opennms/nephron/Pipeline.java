@@ -163,6 +163,7 @@ public class Pipeline {
         private final PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing;
 
         public CalculateFlowStatistics(int topK, PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing) {
+            super("cfs");
             this.topK = topK;
             this.windowing = windowing;
         }

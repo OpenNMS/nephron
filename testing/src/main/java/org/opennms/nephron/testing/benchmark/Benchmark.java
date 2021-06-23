@@ -32,6 +32,8 @@ import static org.opennms.nephron.Pipeline.registerCoders;
 
 import java.util.Objects;
 
+import org.apache.beam.runners.direct.DirectOptions;
+import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.FlinkRunner;
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.metrics.Counter;
@@ -53,6 +55,21 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Run the pipeline on generated synthetic flows and drop the results.
+ * <p>
+ * The benchmark can be run from an IDE or from the command line. In case of running it from the commandline
+ * the following bash alias might be useful:
+ * </p>
+ * <pre>
+ * alias nephron-benchmark='function _nb() { mvn -pl testing exec:java -Dexec.mainClass=org.opennms.nephron.testing.benchmark.Benchmark -Dexec.args="$*"; }; _nb'
+ * </pre>
+ * <p>
+ * The {@code nephron-benchmark} alias must be invoked from Nephron's root directory. Note that the following commands
+ * may need to be executed first:
+ * </p>
+ * <ul>
+ * <li>{@code "mvn compile"}: If the {@code testing} module has changed.</li>
+ * <li>{@code "mvn install"}: If other parts of Nephron changed.</li>
+ * </ul>
  */
 public class Benchmark {
 
@@ -72,6 +89,10 @@ public class Benchmark {
     // --flowsPerSecond=10000
     public static void main(String[] args) throws Exception {
         args = ensureArg("--blockOnRun=false", args);
+        args = ensureArg("--runner=FlinkRunner", args);
+        PipelineOptionsFactory.register(DirectOptions.class);
+        PipelineOptionsFactory.register(FlinkPipelineOptions.class);
+        PipelineOptionsFactory.register(BenchmarkOptions.class);
         PipelineOptionsFactory.register(NephronOptions.class);
         PipelineOptionsFactory.register(FlowGenOptions.class);
         var options = PipelineOptionsFactory.fromArgs(args).withValidation().as(BenchmarkOptions.class);
