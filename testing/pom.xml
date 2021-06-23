@@ -71,10 +71,6 @@
             <artifactId>jackson-datatype-joda</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>jcl-over-slf4j</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-slf4j-impl</artifactId>
             <version>${log4j.version}</version>
@@ -89,15 +85,14 @@
             <artifactId>${flink.artifact.name}</artifactId>
             <version>${beam.version}</version>
         </dependency>
-
-
-        <!-- Test dependencies -->
         <dependency>
             <groupId>org.apache.beam</groupId>
             <artifactId>beam-runners-direct-java</artifactId>
             <version>${beam.version}</version>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
+
+        <!-- Test dependencies -->
         <dependency>
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
@@ -148,24 +143,6 @@
 <!--        </dependency>-->
 
     </dependencies>
-
-    <profiles>
-        <profile>
-            <id>direct-runner</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <!-- Makes the DirectRunner available when running a pipeline. -->
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.beam</groupId>
-                    <artifactId>beam-runners-direct-java</artifactId>
-                    <version>${beam.version}</version>
-                    <scope>runtime</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-    </profiles>
 
     <repositories>
         <repository>

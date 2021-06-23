@@ -32,6 +32,8 @@ import static org.opennms.nephron.Pipeline.registerCoders;
 
 import java.util.Objects;
 
+import org.apache.beam.runners.direct.DirectOptions;
+import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.FlinkRunner;
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.metrics.Counter;
@@ -71,6 +73,10 @@ public class Benchmark {
     // --flowsPerSecond=10000
     public static void main(String[] args) throws Exception {
         args = ensureArg("--blockOnRun=false", args);
+        args = ensureArg("--runner=FlinkRunner", args);
+        PipelineOptionsFactory.register(DirectOptions.class);
+        PipelineOptionsFactory.register(FlinkPipelineOptions.class);
+        PipelineOptionsFactory.register(BenchmarkOptions.class);
         PipelineOptionsFactory.register(NephronOptions.class);
         PipelineOptionsFactory.register(FlowGenOptions.class);
         var options = PipelineOptionsFactory.fromArgs(args).withValidation().as(BenchmarkOptions.class);

@@ -28,6 +28,8 @@
 
 package org.opennms.nephron.testing.flowgen;
 
+import java.util.function.Supplier;
+
 /**
  * Determines if a flow is emitted or not.
  */
@@ -38,11 +40,34 @@ public abstract class Limiter {
      */
     public abstract boolean check(long incr);
 
+    /**
+     * The current limiter state.
+     *
+     * Stored in checkmarks.
+     */
+    public abstract long state();
+
     public static Limiter of(long flowsPerSecond) {
+        return of(flowsPerSecond, System::currentTimeMillis);
+    }
+
+    public static Limiter restore(long flowsPerSecond, long limiterState) {
+        return restore(flowsPerSecond, limiterState, System::currentTimeMillis);
+    }
+
+    public static Limiter of(long flowsPerSecond, Supplier<Long> currentTimeMillis) {
         if (flowsPerSecond <= 0) {
             return Limiter.OFF;
         } else {
-            return new Limiter.FlowsPerSecond(flowsPerSecond);
+            return new Limiter.FlowsPerSecond(currentTimeMillis, flowsPerSecond);
+        }
+    }
+
+    public static Limiter restore(long flowsPerSecond, long limiterState, Supplier<Long> currentTimeMillis) {
+        if (flowsPerSecond <= 0) {
+            return Limiter.OFF;
+        } else {
+            return new Limiter.FlowsPerSecond(currentTimeMillis, flowsPerSecond, limiterState);
         }
     }
 
@@ -51,33 +76,64 @@ public abstract class Limiter {
         public boolean check(long incr) {
             return true;
         }
+
+        @Override
+        public long state() {
+            return 0;
+        }
     };
 
     public static class FlowsPerSecond extends Limiter {
-        private final long flowsPerSeconds;
 
+        private final Supplier<Long> currentTimeMillis;
+        private final long flowsPerSecond;
+
+        // tracks how many permits can be given during the next second
+        // -> allowance represents fractional permits (1/1000 of a permit)
+        // -> with each elapsed millisecond the allowance increases by flowsPerSecond
         private long allowance;
-        private long lastCheck = System.currentTimeMillis();
+        private long lastCheck;
 
-        public FlowsPerSecond(long flowsPerSeconds) {
-            this.flowsPerSeconds = flowsPerSeconds;
-            allowance = flowsPerSeconds * 1000;
+        public FlowsPerSecond(Supplier<Long> currentTimeMillis, long flowsPerSecond) {
+            this.currentTimeMillis = currentTimeMillis;
+            this.flowsPerSecond = flowsPerSecond;
+            allowance = flowsPerSecond * 1000;
+            lastCheck = currentTimeMillis.get();
+        }
+
+        public FlowsPerSecond(Supplier<Long> currentTimeMillis, long flowsPerSecond, long state) {
+            this.currentTimeMillis = currentTimeMillis;
+            this.flowsPerSecond = flowsPerSecond;
+            allowance = state % flowsPerSecond;
+            lastCheck = state / flowsPerSecond;
         }
 
         public boolean check(long incr) {
-            long current = System.currentTimeMillis();
+            long current = currentTimeMillis.get();
             long timePassed = current - lastCheck;
             lastCheck = current;
-            allowance += timePassed * flowsPerSeconds;
-            if (allowance > flowsPerSeconds * 1000) {
-                allowance = flowsPerSeconds * 1000;
+            allowance += timePassed * flowsPerSecond;
+            if (allowance > flowsPerSecond * 1000) {
+                allowance = flowsPerSecond * 1000;
             }
-            if (allowance > incr * 1000) {
+            if (allowance >= incr * 1000) {
                 allowance -= incr * 1000;
                 return true;
             } else {
                 return false;
             }
+        }
+
+        @Override
+        public long state() {
+            // encode lastCheck and allowance into a single state
+            // -> normalize lastCheck and allowance
+            //    * ensure allowance < flowsPerSecond
+            //    * shift lastChecked into the past accordingly
+            var l = lastCheck - allowance / flowsPerSecond;
+            var a = allowance % flowsPerSecond;
+            // encode l and a into a single long avoiding rounding errors
+            return l * flowsPerSecond + a;
         }
     }
 }

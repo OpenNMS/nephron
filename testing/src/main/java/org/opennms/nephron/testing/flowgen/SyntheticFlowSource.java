@@ -111,18 +111,20 @@ public class SyntheticFlowSource extends UnboundedSource<FlowDocument, FlowReade
         Optional<Instant> previous;
         long startIdx;
         Random random;
+        Limiter limiter;
         if (checkpointMark == null) {
             LOG.trace("creating initial unbounded reader for {}", options);
             previous = Optional.empty();
             startIdx = sourceConfig.idxOffset;
             random = new Random(sourceConfig.seed);
+            limiter = Limiter.of(sourceConfig.flowsPerSecond);
         } else {
             LOG.trace("resuming unbounded reader from {}", checkpointMark);
             previous = Optional.of(checkpointMark.previous);
             startIdx = checkpointMark.index;
             random = checkpointMark.random;
+            limiter = Limiter.restore(sourceConfig.flowsPerSecond, checkpointMark.limiterState);
         }
-        Limiter limiter = Limiter.of(sourceConfig.flowsPerSecond);
         return new FlowReader(
                 this,
                 (rnd, idx) -> FlowDocuments.getFlowDocument(sourceConfig.flowConfig, idx, flowData.next(rnd).value()),
