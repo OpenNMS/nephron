@@ -46,7 +46,6 @@ import org.opennms.nephron.FlowSummaryData;
 import org.opennms.nephron.NephronOptions;
 import org.opennms.nephron.Pipeline;
 import org.opennms.nephron.testing.flowgen.FlowGenOptions;
-import org.opennms.nephron.testing.flowgen.TestingProbe;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

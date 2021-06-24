@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.beam.sdk.transforms.SerializableFunction;
+import org.joda.time.Duration;
 import org.joda.time.Instant;
 
 /**
@@ -55,11 +56,13 @@ public class SourceConfig implements Serializable {
                 options.setFlowsPerSecond(options.getFlowsPerWindow() * 1000 / options.getFixedWindowSizeMs());
             }
         }
+        SerializableFunction<Integer, Duration> clockSkewPolicy = FlowConfig.groupClockSkewPolicy(options);
         return new SourceConfig(
-                new FlowConfig(options, lastSwitchedPolicy),
+                new FlowConfig(options, lastSwitchedPolicy, clockSkewPolicy),
                 timestampPolicyFactory,
                 options.getSeed(),
-                options.getNumFlowGenerators(),
+                options.getMinSplits(),
+                options.getMaxSplits(),
                 options.getNumWindows() * options.getFlowsPerWindow(),
                 1,
                 0,
@@ -70,17 +73,19 @@ public class SourceConfig implements Serializable {
     public final FlowConfig flowConfig;
     public final SyntheticFlowTimestampPolicyFactory timestampPolicyFactory;
     public final long seed;
-    public final int numGenerators;
+    public final int minSplits;
+    public final int maxSplits;
     public final long maxIdx;
     public final int idxInc;
     public final int idxOffset;
     public final long flowsPerSecond;
 
-    public SourceConfig(FlowConfig flowConfig, SyntheticFlowTimestampPolicyFactory timestampPolicyFactory, long seed, int numGenerators, long maxIdx, int idxInc, int idxOffset, long flowsPerSecond) {
+    public SourceConfig(FlowConfig flowConfig, SyntheticFlowTimestampPolicyFactory timestampPolicyFactory, long seed, int minSplits, int maxSplits, long maxIdx, int idxInc, int idxOffset, long flowsPerSecond) {
         this.flowConfig = flowConfig;
         this.timestampPolicyFactory = timestampPolicyFactory;
         this.seed = seed;
-        this.numGenerators = numGenerators;
+        this.minSplits = minSplits;
+        this.maxSplits = maxSplits;
 
         this.maxIdx = maxIdx;
         this.idxInc = idxInc;
@@ -88,18 +93,20 @@ public class SourceConfig implements Serializable {
         this.flowsPerSecond = flowsPerSecond;
     }
 
-    public List<SourceConfig> split() {
-        List<SourceConfig> res = new ArrayList<>(numGenerators);
+    public List<SourceConfig> split(int desiredNumSplits) {
+        int numSplits = Math.max(minSplits, Math.min(desiredNumSplits, maxSplits));
+        List<SourceConfig> res = new ArrayList<>(numSplits);
         long seed = this.seed;
-        for (int i = 0; i < numGenerators; i++) {
+        for (int i = 0; i < maxSplits; i++) {
             res.add(
                     new SourceConfig(
                             flowConfig,
                             timestampPolicyFactory,
                             seed,
                             1,
+                            1,
                             maxIdx,
-                            numGenerators,
+                            numSplits,
                             i,
                             flowsPerSecond
                     )

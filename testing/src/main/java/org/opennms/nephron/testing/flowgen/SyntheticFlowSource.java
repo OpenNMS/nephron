@@ -37,8 +37,12 @@ import java.util.stream.Collectors;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.io.UnboundedSource;
+import org.apache.beam.sdk.metrics.Gauge;
+import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.options.PipelineOptions;
+import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
+import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -61,10 +65,28 @@ public class SyntheticFlowSource extends UnboundedSource<FlowDocument, FlowReade
     private static final Logger LOG = LoggerFactory.getLogger(SyntheticFlowSource.class);
 
     /**
-     * Creates a transformation that reads from a synthetic source.
+     * Creates a transformation that reads from a synthetic flow source.
      */
     public static PTransform<PBegin, PCollection<FlowDocument>> readFromSyntheticSource(SourceConfig sourceConfig) {
-        return Read.from(new SyntheticFlowSource(sourceConfig));
+        return new PTransform<>() {
+            private final Gauge inputDrift = Metrics.gauge("flows", "input_lag");
+
+            @Override
+            public PCollection<FlowDocument> expand(PBegin input) {
+                return input
+                        .apply(Read.from(new SyntheticFlowSource(sourceConfig)))
+                        .apply(ParDo.of(
+                                new DoFn<FlowDocument, FlowDocument>() {
+                                    @ProcessElement
+                                    public void processElement(ProcessContext c) {
+                                        FlowDocument flow = c.element();
+                                        inputDrift.set(System.currentTimeMillis() - flow.getLastSwitched().getValue());
+                                        c.output(flow);
+                                    }
+                                }
+                        ));
+            }
+        };
     }
 
     private final SourceConfig sourceConfig;
@@ -75,7 +97,10 @@ public class SyntheticFlowSource extends UnboundedSource<FlowDocument, FlowReade
 
     @Override
     public List<? extends UnboundedSource<FlowDocument, FlowReader.CheckpointMark>> split(int desiredNumSplits, PipelineOptions options) throws Exception {
-        return sourceConfig.split().stream()
+        // Note: desiredNumSplits may be larget than the configured parallelism because a single task instance can
+        // use several source instances.
+        LOG.debug("desired number of splits: " + desiredNumSplits);
+        return sourceConfig.split(desiredNumSplits).stream()
                 .map(sc -> new SyntheticFlowSource(sc))
                 .collect(Collectors.toList());
     }

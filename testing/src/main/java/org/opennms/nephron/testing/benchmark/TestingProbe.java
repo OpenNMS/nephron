@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.opennms.nephron.testing.flowgen;
+package org.opennms.nephron.testing.benchmark;
 
 import java.io.Serializable;
 import java.util.NoSuchElementException;

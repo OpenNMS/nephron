@@ -47,11 +47,17 @@ public interface FlowGenOptions extends NephronOptions {
 
     void setFlowsPerWindow(Long num);
 
-    @Description("Number of flow generators.")
+    @Description("The minimum number of splits the input is split into. A single task may use several splits depending on parallelism.")
     @Default.Integer(1)
-    Integer getNumFlowGenerators();
+    Integer getMinSplits();
 
-    void setNumFlowGenerators(Integer num);
+    void setMinSplits(Integer num);
+
+    @Description("The maximum number of splits the input is split into. A single task may use several splits depending on parallelism.")
+    @Default.Integer(1)
+    Integer getMaxSplits();
+
+    void setMaxSplits(Integer num);
 
     @Description("Approximate number of windows.")
     @Default.Integer(10)
@@ -69,6 +75,18 @@ public interface FlowGenOptions extends NephronOptions {
     Integer getNumExporters();
 
     void setNumExporters(Integer num);
+
+    @Description("Partition exporters into a number of groups each having its own clock skew.")
+    @Default.Integer(1)
+    Integer getNumClockSkewGroups();
+
+    void setNumClockSkewGroups(Integer num);
+
+    @Description("Clock skew difference between different clock skew groups.")
+    @Default.Long(10000)
+    Long getClockSkewMs();
+
+    void setClockSkewMs(Long num);
 
     @Description("The minimum interface number.")
     @Default.Integer(3)

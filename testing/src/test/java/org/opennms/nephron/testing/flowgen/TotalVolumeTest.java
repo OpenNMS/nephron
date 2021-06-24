@@ -28,7 +28,8 @@
 
 package org.opennms.nephron.testing.flowgen;
 
-import static org.junit.Assert.assertTrue;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS;
 import static org.opennms.nephron.Pipeline.registerCoders;
@@ -37,6 +38,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Stream;
 
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.metrics.MetricNameFilter;
@@ -56,9 +58,11 @@ import org.opennms.nephron.CompoundKey;
 import org.opennms.nephron.CompoundKeyType;
 import org.opennms.nephron.FlowSummaryData;
 import org.opennms.nephron.MissingFieldsException;
+import org.opennms.nephron.NephronOptions;
 import org.opennms.nephron.Pipeline;
 import org.opennms.nephron.UnalignedFixedWindows;
 import org.opennms.nephron.elastic.AggregationType;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -98,6 +102,162 @@ public class TotalVolumeTest {
 
         SourceConfig sourceConfig = SourceConfig.of(options, SyntheticFlowTimestampPolicyFactory.withLimitedDelay(options, Pipeline.ReadFromKafka::getTimestamp));
 
+        Map<ResKey, Aggregate> expected = aggregateInMemory(options, FlowDocuments.stream(sourceConfig));
+
+        org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
+        registerCoders(p);
+
+        PCollection<FlowSummaryData> flowSummaries = p
+                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
+                .apply(new Pipeline.CalculateFlowStatistics(options));
+
+        flowSummaries.apply(countVolumes());
+
+        PipelineResult mainResult = p.run();
+
+        PipelineResult.State state = mainResult.waitUntilFinish(Duration.standardMinutes(3));
+
+        LOG.debug("Pipeline result state: " + state);
+
+        var metrics = mainResult.metrics();
+
+        checkResult(expected, metrics);
+
+    }
+
+    @Test
+    public void testTotalVolumeWithSplittedSource() {
+
+        FlowGenOptions options = PipelineOptionsFactory.fromArgs(
+                "--runner=FlinkRunner",
+//                "--flinkMaster=localhost:8081",
+                "--parallelism=4",
+                "--minSplits=4", // this test needs a deterministic number of splits
+                "--maxSplits=4", // -> set minSplits=maxSplits
+                "--playbackMode=true",
+                "--numWindows=10",
+                "--fixedWindowSizeMs=10000",
+                "--flowsPerSecond=1000", // if set: takes precedence over flowsPerWindow
+                "--flowsPerWindow=10000",
+                "--lastSwitchedSigmaMs=0",
+                "--numExporters=3",
+                "--numInterfaces=3",
+                "--numApplications=4",
+                "--numHosts=4",
+                "--numEcns=4",
+                "--numDscps=6",
+
+                "--numClockSkewGroups=1",
+                "--clockSkewMs=-40000" // some exporters return timestamps in the past
+        ).withValidation().as(FlowGenOptions.class);
+
+        var start = Instant.now();
+        options.setStartMs(start.getMillis());
+
+        SourceConfig sourceConfig = SourceConfig.of(options, SyntheticFlowTimestampPolicyFactory.withLimitedDelay(options, Pipeline.ReadFromKafka::getTimestamp));
+
+        Map<ResKey, Aggregate> expected = aggregateInMemory(options, FlowDocuments.splittedStream(sourceConfig));
+
+        org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
+        registerCoders(p);
+
+        PCollection<FlowSummaryData> flowSummaries = p
+                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
+                .apply(new Pipeline.CalculateFlowStatistics(options));
+
+        flowSummaries.apply(countVolumes());
+
+        PipelineResult mainResult = p.run();
+
+        PipelineResult.State state = mainResult.waitUntilFinish(Duration.standardMinutes(3));
+
+        LOG.debug("Pipeline result state: " + state);
+
+        var metrics = mainResult.metrics();
+
+        checkResult((Map<ResKey, Aggregate>) expected, metrics);
+
+    }
+
+    @Test
+    public void testTotalVolumeWithClockSkew() {
+
+        FlowGenOptions options = PipelineOptionsFactory.fromArgs(
+                "--runner=FlinkRunner",
+//                "--flinkMaster=localhost:8081",
+                "--parallelism=6",
+                "--minSplits=1", // this test needs a deterministic number of splits
+                "--maxSplits=1", // -> set minSplits=maxSplits
+                "--playbackMode=true",
+                "--numWindows=10",
+                "--fixedWindowSizeMs=10000",
+
+                "--flowsPerSecond=1000", // if set: takes precedence over flowsPerWindow
+                "--flowsPerWindow=10000",
+                "--lastSwitchedSigmaMs=0",
+                "--numExporters=3",
+                "--numInterfaces=3",
+                "--numApplications=4",
+                "--numHosts=4",
+                "--numEcns=4",
+                "--numDscps=6",
+
+                "--numClockSkewGroups=3",
+                "--clockSkewMs=-40000", // some exporters return timestamps in the past
+
+                "--allowedLatenessMs=100000",
+                "--lateProcessingDelayMs=2000",
+                "--defaultMaxInputDelayMs=2000"
+
+        ).withValidation().as(FlowGenOptions.class);
+
+        // generate flows in playback mode but use current time as start
+        // -> late processing can only be tested if event time is related to processing time
+        // -> playback mode allows to process exactly the same flow twice: one in-memory and once by the pipeline
+        var start = Instant.now();
+        options.setStartMs(start.getMillis());
+
+        SourceConfig sourceConfig = SourceConfig.of(options, SyntheticFlowTimestampPolicyFactory.withLimitedDelay(options, Pipeline.ReadFromKafka::getTimestamp));
+
+        Map<ResKey, Aggregate> expected = aggregateInMemory(options, FlowDocuments.splittedStream(sourceConfig));
+
+        org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
+        registerCoders(p);
+
+        PCollection<FlowSummaryData> flowSummaries = p
+                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
+                .apply(new Pipeline.CalculateFlowStatistics(options));
+
+        flowSummaries.apply(countVolumes());
+
+        PipelineResult mainResult = p.run();
+
+        PipelineResult.State state = mainResult.waitUntilFinish(Duration.standardMinutes(3));
+
+        LOG.debug("Pipeline result state: " + state);
+
+        var metrics = mainResult.metrics();
+
+        checkResult((Map<ResKey, Aggregate>) expected, metrics);
+
+    }
+
+    private void checkResult(Map<ResKey, Aggregate> expected, MetricResults metrics) {
+        var mismatch = 0;
+
+        for (Map.Entry<ResKey, Aggregate> me : expected.entrySet()) {
+            var key = me.getKey();
+            var agg = me.getValue();
+            boolean c1 = check(metrics, true, key, agg);
+            boolean c2 = check(metrics, false, key, agg);
+            if (!c1) mismatch++;
+            if (!c2) mismatch++;
+        }
+
+        assertThat(mismatch, is(0));
+    }
+
+    private Map<ResKey, Aggregate> aggregateInMemory(NephronOptions options, Stream<FlowDocument> flowDocumentStream) {
         Map<ResKey, Aggregate> expected = new HashMap<>();
 
         long windowSizeMs = options.getFixedWindowSizeMs();
@@ -105,7 +265,7 @@ public class TotalVolumeTest {
 
         // calculate the in-memory result
 
-        FlowDocuments.stream(sourceConfig).forEach(flow -> {
+        flowDocumentStream.forEach(flow -> {
 
             // logic copied from attachTimestamps
             long deltaSwitched = flow.getDeltaSwitched().getValue();
@@ -156,36 +316,7 @@ public class TotalVolumeTest {
             }
 
         });
-
-        org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
-        registerCoders(p);
-
-        PCollection<FlowSummaryData> flowSummaries = p
-                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
-                .apply(new Pipeline.CalculateFlowStatistics(options));
-
-        flowSummaries.apply(countVolumes());
-
-        PipelineResult mainResult = p.run();
-
-        PipelineResult.State state = mainResult.waitUntilFinish(Duration.standardMinutes(3));
-
-        LOG.debug("Pipeline result state: " + state);
-
-        var metrics = mainResult.metrics();
-
-        boolean check = true;
-
-        for (Map.Entry<ResKey, Aggregate> me : expected.entrySet()) {
-            var key = me.getKey();
-            var agg = me.getValue();
-            boolean c1 = check(metrics, true, key, agg);
-            boolean c2 = check(metrics, false, key, agg);
-            check &= c1 && c2;
-        }
-
-        assertTrue("unexpected results", check);
-
+        return expected;
     }
 
     /**
@@ -198,10 +329,11 @@ public class TotalVolumeTest {
         if (iter.hasNext()) {
             var metricResult = iter.next();
             var expected = inNotOut ? agg.getBytesIn() : agg.getBytesOut();
-            if (metricResult.getAttempted() == expected) {
+            Long attempted = metricResult.getAttempted();
+            if (attempted == expected) {
                 return true;
             } else {
-                LOG.error("mismatch - key: " + strKey + "; in: " + inNotOut + "; expected: " + expected + "; actual: " + metricResult.getCommitted());
+                LOG.error("mismatch - key: " + strKey + "; in: " + inNotOut + "; expected: " + expected + "; actual: " + attempted);
                 return false;
             }
         } else {
@@ -239,7 +371,7 @@ public class TotalVolumeTest {
 
         public String asString() {
             StringBuilder sb = new StringBuilder();
-            sb.append(windowStart).append('-').append(key);
+            sb.append(windowStart).append('-').append(key.asString());
             return sb.toString();
         }
 
