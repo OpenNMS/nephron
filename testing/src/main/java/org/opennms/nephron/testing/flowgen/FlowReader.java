@@ -121,7 +121,7 @@ public class FlowReader extends UnboundedSource.UnboundedReader<FlowDocument> {
 
     @Override
     public UnboundedSource.CheckpointMark getCheckpointMark() {
-        return new CheckpointMark(timestampPolicy.getCheckpointInstant(), index, random);
+        return new CheckpointMark(timestampPolicy.getCheckpointInstant(), index, random, limiter.state());
     }
 
     @Override
@@ -163,6 +163,7 @@ public class FlowReader extends UnboundedSource.UnboundedReader<FlowDocument> {
                 INSTANT_CODER.encode(value.previous, outStream);
                 LONG_CODER.encode(value.index, outStream);
                 RANDOM_CODER.encode(value.random, outStream);
+                LONG_CODER.encode(value.limiterState, outStream);
             }
 
             @Override
@@ -170,7 +171,8 @@ public class FlowReader extends UnboundedSource.UnboundedReader<FlowDocument> {
                 return new CheckpointMark(
                         INSTANT_CODER.decode(inStream),
                         LONG_CODER.decode(inStream),
-                        RANDOM_CODER.decode(inStream)
+                        RANDOM_CODER.decode(inStream),
+                        LONG_CODER.decode(inStream)
                 );
             }
         };
@@ -179,11 +181,13 @@ public class FlowReader extends UnboundedSource.UnboundedReader<FlowDocument> {
         public final Instant previous;
         public final long index;
         public final Random random;
+        public final long limiterState;
 
-        public CheckpointMark(Instant previous, long index, Random random) {
+        public CheckpointMark(Instant previous, long index, Random random, long limiterState) {
             this.previous = previous;
             this.index = index;
             this.random = random;
+            this.limiterState = limiterState;
         }
 
         @Override
