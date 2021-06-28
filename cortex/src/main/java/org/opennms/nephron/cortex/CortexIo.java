@@ -33,6 +33,8 @@ import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -140,7 +142,7 @@ public class CortexIo {
         }
 
         public Write withFixedLabel(String name, String value) {
-            this.fixedLabels.put(name, value);
+            sanitize(name, value, fixedLabels::put);
             return this;
         }
 
@@ -160,7 +162,7 @@ public class CortexIo {
      * Base function class for writing to Cortex.
      * <p>
      * Subclasses have to implement a method that is annotated by {@link org.apache.beam.sdk.transforms.DoFn.ProcessElement}
-     * that calls the {@link #outputTimeSeries(PrometheusTypes.TimeSeries.Builder)} method.
+     * and that calls the {@link #outputTimeSeries(Consumer)} method.
      * <p>
      * Depending on the information required to transform input of type {@code T} into a Cortex protobuf time series
      * different subclasses are used.
@@ -200,8 +202,12 @@ public class CortexIo {
             startBatch();
         }
 
-        protected PrometheusTypes.TimeSeries.Builder addFixedLabels() {
+        /**
+         * Called by subclasses for adding a time series to the output.
+         */
+        protected void outputTimeSeries(Consumer<TimeSeriesBuilder> consumer) throws IOException {
             var builder = PrometheusTypes.TimeSeries.newBuilder();
+
             for (var entry : spec.fixedLabels.entrySet()) {
                 builder.addLabels(
                         PrometheusTypes.Label.newBuilder()
@@ -209,22 +215,40 @@ public class CortexIo {
                                 .setValue(entry.getValue())
                 );
             }
-            return builder;
-        }
 
-        /**
-         * Called by subclasses for adding a time series to the output.
-         */
-        protected void outputTimeSeries(PrometheusTypes.TimeSeries.Builder timeSeriesBuilder) throws IOException {
-            var timeSeries = timeSeriesBuilder.build();
-            batchSize++;
-            batchBytes += timeSeries.getSerializedSize();
-            writeRequestBuilder.addTimeseries(timeSeries);
+            consumer.accept(new TimeSeriesBuilder() {
+                @Override
+                public TimeSeriesBuilder addLabel(String name, String value) {
+                    sanitize(name, value,
+                            (n, v) -> builder.addLabels(PrometheusTypes.Label.newBuilder()
+                                    .setName(n)
+                                    .setValue(v)
+                            )
+                    );
+                    return this;
+                }
 
-            if (batchSize >= spec.maxBatchSize || batchBytes >= spec.maxBatchBytes) {
+                @Override
+                public TimeSeriesBuilder addSample(long epocheMillis, double value) {
+                    builder.addSamples(
+                            PrometheusTypes.Sample.newBuilder()
+                                    .setTimestamp(epocheMillis)
+                                    .setValue(value)
+                    );
+                    return this;
+                }
+            });
+
+            var timeSeries = builder.build();
+            int serializedSize = timeSeries.getSerializedSize();
+            // check if the time series does fit into the buffer and flush the buffer if necessary
+            if (batchSize >= spec.maxBatchSize || batchBytes + serializedSize >= spec.maxBatchBytes) {
                 flushBatch();
                 startBatch();
             }
+            batchSize++;
+            batchBytes += serializedSize;
+            writeRequestBuilder.addTimeseries(timeSeries);
         }
 
         @FinishBundle
@@ -314,9 +338,15 @@ public class CortexIo {
 
     }
 
+    interface TimeSeriesBuilder {
+        TimeSeriesBuilder addLabel(String name, String value);
+
+        TimeSeriesBuilder addSample(long epochMillis, double value);
+    }
+
     @FunctionalInterface
     interface BuildFromProcessContext<T> extends Serializable {
-        void accept(DoFn<T, Void>.ProcessContext processContext, PrometheusTypes.TimeSeries.Builder builder);
+        void accept(DoFn<T, Void>.ProcessContext processContext, TimeSeriesBuilder builder);
     }
 
     public static <T> SerializableFunction<Write, WriteFn<T>> writeFn(
@@ -329,9 +359,7 @@ public class CortexIo {
             }
             @ProcessElement
             public void processElement(ProcessContext processContext) throws Exception {
-                var builder = addFixedLabels();
-                build.accept(processContext, builder);
-                outputTimeSeries(builder);
+                outputTimeSeries(builder -> build.accept(processContext, builder));
             }
         }
         return LocalWriteFn::new;
@@ -339,7 +367,7 @@ public class CortexIo {
 
     @FunctionalInterface
     interface BuildFromProcessContextAndWindow<T> extends Serializable {
-        void accept(DoFn<T, Void>.ProcessContext processContext, BoundedWindow window, PrometheusTypes.TimeSeries.Builder builder);
+        void accept(DoFn<T, Void>.ProcessContext processContext, BoundedWindow window, TimeSeriesBuilder builder);
     }
 
     public static <T> SerializableFunction<Write, WriteFn<T>> writeFn(
@@ -352,9 +380,7 @@ public class CortexIo {
             }
             @ProcessElement
             public void processElement(ProcessContext processContext, BoundedWindow window) throws Exception {
-                var builder = addFixedLabels();
-                build.accept(processContext, window, builder);
-                outputTimeSeries(builder);
+                outputTimeSeries(builder -> build.accept(processContext, window, builder));
             }
         }
         return LocalWriteFn::new;
@@ -362,7 +388,7 @@ public class CortexIo {
 
     @FunctionalInterface
     interface BuildFromElementAndTimestamp<T> extends Serializable {
-        void accept(T t, Instant timestamp, PrometheusTypes.TimeSeries.Builder builder);
+        void accept(T t, Instant timestamp, TimeSeriesBuilder builder);
     }
 
     public static <T> SerializableFunction<Write, WriteFn<T>> writeFn(
@@ -376,12 +402,54 @@ public class CortexIo {
 
             @ProcessElement
             public void processElement(@Element T element, @Timestamp Instant timestamp) throws Exception {
-                var builder = addFixedLabels();
-                build.accept(element, timestamp, builder);
-                outputTimeSeries(builder);
+                outputTimeSeries(builder -> build.accept(element, timestamp, builder));
             }
         }
         return LocalWriteFn::new;
+    }
+
+    public static void sanitize(String name, String value, BiConsumer<String, String> consumer) {
+        String n;
+        String v;
+        if (METRIC_NAME_LABEL.equals(name)) {
+            n = name;
+            v = sanitizeMetricName(value);
+        } else {
+            n = sanitizeLabelName(name);
+            v = value;
+        }
+        consumer.accept(n, v);
+
+    }
+
+    public static String sanitizeMetricName(String metricName) {
+        // Hard-coded implementation optimized for speed - see
+        // See https://github.com/prometheus/common/blob/v0.22.0/model/metric.go#L92
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < metricName.length(); i++) {
+            char b = metricName.charAt(i);
+            if (!((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || b == ':' || (b >= '0' && b <= '9' && i > 0))) {
+                sb.append("_");
+            } else {
+                sb.append(b);
+            }
+        }
+        return sb.toString();
+    }
+
+    public static String sanitizeLabelName(String labelName) {
+        // Hard-coded implementation optimized for speed - see
+        // See https://github.com/prometheus/common/blob/v0.22.0/model/labels.go#L95
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < labelName.length(); i++) {
+            char b = labelName.charAt(i);
+            if (!((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || (b >= '0' && b <= '9' && i > 0))) {
+                sb.append("_");
+            } else {
+                sb.append(b);
+            }
+        }
+        return sb.toString();
     }
 
 }

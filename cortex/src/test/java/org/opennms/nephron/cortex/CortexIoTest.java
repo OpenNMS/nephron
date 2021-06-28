@@ -53,8 +53,6 @@ import org.junit.Test;
 import org.mockserver.junit.MockServerRule;
 import org.mockserver.verify.VerificationTimes;
 
-import prometheus.PrometheusTypes;
-
 public class CortexIoTest {
 
     @Rule
@@ -147,66 +145,37 @@ public class CortexIoTest {
     public static void buildFromIntAndTimestamp(
             Integer value,
             Instant timestamp,
-            PrometheusTypes.TimeSeries.Builder builder
+            CortexIo.TimeSeriesBuilder builder
     ) {
-        builder.addLabels(
-                PrometheusTypes.Label.newBuilder()
-                        .setName("evenOrAdd")
-                        .setValue(value % 2 == 0 ? "even" : "odd")
-        );
-        builder.addSamples(
-                PrometheusTypes.Sample.newBuilder()
-                        .setTimestamp(timestamp.getMillis())
-                        .setValue(value)
-        );
+        builder
+                .addLabel("evenOrAdd", value % 2 == 0 ? "even" : "odd")
+                .addSample(timestamp.getMillis(), value);
     }
 
     public static void buildFromProcessContext(
             DoFn<Integer, Void>.ProcessContext processContext,
-            PrometheusTypes.TimeSeries.Builder builder
+            CortexIo.TimeSeriesBuilder builder
     ) {
         var value = processContext.element();
         var timestamp = processContext.timestamp();
         var pane = processContext.pane();
-        builder.addLabels(
-                PrometheusTypes.Label.newBuilder()
-                        .setName("evenOrAdd")
-                        .setValue(value % 2 == 0 ? "even" : "odd")
-        );
-        builder.addLabels(
-                PrometheusTypes.Label.newBuilder()
-                        .setName("pane")
-                        .setValue(pane.getTiming().name() + '-' + pane.getIndex())
-        );
-        builder.addSamples(
-                PrometheusTypes.Sample.newBuilder()
-                        .setTimestamp(timestamp.getMillis())
-                        .setValue(value)
-        );
+        builder
+                .addLabel("evenOrAdd", value % 2 == 0 ? "even" : "odd")
+                .addLabel("pane", pane.getTiming().name() + '-' + pane.getIndex())
+                .addSample(timestamp.getMillis(), value);
     }
 
     public static void buildFromProcessContextAndWindow(
             DoFn<Integer, Void>.ProcessContext processContext,
             BoundedWindow window,
-            PrometheusTypes.TimeSeries.Builder builder
+            CortexIo.TimeSeriesBuilder builder
     ) {
         var value = processContext.element();
         var timestamp = processContext.timestamp();
-        builder.addLabels(
-                PrometheusTypes.Label.newBuilder()
-                        .setName("evenOrAdd")
-                        .setValue(value % 2 == 0 ? "even" : "odd")
-        );
-        builder.addLabels(
-                PrometheusTypes.Label.newBuilder()
-                        .setName("maxWindowTimestamp")
-                        .setValue(String.valueOf(window.maxTimestamp()))
-        );
-        builder.addSamples(
-                PrometheusTypes.Sample.newBuilder()
-                        .setTimestamp(timestamp.getMillis())
-                        .setValue(value)
-        );
+        builder
+                .addLabel("evenOrAdd", value % 2 == 0 ? "even" : "odd")
+                .addLabel("maxWindowTimestamp", String.valueOf(window.maxTimestamp()))
+                .addSample(timestamp.getMillis(), value);
     }
 
 }
