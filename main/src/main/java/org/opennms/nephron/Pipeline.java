@@ -712,6 +712,17 @@ public class Pipeline {
         return new TotalAndSummary(parentTotal, summary);
     }
 
+    /**
+     * Aggregates the sums and topKs for the input collection and a projection of the input collection where the tos
+     * (i.e. dscp) key dimension is ignored.
+     *
+     * @param groupedByKeyWithTos a multimap (i.e. the collection may contain several entries with the same CompoundKey
+     *                           but different values)
+     * @param typeWithoutTos a type that considers the same dimension as the entries in the input collection but ignores
+     *                       the dscp field
+     * @param k count for the topK calculation
+     * @param includeKeyInTopK filters the entries that are considered in topK calculations
+     */
     public static SumsAndTopKs aggregateSumsAndTopKs(
             String transformPrefix,
             PCollection<KV<CompoundKey, Aggregate>> groupedByKeyWithTos,
@@ -721,6 +732,7 @@ public class Pipeline {
     ) {
         SumAndTopK withTos = aggregateSumAndTopK(transformPrefix + "with_tos_", groupedByKeyWithTos, k, includeKeyInTopK);
 
+        // multimap
         PCollection<KV<CompoundKey, Aggregate>> groupedByKeyWithoutTos =
                 withTos.sum.apply(
                         transformPrefix + "group_without_tos_",
@@ -736,6 +748,14 @@ public class Pipeline {
         return new SumsAndTopKs(withTos, withoutTos);
     }
 
+    /**
+     * Reduces the input multimap collection into a collectioin with unique keys and the summed aggregates and
+     * calculates the topK entries of these sums when selected over their parent keys.
+     *
+     * @param groupedByKey a multimap that may contain several entries with the same key but different values
+     * @param k count for the topK calculation
+     * @param includeKeyInTopK filters the entries that are considered in topK calculations
+     */
     public static SumAndTopK aggregateSumAndTopK(
             String transformPrefix,
             PCollection<KV<CompoundKey, Aggregate>> groupedByKey,
@@ -781,6 +801,7 @@ public class Pipeline {
     }
 
     public static class SumAndTopK {
+        // all keys in the collection are unique (i.e. this is not a multimap)
         public final PCollection<KV<CompoundKey, Aggregate>> sum;
         public final PCollection<FlowSummaryData> topK;
 
