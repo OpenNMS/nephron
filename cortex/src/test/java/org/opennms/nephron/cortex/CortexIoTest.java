@@ -31,10 +31,7 @@ package org.opennms.nephron.cortex;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
-import org.apache.beam.runners.direct.DirectOptions;
 import org.apache.beam.sdk.coders.VarIntCoder;
-import org.apache.beam.sdk.options.PipelineOptions;
-import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.Combine;
@@ -114,7 +111,7 @@ public class CortexIoTest {
 
     }
 
-    private static int sum(Iterable<Integer> iter) {
+    public static int sum(Iterable<Integer> iter) {
         var sum = 0;
         for (var i: iter) {
             sum += i;
@@ -122,7 +119,7 @@ public class CortexIoTest {
         return sum;
     }
 
-    private static SimpleFunction<Integer, KV<Integer, Integer>> addKey = new SimpleFunction<>() {
+    public static SimpleFunction<Integer, KV<Integer, Integer>> addKey = new SimpleFunction<>() {
         @Override
         public KV<Integer, Integer> apply(Integer input) {
             // use the same key for all elements
@@ -147,7 +144,7 @@ public class CortexIoTest {
     }
 
 
-    private static void buildFromIntAndTimestamp(
+    public static void buildFromIntAndTimestamp(
             Integer value,
             Instant timestamp,
             PrometheusTypes.TimeSeries.Builder builder
@@ -164,7 +161,7 @@ public class CortexIoTest {
         );
     }
 
-    private static void buildFromProcessContext(
+    public static void buildFromProcessContext(
             DoFn<Integer, Void>.ProcessContext processContext,
             PrometheusTypes.TimeSeries.Builder builder
     ) {
@@ -188,7 +185,7 @@ public class CortexIoTest {
         );
     }
 
-    private static void buildFromProcessContextAndWindow(
+    public static void buildFromProcessContextAndWindow(
             DoFn<Integer, Void>.ProcessContext processContext,
             BoundedWindow window,
             PrometheusTypes.TimeSeries.Builder builder

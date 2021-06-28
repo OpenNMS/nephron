@@ -30,6 +30,8 @@ package org.opennms.nephron.cortex;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.beam.sdk.annotations.Experimental;
@@ -62,6 +64,9 @@ import prometheus.PrometheusTypes;
 @Experimental(Experimental.Kind.SOURCE_SINK)
 public class CortexIo {
 
+    // Label name indicating the metric name of a timeseries.
+    public static final String METRIC_NAME_LABEL = "__name__";
+
     private static final Logger LOG = LoggerFactory.getLogger(CortexIo.class);
 
     private static final MediaType PROTOBUF_MEDIA_TYPE = MediaType.parse("application/x-protobuf");
@@ -92,6 +97,8 @@ public class CortexIo {
 
         private long readTimeoutMs = 10000;
         private long writeTimeoutMs = 10000;
+
+        private Map<String, String> fixedLabels = new HashMap<>();
 
         public Write(
                 String writeUrl,
@@ -132,30 +139,21 @@ public class CortexIo {
             return this;
         }
 
+        public Write withFixedLabel(String name, String value) {
+            this.fixedLabels.put(name, value);
+            return this;
+        }
+
+        public Write withMetricName(String value) {
+            return withFixedLabel(METRIC_NAME_LABEL, value);
+        }
+
         @Override
         public PDone expand(PCollection<T> input) {
             input.apply(ParDo.of(createWriteFn.apply(this)));
             return PDone.in(input.getPipeline());
         }
 
-    }
-
-    public static <T> SerializableFunction<Write, WriteFn<T>> writeFn(
-            BuildFromElementAndTimestamp<T> build
-    ) {
-        // an anonymous inner class did not work with Beam's type wizardry -> use a local class
-        class LocalWriteFn extends WriteFn<T> {
-            public LocalWriteFn(Write<T> spec) {
-                super(spec);
-            }
-            @ProcessElement
-            public void processElement(@Element T element, @Timestamp Instant timestamp) throws Exception {
-                var builder = PrometheusTypes.TimeSeries.newBuilder();
-                build.accept(element, timestamp, builder);
-                outputTimeSeries(builder);
-            }
-        }
-        return LocalWriteFn::new;
     }
 
     /**
@@ -200,6 +198,18 @@ public class CortexIo {
         public void startBundle(StartBundleContext context) {
             LOG.debug("startBundle - instance: {}", this);
             startBatch();
+        }
+
+        protected PrometheusTypes.TimeSeries.Builder addFixedLabels() {
+            var builder = PrometheusTypes.TimeSeries.newBuilder();
+            for (var entry : spec.fixedLabels.entrySet()) {
+                builder.addLabels(
+                        PrometheusTypes.Label.newBuilder()
+                                .setName(entry.getKey())
+                                .setValue(entry.getValue())
+                );
+            }
+            return builder;
         }
 
         /**
@@ -319,7 +329,7 @@ public class CortexIo {
             }
             @ProcessElement
             public void processElement(ProcessContext processContext) throws Exception {
-                var builder = PrometheusTypes.TimeSeries.newBuilder();
+                var builder = addFixedLabels();
                 build.accept(processContext, builder);
                 outputTimeSeries(builder);
             }
@@ -342,7 +352,7 @@ public class CortexIo {
             }
             @ProcessElement
             public void processElement(ProcessContext processContext, BoundedWindow window) throws Exception {
-                var builder = PrometheusTypes.TimeSeries.newBuilder();
+                var builder = addFixedLabels();
                 build.accept(processContext, window, builder);
                 outputTimeSeries(builder);
             }
@@ -353,6 +363,25 @@ public class CortexIo {
     @FunctionalInterface
     interface BuildFromElementAndTimestamp<T> extends Serializable {
         void accept(T t, Instant timestamp, PrometheusTypes.TimeSeries.Builder builder);
+    }
+
+    public static <T> SerializableFunction<Write, WriteFn<T>> writeFn(
+            BuildFromElementAndTimestamp<T> build
+    ) {
+        // an anonymous inner class did not work with Beam's type wizardry -> use a local class
+        class LocalWriteFn extends WriteFn<T> {
+            public LocalWriteFn(Write<T> spec) {
+                super(spec);
+            }
+
+            @ProcessElement
+            public void processElement(@Element T element, @Timestamp Instant timestamp) throws Exception {
+                var builder = addFixedLabels();
+                build.accept(element, timestamp, builder);
+                outputTimeSeries(builder);
+            }
+        }
+        return LocalWriteFn::new;
     }
 
 }
