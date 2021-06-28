@@ -242,7 +242,7 @@ public class CortexIo {
             var timeSeries = builder.build();
             int serializedSize = timeSeries.getSerializedSize();
             // check if the time series does fit into the buffer and flush the buffer if necessary
-            if (batchSize >= spec.maxBatchSize || batchBytes + serializedSize >= spec.maxBatchBytes) {
+            if (batchSize + 1 > spec.maxBatchSize || batchBytes + serializedSize > spec.maxBatchBytes) {
                 flushBatch();
                 startBatch();
             }

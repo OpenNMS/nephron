@@ -46,9 +46,17 @@ import org.junit.Test;
 import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 
+import static io.restassured.RestAssured.*;
+
+import io.restassured.RestAssured;
+
 public class CortexIoIT {
 
     final int cortexHttpPort = 9009;
+
+    final String metricName = "test_metric";
+
+    // docker run -d --name cortex -v /home/swachter/projects/opennms/nephron/cortex/src/test/resources/cortex.yaml:/etc/cortex/cortex.yaml -p 9009:9009 -p 9005:9005 cortexproject/cortex:v1.9.0 -config.file=/etc/cortex/cortex.yaml
 
     @Rule
     public GenericContainer cortex = new GenericContainer("cortexproject/cortex:v1.9.0")
@@ -69,7 +77,7 @@ public class CortexIoIT {
         var cortexWrite = CortexIo
                 .write("http://localhost:" + mappedCortexHttpPort + pushPath, createWriteFn)
                 .withOrgId("opennms")
-                .withMetricName("test_metric");
+                .withMetricName(metricName);
 
         var testStreamBuilder = TestStream.create(VarIntCoder.of());
 
@@ -100,7 +108,17 @@ public class CortexIoIT {
         var pipelineResult = pipeline.run();
         pipelineResult.waitUntilFinish();
 
+        RestAssured.port = mappedCortexHttpPort;
 
+        var body = with()
+                .param("query", metricName + "{evenOrOdd=\"odd\"}")
+                .param("start", 0)
+                .param("end", 30)
+                .param("step", 2)
+                .get("/prometheus/api/v1/query_range")
+                .body();
+
+        System.out.println(body.prettyPrint());
 
     }
 

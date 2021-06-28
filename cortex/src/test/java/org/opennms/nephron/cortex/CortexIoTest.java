@@ -148,7 +148,7 @@ public class CortexIoTest {
             CortexIo.TimeSeriesBuilder builder
     ) {
         builder
-                .addLabel("evenOrAdd", value % 2 == 0 ? "even" : "odd")
+                .addLabel("evenOrOdd", value % 2 == 0 ? "even" : "odd")
                 .addSample(timestamp.getMillis(), value);
     }
 
@@ -160,7 +160,7 @@ public class CortexIoTest {
         var timestamp = processContext.timestamp();
         var pane = processContext.pane();
         builder
-                .addLabel("evenOrAdd", value % 2 == 0 ? "even" : "odd")
+                .addLabel("evenOrOdd", value % 2 == 0 ? "even" : "odd")
                 .addLabel("pane", pane.getTiming().name() + '-' + pane.getIndex())
                 .addSample(timestamp.getMillis(), value);
     }
@@ -174,7 +174,7 @@ public class CortexIoTest {
         var timestamp = processContext.timestamp();
         var pane = processContext.pane();
         builder
-                .addLabel("evenOrAdd", value % 2 == 0 ? "even" : "odd")
+                .addLabel("evenOrOdd", value % 2 == 0 ? "even" : "odd")
                 .addLabel("pane", pane.getTiming().name() + '-' + pane.getIndex())
                 .addLabel("window", window.getClass().getSimpleName())
                 .addSample(timestamp.getMillis(), value);
