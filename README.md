@@ -4,7 +4,7 @@ Streaming analytics for flows.
 
 ## Architecture
 
-Sentinel -> Kafka -> Nephron / Beam / Flink -> Elasticsearch
+Sentinel -> Kafka -> Nephron / Beam / Flink -> (Elasticsearch | Cortex | Kafka)
 
 ## Building
 
@@ -22,9 +22,13 @@ Run on Flink
 ./bin/flink run --parallelism 1 --class org.opennms.nephron.Nephron /root/git/nephron/assemblies/flink/target/nephron-flink-bundled-*.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false
 ```
 
+## Persistence
+
+See: [persistence](persistence.md).
+
 ### Upgrading the code
 
-To restart the job and keep the current state, see the instructions belllow.
+To restart the job and keep the current state, see the instructions bellow.
 
 To restart the job without keeping the state, cancel the job and re-run a new one.
 

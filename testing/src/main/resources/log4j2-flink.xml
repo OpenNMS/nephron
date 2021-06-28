@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Log4j configuration that can be used by Flink instead of Flink's own shipped log4.properties file.
+
+    In order to use it,
+      -> copy it into the /flink/conf/ folder and
+      -> change the script /flink/bin/flink-daemon.sh such that it references this file
+
+    When this log configuration is in place and the log level for the
+    "org.opennms.nephron.cortex.CortexIo.write" logger defined below is set to TRACE then
+    bulk requests are send to ElasticSearch that corresponding to the samples that are stored in Cortex.
+
+    Before storing the documents in ElasticSearch the template cortex-template.json should be installed.
+    This can be done by executing:
+    > curl -XPUT -H 'Content-Type: application/json' http://localhost:9200/_template/cortex -d@./testing/src/main/resources/cortex-template.json
+-->
+<Configuration status="WARN">
+    <Appenders>
+        <RollingFile name="MainAppender" fileName="${sys:log.file}" filePattern="${sys:log.file}.%i" append="true">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss,SSS} %-5p %-60c %x - %m%n"/>
+            <Policies>
+                <OnStartupTriggeringPolicy />
+                <SizeBasedTriggeringPolicy size="100MB" />
+            </Policies>
+            <DefaultRolloverStrategy max="${env:MAX_LOG_FILE_NUMBER:-10}"/>
+        </RollingFile>
+
+        <Http name="BulkCortexWriteElastic" url="http://localhost:9200/cortex/_doc/_bulk">
+            <PatternLayout pattern="%m%n"/>
+            <Property name="Content-Type" value="application/x-ndjson"/>
+        </Http>
+
+    </Appenders>
+
+    <Loggers>
+        <Logger name="org.apache.flink.shaded.akka.org.jboss.netty.channel.DefaultChannelPipeline" level="OFF"/>
+        <Logger name="akka" level="INFO"/>
+        <Logger name="org.apache.kafka" level="INFO"/>
+        <Logger name="org.apache.hadoop" level="INFO"/>
+        <Logger name="org.apache.zookeeper" level="INFO"/>
+        <Logger name="org.apache.flink.shaded.zookeeper3" level="INFO"/>
+
+        <!--
+        <Logger name="org.apache.beam.sdk.util.WindowTracing" level="DEBUG"/>
+        -->
+        <Logger name="org.apache.beam.sdk.io.kafka" level="WARN"/>
+        <Logger name="org.apache.kafka.clients" level="WARN"/>
+        <Logger name="org.apache.kafka.common" level="WARN"/>
+        <Logger name="org.elasticsearch.client.RestClient" level="ERROR"/>
+        <!-- Keep this one at INFO for metrics -->
+        <Logger name="org.opennms.nephron.flows" level="INFO"/>
+        <Logger name="org.opennms.nephron.Pipeline" level="INFO"/>
+        <Logger name="org.opennms.nephron.testing" level="INFO"/>
+        <Logger name="org.opennms.nephron.cortex" level="WARN"/>
+        <Logger name="org.opennms.nephron.cortex.CortexIo" level="WARN"/>
+        <Logger name="org.opennms.nephron.util.PaneAccumulator" level="WARN"/>
+
+        <!--
+            Set the level of org.opennms.nephron.cortex.CortexIo.write to TRACE in order to record all
+            protobuf write requests that are sent to Cortex.
+
+            The file is not a valid JSON file because it contains JSON objects concatenated without separating commas.
+            Use the following command to convert the file into valid JSON:
+            > jq -s '.' testing/write.log > cortex/src/test/resources/write-complete.json
+
+            In order to filter for specific nodes / interfaces / ... the following command can be used:
+            > jq -n '[inputs] | .[].timeseries[] | select(.labels[].value == "EXPORTER_INTERFACE") | select(.labels | any(.name == "nodeId" and .value == "2")) | select(.labels | any(.name == "ifIndex" and .value == "3"))' testing/write.log
+        -->
+        <Logger name="org.opennms.nephron.cortex.CortexIo.write" level="OFF" additivity="false">
+            <AppenderRef ref="BulkCortexWriteElastic"/>
+        </Logger>
+
+        <Root level="INFO">
+            <AppenderRef ref="MainAppender"/>
+        </Root>
+    </Loggers>
+</Configuration>

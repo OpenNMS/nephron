@@ -60,8 +60,6 @@ import java.util.stream.Collectors;
 import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.TestFlinkRunner;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration;
-import org.apache.flink.test.util.MiniClusterWithClientResource;
 import org.apache.http.HttpHost;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;

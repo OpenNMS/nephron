@@ -52,4 +52,8 @@ public interface BenchmarkOptions extends FlowGenOptions {
 
     void setInput(InputSetup.Seletion value);
 
+    @Default.Long(0)
+    long getSleepBetweenRunsMs();
+    void setSleepBetweenRunsMs(long value);
+
 }

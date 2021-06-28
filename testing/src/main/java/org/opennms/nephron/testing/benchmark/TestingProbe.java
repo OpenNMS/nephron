@@ -99,35 +99,7 @@ public class TestingProbe<T> implements Serializable {
      * attempted metrics because some runners don't support committed metrics.
      */
     public long getElementCount(PipelineResult result) {
-        MetricQueryResults metrics = result
-                .metrics()
-                .queryMetrics(
-                        MetricsFilter.builder()
-                                .addNameFilter(MetricNameFilter.named(namespace, elementCounterName))
-                                .build());
-        Iterable<MetricResult<Long>> counters = metrics.getCounters();
-
-        checkIfMetricResultIsUnique(elementCounterName, counters);
-
-        try {
-            MetricResult<Long> metricResult = counters.iterator().next();
-            return metricResult.getAttempted();
-        } catch (NoSuchElementException e) {
-            LOG.error("Failed to get metric {}, from namespace {}", elementCounterName, namespace);
-        }
-        return ERRONEOUS_METRIC_VALUE;
-    }
-
-    private <T> void checkIfMetricResultIsUnique(String metricName, Iterable<MetricResult<T>> metricResult)
-            throws IllegalStateException {
-
-        int resultCount = Iterables.size(metricResult);
-        Preconditions.checkState(
-                resultCount <= 1,
-                "More than one metric result matches name: %s in namespace %s. Metric results count: %s",
-                metricName,
-                namespace,
-                resultCount);
+        return getElementCount(namespace, elementCounterName, result);
     }
 
     /**
@@ -224,6 +196,42 @@ public class TestingProbe<T> implements Serializable {
         public int hashCode() {
             return Objects.hash(count, start, end);
         }
+    }
+
+    /**
+     * Return the current value for the element counter, or -1 if can't be retrieved. Note this uses only
+     * attempted metrics because some runners don't support committed metrics.
+     */
+    public static long getElementCount(String namespace, String metricName, PipelineResult result) {
+        MetricQueryResults metrics = result
+                .metrics()
+                .queryMetrics(
+                        MetricsFilter.builder()
+                                .addNameFilter(MetricNameFilter.named(namespace, metricName))
+                                .build());
+        Iterable<MetricResult<Long>> counters = metrics.getCounters();
+
+        checkIfMetricResultIsUnique(metricName, namespace, counters);
+
+        try {
+            MetricResult<Long> metricResult = counters.iterator().next();
+            return metricResult.getAttempted();
+        } catch (NoSuchElementException e) {
+            LOG.error("Failed to get metric {}, from namespace {}", metricName, namespace);
+        }
+        return ERRONEOUS_METRIC_VALUE;
+    }
+
+    private static <T> void checkIfMetricResultIsUnique(String metricName, String namespace, Iterable<MetricResult<T>> metricResult)
+            throws IllegalStateException {
+
+        int resultCount = Iterables.size(metricResult);
+        Preconditions.checkState(
+                resultCount <= 1,
+                "More than one metric result matches name: %s in namespace %s. Metric results count: %s",
+                metricName,
+                namespace,
+                resultCount);
     }
 
 }

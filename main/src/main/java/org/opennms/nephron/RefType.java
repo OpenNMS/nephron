@@ -37,6 +37,7 @@ import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
+import org.opennms.nephron.cortex.TimeSeriesBuilder;
 import org.opennms.nephron.elastic.ExporterNode;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.netmgt.flows.persistence.model.Direction;
@@ -57,6 +58,8 @@ public abstract class RefType {
     public abstract void create(CompoundKeyData.Builder builder, FlowDocument flow) throws MissingFieldsException;
 
     public abstract void populate(CompoundKeyData data, FlowSummary summary);
+
+    public abstract void populate(CompoundKeyData data, boolean exporterAndInterfaceAsLabels, TimeSeriesBuilder builder);
 
     public abstract void groupedByKey(CompoundKeyData data, StringBuilder sb);
 
@@ -105,6 +108,11 @@ public abstract class RefType {
             exporterNode.setForeignSource(data.foreignSource);
             exporterNode.setForeignId(data.foreignId);
             summary.setExporter(exporterNode);
+        }
+
+        @Override
+        public void populate(CompoundKeyData data, boolean exporterAndInterfaceAsLabels, TimeSeriesBuilder builder) {
+            if (exporterAndInterfaceAsLabels) builder.addLabel("nodeId", data.nodeId);
         }
 
         @Override
@@ -158,6 +166,11 @@ public abstract class RefType {
         }
 
         @Override
+        public void populate(CompoundKeyData data, boolean exporterAndInterfaceAsLabels, TimeSeriesBuilder builder) {
+            if (exporterAndInterfaceAsLabels) builder.addLabel("ifIndex", data.ifIndex);
+        }
+
+        @Override
         public void groupedByKey(CompoundKeyData data, StringBuilder sb) {
             sb.append(data.ifIndex);
         }
@@ -199,6 +212,11 @@ public abstract class RefType {
         @Override
         public void populate(CompoundKeyData data, FlowSummary summary) {
             summary.setDscp(data.dscp);
+        }
+
+        @Override
+        public void populate(CompoundKeyData data, boolean exporterAndInterfaceAsLabels, TimeSeriesBuilder builder) {
+            builder.addLabel("dscp", data.dscp);
         }
 
         @Override
@@ -245,6 +263,11 @@ public abstract class RefType {
         }
 
         @Override
+        public void populate(CompoundKeyData data, boolean exporterAndInterfaceAsLabels, TimeSeriesBuilder builder) {
+            builder.addLabel("application", data.application);
+        }
+
+        @Override
         public void groupedByKey(CompoundKeyData data, StringBuilder sb) {
             sb.append(data.application);
         }
@@ -288,6 +311,11 @@ public abstract class RefType {
         @Override
         public void populate(CompoundKeyData data, FlowSummary summary) {
             summary.setHostAddress(data.address);
+        }
+
+        @Override
+        public void populate(CompoundKeyData data, boolean exporterAndInterfaceAsLabels, TimeSeriesBuilder builder) {
+            builder.addLabel("host", data.address);
         }
 
         @Override
@@ -350,6 +378,15 @@ public abstract class RefType {
         @Override
         public void populate(CompoundKeyData data, FlowSummary summary) {
             summary.setConversationKey(data.getConversationKey());
+        }
+
+        @Override
+        public void populate(CompoundKeyData data, boolean exporterAndInterfaceAsLabels, TimeSeriesBuilder builder) {
+            builder.addLabel("location", data.location);
+            builder.addLabel("protocol", data.protocol);
+            builder.addLabel("host", data.address);
+            builder.addLabel("host2", data.largerAddress);
+            builder.addLabel("application", data.application);
         }
 
         @Override

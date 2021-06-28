@@ -1,0 +1,2 @@
+# cortex accumulation seems to hold back some results
+--topK=20 --numApplications=20 --accumulateSummaries=true --cortexAccumulate=true --cortexAccumulationDelayMs=(5000|30000|60000) --include=testing/args/run.arg --include=testing/args/flow-gen.arg --include=testing/args/time.arg --include=testing/args/cortex.arg

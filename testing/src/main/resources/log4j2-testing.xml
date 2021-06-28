@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{ABSOLUTE} %-5p [%tid] %c{1.}: %m%n"/>
+        </Console>
+        <RollingFile name="Write" fileName="write.log" filePattern="write-%i.log">
+            <PatternLayout pattern="%m%n"/>
+            <Policies>
+                <OnStartupTriggeringPolicy />
+                <SizeBasedTriggeringPolicy size="50 MB" />
+            </Policies>
+        </RollingFile>
+
+        <Http name="BulkCortexWriteElastic" url="http://localhost:9200/cortex/_doc/_bulk">
+            <PatternLayout pattern="%m%n"/>
+            <Property name="Content-Type" value="application/x-ndjson"/>
+        </Http>
+
+    </Appenders>
+
+    <Loggers>
+        <!--
+        <Logger name="org.apache.beam.sdk.util.WindowTracing" level="DEBUG"/>
+        -->
+        <Logger name="org.apache.beam.sdk.io.kafka" level="WARN"/>
+        <Logger name="org.apache.kafka.clients" level="WARN"/>
+        <Logger name="org.apache.kafka.common" level="WARN"/>
+        <Logger name="org.elasticsearch.client.RestClient" level="ERROR"/>
+        <!-- Keep this one at INFO for metrics -->
+        <Logger name="org.opennms.nephron.flows" level="INFO"/>
+        <Logger name="org.opennms.nephron.Pipeline" level="DEBUG"/>
+        <Logger name="org.opennms.nephron.testing" level="DEBUG"/>
+        <Logger name="org.opennms.nephron.cortex" level="WARN"/>
+        <Logger name="org.opennms.nephron.cortex.CortexIo" level="WARN"/>
+
+        <!--
+            Set the level of org.opennms.nephron.cortex.CortexIo.write to TRACE in order to also store
+            all Cortex samples as documents in ElasticSearch. Install the `cortex-template.json` file first
+            in ElasticSearch to get better query support.
+        -->
+        <Logger name="org.opennms.nephron.cortex.CortexIo.write" level="OFF" additivity="false">
+            <AppenderRef ref="BulkCortexWriteElastic"/>
+        </Logger>
+
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+        </Root>
+    </Loggers>
+</Configuration>

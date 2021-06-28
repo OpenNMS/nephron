@@ -1,0 +1,28 @@
+{
+    "index_patterns": ["cortex*"],
+    "mappings": {
+        "properties": {
+            "labels": {
+                "type": "nested",
+                "properties": {
+                    "name": {
+                        "type": "keyword"
+                    },
+                    "value": {
+                        "type": "keyword"
+                    }
+                }
+            },
+            "samples": {
+                "properties": {
+                    "timestamp": {
+                        "type": "date"
+                    },
+                    "value": {
+                        "type": "double"
+                    }
+                }
+            }
+        }
+    }
+}

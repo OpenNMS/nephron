@@ -31,16 +31,13 @@ package org.opennms.nephron;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.DefaultCoder;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.coders.VarIntCoder;
+import org.opennms.nephron.cortex.TimeSeriesBuilder;
 import org.opennms.nephron.elastic.FlowSummary;
 
 /**
@@ -97,6 +94,10 @@ public class CompoundKey {
 
     public void populate(FlowSummary flow) {
         type.populate(data, flow);
+    }
+
+    public void populate(TimeSeriesBuilder builder) {
+        type.populate(data, builder);
     }
 
     /**

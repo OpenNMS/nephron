@@ -1,0 +1,2 @@
+--cortexWriteUrl=http://localhost:9009/api/v1/push --cortexMaxBatchSize=10000 --cortexConsideredHosts=0.0.0.0-0.0.0.255
+

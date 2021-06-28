@@ -1,0 +1,2 @@
+# more realistic number of applications and hosts
+--sleepBetweenRunsMs=120000 --flowsPerSecond=1000 --allowedLatenessMs=300000 --topK=20 --numApplications=100 --numHosts=1000 --include=testing/args/run.arg --include=testing/args/flow-gen.arg --include=testing/args/time.arg --include=testing/args/cortex.arg

@@ -32,6 +32,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.beam.sdk.transforms.SerializableBiFunction;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
@@ -45,11 +46,21 @@ public class SourceConfig implements Serializable {
             FlowGenOptions options,
             SyntheticFlowTimestampPolicyFactory timestampPolicyFactory
     ) {
-        SerializableFunction<Long, Instant> lastSwitchedPolicy;
+        SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> lastSwitchedPolicy;
         if (options.getPlaybackMode()) {
             lastSwitchedPolicy = FlowConfig.uniformInWindowLastSwitchedPolicy(options);
         } else {
             lastSwitchedPolicy = FlowConfig.CURRENT_TIME_LAST_SWITCHED_POLICY;
+        }
+        return of(options, lastSwitchedPolicy, timestampPolicyFactory);
+    }
+
+    public static SourceConfig of(
+            FlowGenOptions options,
+            SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> lastSwitchedPolicy,
+            SyntheticFlowTimestampPolicyFactory timestampPolicyFactory
+    ) {
+        if (!options.getPlaybackMode()) {
             if (options.getFlowsPerSecond() > 0) {
                 options.setFlowsPerWindow(options.getFlowsPerSecond() * options.getFixedWindowSizeMs() / 1000);
             } else {

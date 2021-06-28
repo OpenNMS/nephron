@@ -32,12 +32,12 @@ import org.joda.time.Duration;
 
 public class BenchmarkResult {
 
-    public final Benchmark.InOutSnapshot snapshot;
+    public final Benchmark.Snapshot snapshot;
     public final double inRate;
     public final double outRate;
     public final Duration processingTime;
 
-    public BenchmarkResult(Benchmark.InOutSnapshot snapshot) {
+    public BenchmarkResult(Benchmark.Snapshot snapshot) {
         this.snapshot = snapshot;
         this.inRate = snapshot.in.rate();
         this.outRate = snapshot.out.rate();

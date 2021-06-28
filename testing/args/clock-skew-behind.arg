@@ -1,0 +1,2 @@
+# 2 groups of exporters; the exporters is group #0 are in time, whereas the exporters in group #1 are 10 minutes behind wall clock time
+--numClockSkewGroups=2 --clockSkewDirection=BEHIND --clockSkewMs=600000
