@@ -419,7 +419,6 @@ public class CortexIo {
             v = value;
         }
         consumer.accept(n, v);
-
     }
 
     public static String sanitizeMetricName(String metricName) {

@@ -121,7 +121,7 @@ public class CortexIoTest {
         @Override
         public KV<Integer, Integer> apply(Integer input) {
             // use the same key for all elements
-            // -> the result windows contains exactly one key / value entry
+            // -> when elements are combined per key the result windows contains exactly one key / value entry
             return KV.of(1, input);
         }
     };
@@ -172,9 +172,11 @@ public class CortexIoTest {
     ) {
         var value = processContext.element();
         var timestamp = processContext.timestamp();
+        var pane = processContext.pane();
         builder
                 .addLabel("evenOrAdd", value % 2 == 0 ? "even" : "odd")
-                .addLabel("maxWindowTimestamp", String.valueOf(window.maxTimestamp()))
+                .addLabel("pane", pane.getTiming().name() + '-' + pane.getIndex())
+                .addLabel("window", window.getClass().getSimpleName())
                 .addSample(timestamp.getMillis(), value);
     }
 

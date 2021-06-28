@@ -100,6 +100,8 @@ public class CortexIoIT {
         var pipelineResult = pipeline.run();
         pipelineResult.waitUntilFinish();
 
+
+
     }
 
     @Test
