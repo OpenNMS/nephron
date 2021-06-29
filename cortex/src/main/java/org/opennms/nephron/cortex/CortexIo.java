@@ -50,6 +50,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xerial.snappy.Snappy;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.ConnectionPool;
@@ -75,17 +77,20 @@ public class CortexIo {
 
     private static final String X_SCOPE_ORG_ID_HEADER = "X-Scope-OrgID";
 
+    @FunctionalInterface
+    interface CreateWriteFn<T> extends SerializableFunction<Write<T>, CortexIo.WriteFn<T>> {}
+
     public static <T> Write<T> write(
             String writeUrl,
-            SerializableFunction<Write, WriteFn<T>> createWriteFn
+            CreateWriteFn<T> createWriteFn
     ) {
-        return new Write<T>(writeUrl, createWriteFn);
+        return new Write<>(writeUrl, createWriteFn);
     }
 
     public static class Write<T> extends PTransform<PCollection<T>, PDone> {
 
         private final String writeUrl;
-        private final SerializableFunction<Write, WriteFn<T>> createWriteFn;
+        private final CreateWriteFn<T> createWriteFn;
 
         private String orgId;
 
@@ -104,55 +109,60 @@ public class CortexIo {
 
         public Write(
                 String writeUrl,
-                SerializableFunction<Write, WriteFn<T>> createWriteFn
+                CreateWriteFn<T> createWriteFn
         ) {
             super("CortexWrite");
             this.writeUrl = writeUrl;
             this.createWriteFn = createWriteFn;
         }
 
-        public Write withOrgId(String value) {
+        public Write<T> withOrgId(String value) {
             this.orgId = orgId;
             return this;
         }
 
-        public Write withMaxBatchSize(long value) {
+        public Write<T> withMaxBatchSize(long value) {
             this.maxBatchSize = value;
             return this;
         }
 
-        public Write withMaxBatchBytes(long value) {
+        public Write<T> withMaxBatchBytes(long value) {
             this.maxBatchBytes = value;
             return this;
         }
 
-        public Write withMaxConcurrentHttpConnections(int value) {
+        public Write<T> withMaxConcurrentHttpConnections(int value) {
             this.maxConcurrentHttpConnections = value;
             return this;
         }
 
-        public Write withReadTimeoutMs(long value) {
+        public Write<T> withReadTimeoutMs(long value) {
             this.readTimeoutMs = value;
             return this;
         }
 
-        public Write withWriteTimeoutMs(long value) {
+        public Write<T> withWriteTimeoutMs(long value) {
             this.writeTimeoutMs = value;
             return this;
         }
 
-        public Write withFixedLabel(String name, String value) {
+        public Write<T> withFixedLabel(String name, String value) {
             sanitize(name, value, fixedLabels::put);
             return this;
         }
 
-        public Write withMetricName(String value) {
+        public Write<T> withMetricName(String value) {
             return withFixedLabel(METRIC_NAME_LABEL, value);
+        }
+
+        @VisibleForTesting
+        WriteFn<T> createWriteFn() {
+            return createWriteFn.apply(this);
         }
 
         @Override
         public PDone expand(PCollection<T> input) {
-            input.apply(ParDo.of(createWriteFn.apply(this)));
+            input.apply(ParDo.of(createWriteFn()));
             return PDone.in(input.getPipeline());
         }
 
@@ -197,7 +207,7 @@ public class CortexIo {
         }
 
         @StartBundle
-        public void startBundle(StartBundleContext context) {
+        public void startBundle() {
             LOG.debug("startBundle - instance: {}", this);
             startBatch();
         }
@@ -252,7 +262,7 @@ public class CortexIo {
         }
 
         @FinishBundle
-        public void finishBundle(FinishBundleContext context)
+        public void finishBundle()
                 throws IOException, InterruptedException {
             LOG.debug("finishBundle - instance: {}", this);
             flushBatch();
@@ -308,35 +318,41 @@ public class CortexIo {
 
             // TODO: bulkheading, retries, ...
 
-            okHttpClient.newCall(request).enqueue(new Callback() {
-                @Override
-                public void onFailure(Call call, IOException e) {
-                    LOG.error("Write to Cortex failed", e);
-                }
-
-                @Override
-                public void onResponse(Call call, Response response) {
-                    try (ResponseBody body = response.body()) {
-                        if (!response.isSuccessful()) {
-                            String bodyAsString;
-                            if (body != null) {
-                                try {
-                                    bodyAsString = body.string();
-                                } catch (IOException e) {
-                                    bodyAsString = "(error reading body)";
-                                }
-                            } else {
-                                bodyAsString = "(null)";
-                            }
-                            LOG.error("Writing to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString);
-                        }
-                    }
-                }
-            });
+            okHttpClient.newCall(request).enqueue(getCallback());
 
         }
 
+        protected Callback getCallback() {
+            return DEFAULT_WRITE_CALLBACK;
+        }
+
     }
+
+    private static Callback DEFAULT_WRITE_CALLBACK = new Callback() {
+        @Override
+        public void onFailure(Call call, IOException e) {
+            LOG.error("Write to Cortex failed", e);
+        }
+
+        @Override
+        public void onResponse(Call call, Response response) {
+            try (ResponseBody body = response.body()) {
+                if (!response.isSuccessful()) {
+                    String bodyAsString;
+                    if (body != null) {
+                        try {
+                            bodyAsString = body.string();
+                        } catch (IOException e) {
+                            bodyAsString = "(error reading body)";
+                        }
+                    } else {
+                        bodyAsString = "(null)";
+                    }
+                    LOG.error("Writing to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString);
+                }
+            }
+        }
+    };
 
     interface TimeSeriesBuilder {
         TimeSeriesBuilder addLabel(String name, String value);
@@ -349,7 +365,7 @@ public class CortexIo {
         void accept(DoFn<T, Void>.ProcessContext processContext, TimeSeriesBuilder builder);
     }
 
-    public static <T> SerializableFunction<Write, WriteFn<T>> writeFn(
+    public static <T> CreateWriteFn<T> writeFn(
             BuildFromProcessContext<T> build
     ) {
         // an anonymous inner class did not work with Beam's type wizardry -> use a local class
@@ -370,7 +386,7 @@ public class CortexIo {
         void accept(DoFn<T, Void>.ProcessContext processContext, BoundedWindow window, TimeSeriesBuilder builder);
     }
 
-    public static <T> SerializableFunction<Write, WriteFn<T>> writeFn(
+    public static <T> CreateWriteFn<T> writeFn(
             BuildFromProcessContextAndWindow<T> build
     ) {
         // an anonymous inner class did not work with Beam's type wizardry -> use a local class
@@ -391,7 +407,7 @@ public class CortexIo {
         void accept(T t, Instant timestamp, TimeSeriesBuilder builder);
     }
 
-    public static <T> SerializableFunction<Write, WriteFn<T>> writeFn(
+    public static <T> CreateWriteFn<T> writeFn(
             BuildFromElementAndTimestamp<T> build
     ) {
         // an anonymous inner class did not work with Beam's type wizardry -> use a local class

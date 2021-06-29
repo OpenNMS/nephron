@@ -37,7 +37,6 @@ import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.MapElements;
-import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
@@ -53,7 +52,10 @@ import org.junit.Test;
 import org.mockserver.junit.MockServerRule;
 import org.mockserver.verify.VerificationTimes;
 
-public class CortexIoTest {
+/**
+ * Tests CortexIo without a Cortex backend but in the context of a pipeline.
+ */
+public class CortexIoPipelineTest {
 
     @Rule
     public MockServerRule mockServerRule = new MockServerRule(this);
@@ -61,7 +63,7 @@ public class CortexIoTest {
     @Rule
     public TestPipeline pipeline = TestPipeline.create();
 
-    public void test(SerializableFunction<CortexIo.Write, CortexIo.WriteFn<Integer>> createWriteFn) {
+    public void test(CortexIo.CreateWriteFn<Integer> createWriteFn) {
 
         var mockServerClient = mockServerRule.getClient();
 
@@ -94,7 +96,7 @@ public class CortexIoTest {
                                 .discardingFiredPanes()
                 )
                 .apply(MapElements.via(addKey))
-                .apply(Combine.perKey(CortexIoTest::sum))
+                .apply(Combine.perKey(CortexIoPipelineTest::sum))
                 .apply(Values.create())
                 .apply(cortexWrite)
         ;
@@ -128,17 +130,17 @@ public class CortexIoTest {
 
     @Test
     public void test1() {
-        test(CortexIo.writeFn(CortexIoTest::buildFromIntAndTimestamp));
+        test(CortexIo.writeFn(CortexIoPipelineTest::buildFromIntAndTimestamp));
     }
 
     @Test
     public void test2() {
-        test(CortexIo.writeFn(CortexIoTest::buildFromProcessContext));
+        test(CortexIo.writeFn(CortexIoPipelineTest::buildFromProcessContext));
     }
 
     @Test
     public void test3() {
-        test(CortexIo.writeFn(CortexIoTest::buildFromProcessContextAndWindow));
+        test(CortexIo.writeFn(CortexIoPipelineTest::buildFromProcessContextAndWindow));
     }
 
 
