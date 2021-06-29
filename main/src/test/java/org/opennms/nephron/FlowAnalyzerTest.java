@@ -88,7 +88,7 @@ public class FlowAnalyzerTest {
     }
 
     // calculate the (unaligned) windows used in tests
-    static WindowingDef WINDOW_DEF = new WindowingDef(Duration.standardMinutes(1), EXPORTER_NODE.getNodeId());
+    static WindowingDef WINDOW_DEF = new WindowingDef(Duration.standardMinutes(1), EXPORTER_NODE.getNodeId(), 98);
     static Wnd WND = WINDOW_DEF.at(1_500_000_000_000l);
 
 //    private PipelineOptions flinkOptions = TestFlinkRunner
@@ -173,7 +173,7 @@ public class FlowAnalyzerTest {
         int nodeId = 99;
         Duration fixedWindowSize = Duration.standardMinutes(1);
         // choose a `start` that is the beginning of an unaligned window
-        long startMs = UnalignedFixedWindows.windowStartForTimestamp(nodeId, fixedWindowSize.getMillis(), 1500000000000L);
+        long startMs = UnalignedFixedWindows.windowStartForTimestamp(nodeId, 98, fixedWindowSize.getMillis(), 1500000000000L);
 
         Instant start = Instant.ofEpochMilli(startMs);
         List<Long> flowTimestampOffsets =
@@ -629,7 +629,7 @@ public class FlowAnalyzerTest {
     @Test
     public void testAttachedTimestamps() throws Exception {
         final int NODE_ID = 99;
-        WindowingDef winDef = new WindowingDef(Duration.standardSeconds(10), NODE_ID);
+        WindowingDef winDef = new WindowingDef(Duration.standardSeconds(10), NODE_ID, 98);
         Wnd wnd = winDef.at(1_500_000_000_000l);
 
         final LongFunction<IntervalWindow> window = (n) -> new IntervalWindow(
@@ -897,10 +897,12 @@ public class FlowAnalyzerTest {
 
         public final Duration windowSize;
         public final int nodeId;
+        public final int itfIdx;
 
-        public WindowingDef(Duration windowSize, int nodeId) {
+        public WindowingDef(Duration windowSize, int nodeId, int itfIdx) {
             this.windowSize = windowSize;
             this.nodeId = nodeId;
+            this.itfIdx = itfIdx;
         }
 
         /**
@@ -908,8 +910,8 @@ public class FlowAnalyzerTest {
          */
         public Wnd at(long timestamp) {
             long windowSizeMs = windowSize.getMillis();
-            long windowNumber = UnalignedFixedWindows.windowNumber(nodeId, windowSizeMs, timestamp);
-            long start = UnalignedFixedWindows.windowStartForWindowNumber(nodeId, windowSizeMs, windowNumber);
+            long windowNumber = UnalignedFixedWindows.windowNumber(nodeId, itfIdx, windowSizeMs, timestamp);
+            long start = UnalignedFixedWindows.windowStartForWindowNumber(nodeId, itfIdx, windowSizeMs, windowNumber);
             return new Wnd(windowSize, nodeId, windowNumber, start);
 
         }

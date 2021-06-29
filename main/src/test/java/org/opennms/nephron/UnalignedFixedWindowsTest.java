@@ -42,6 +42,11 @@ public class UnalignedFixedWindowsTest {
     }
 
     @Provide
+    public Arbitrary<Integer> itfIdx() {
+        return Arbitraries.integers().between(0, 2);
+    }
+
+    @Provide
     public Arbitrary<Long> windowSize() {
         return Arbitraries.longs().between(1, 10);
     }
@@ -54,11 +59,12 @@ public class UnalignedFixedWindowsTest {
     @Property
     public boolean canCalculateStartOfShiftedWindowForFlowTimestamp(
             @ForAll("nodeId") int nodeId,
+            @ForAll("itfIdx") int itfIdx,
             @ForAll("windowSize") long windowSize,
             @ForAll("timestamp") long timestamp
     ) {
-        long start = UnalignedFixedWindows.windowStartForTimestamp(nodeId, windowSize, timestamp);
-        long shift = UnalignedFixedWindows.perNodeShift(nodeId, windowSize);
+        long start = UnalignedFixedWindows.windowStartForTimestamp(nodeId, itfIdx, windowSize, timestamp);
+        long shift = UnalignedFixedWindows.perNodeShift(nodeId, itfIdx, windowSize);
         // check that
         // - the start of the unshifted window (i.e. start - shift) is a multiple of the window size
         // - the timestamp is included in the shifted window
@@ -68,12 +74,13 @@ public class UnalignedFixedWindowsTest {
     @Property
     public boolean startAndWindowNumberCalculationsAreConsistent(
             @ForAll("nodeId") int nodeId,
+            @ForAll("itfIdx") int itfIdx,
             @ForAll("windowSize") long windowSize,
             @ForAll("timestamp") long timestamp
     ) {
-        long startForTimestamp = UnalignedFixedWindows.windowStartForTimestamp(nodeId, windowSize, timestamp);
-        long windowNumber = UnalignedFixedWindows.windowNumber(nodeId, windowSize, timestamp);
-        long startForWindowNumber = UnalignedFixedWindows.windowStartForWindowNumber(nodeId, windowSize, windowNumber);
+        long startForTimestamp = UnalignedFixedWindows.windowStartForTimestamp(nodeId, itfIdx, windowSize, timestamp);
+        long windowNumber = UnalignedFixedWindows.windowNumber(nodeId, itfIdx, windowSize, timestamp);
+        long startForWindowNumber = UnalignedFixedWindows.windowStartForWindowNumber(nodeId, itfIdx, windowSize, windowNumber);
         return startForTimestamp == startForWindowNumber;
     }
 

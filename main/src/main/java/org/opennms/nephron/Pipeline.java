@@ -480,8 +480,9 @@ public class Pipeline {
                 long deltaSwitched = flow.getDeltaSwitched().getValue();
                 long lastSwitched = flow.getLastSwitched().getValue();
                 int nodeId = flow.getExporterNode().getNodeId();
+                int itfIdx = UnalignedFixedWindows.getItfIdx(flow);
 
-                long shift = UnalignedFixedWindows.perNodeShift(nodeId, windowSizeMs);
+                long shift = UnalignedFixedWindows.perNodeShift(nodeId, itfIdx, windowSizeMs);
                 if (deltaSwitched < shift) {
                     RATE_LIMITED_LOG.warn("Skipping output for flow whose start is too small w/ start: {}, end: {}, target timestamp: {}, current input timestamp: {}. Full flow: {}",
                             Instant.ofEpochMilli(deltaSwitched), Instant.ofEpochMilli(lastSwitched), Instant.ofEpochMilli(deltaSwitched), c.timestamp(),
@@ -489,8 +490,8 @@ public class Pipeline {
                     return;
                 }
 
-                long firstWindow = UnalignedFixedWindows.windowNumber(nodeId, windowSizeMs, deltaSwitched); // the first window the flow falls into
-                long lastWindow = UnalignedFixedWindows.windowNumber(nodeId, windowSizeMs, lastSwitched); // the last window the flow falls into (assuming lastSwitched is inclusive)
+                long firstWindow = UnalignedFixedWindows.windowNumber(nodeId, itfIdx, windowSizeMs, deltaSwitched); // the first window the flow falls into
+                long lastWindow = UnalignedFixedWindows.windowNumber(nodeId, itfIdx, windowSizeMs, lastSwitched); // the last window the flow falls into (assuming lastSwitched is inclusive)
                 long nbWindows = lastWindow - firstWindow + 1;
 
                 long timestamp = deltaSwitched;
