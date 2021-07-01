@@ -15,6 +15,7 @@
         <!-- Keep this one at INFO for metrics -->
         <Logger name="org.opennms.nephron.flows" level="INFO"/>
         <Logger name="org.opennms.nephron.testing" level="DEBUG"/>
+        <Logger name="org.opennms.nephron.cortex" level="DEBUG"/>
         <Root level="INFO">
             <AppenderRef ref="Console"/>
         </Root>

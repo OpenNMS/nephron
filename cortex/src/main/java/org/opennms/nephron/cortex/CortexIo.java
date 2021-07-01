@@ -30,6 +30,7 @@ package org.opennms.nephron.cortex;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Phaser;
@@ -276,17 +277,27 @@ public class CortexIo {
          * Called by subclasses for adding time series to the output.
          */
         protected void outputTimeSeries(Consumer<TimeSeriesBuilder> consumer) throws IOException {
-            var builder = PrometheusTypes.TimeSeries.newBuilder();
-
-            for (var entry : spec.fixedLabels.entrySet()) {
-                builder.addLabels(
-                        PrometheusTypes.Label.newBuilder()
-                                .setName(entry.getKey())
-                                .setValue(entry.getValue())
-                );
-            }
+            var builders = new ArrayList<PrometheusTypes.TimeSeries.Builder>();
 
             consumer.accept(new TimeSeriesBuilder() {
+
+                private PrometheusTypes.TimeSeries.Builder builder;
+
+                private PrometheusTypes.TimeSeries.Builder builder() {
+                    if (builder == null) {
+                        builder = PrometheusTypes.TimeSeries.newBuilder();
+                        for (var entry : spec.fixedLabels.entrySet()) {
+                            builder.addLabels(
+                                    PrometheusTypes.Label.newBuilder()
+                                            .setName(entry.getKey())
+                                            .setValue(entry.getValue())
+                            );
+                        }
+                        builders.add(builder);
+                    }
+                    return builder;
+                }
+
                 @Override
                 public TimeSeriesBuilder setMetricName(String name) {
                     return addLabel(METRIC_NAME_LABEL, name);
@@ -295,7 +306,7 @@ public class CortexIo {
                 @Override
                 public TimeSeriesBuilder addLabel(String name, String value) {
                     sanitize(name, value,
-                            (n, v) -> builder.addLabels(PrometheusTypes.Label.newBuilder()
+                            (n, v) -> builder().addLabels(PrometheusTypes.Label.newBuilder()
                                     .setName(n)
                                     .setValue(v)
                             )
@@ -305,25 +316,34 @@ public class CortexIo {
 
                 @Override
                 public TimeSeriesBuilder addSample(long epocheMillis, double value) {
-                    builder.addSamples(
+                    builder().addSamples(
                             PrometheusTypes.Sample.newBuilder()
                                     .setTimestamp(epocheMillis)
                                     .setValue(value)
                     );
                     return this;
                 }
+
+                @Override
+                public TimeSeriesBuilder nextSeries() {
+                    // the next builder is created on demand
+                    builder = null;
+                    return this;
+                }
             });
 
-            var timeSeries = builder.build();
-            int serializedSize = timeSeries.getSerializedSize();
-            // check if the time series does fit into the buffer and flush the buffer if necessary
-            if (batchSize + 1 > spec.maxBatchSize || batchBytes + serializedSize > spec.maxBatchBytes) {
-                flushBatch();
-                startBatch();
+            for (var builder: builders) {
+                var timeSeries = builder.build();
+                int serializedSize = timeSeries.getSerializedSize();
+                // check if the time series does fit into the buffer and flush the buffer if necessary
+                if (batchSize + 1 > spec.maxBatchSize || batchBytes + serializedSize > spec.maxBatchBytes) {
+                    flushBatch();
+                    startBatch();
+                }
+                batchSize++;
+                batchBytes += serializedSize;
+                writeRequestBuilder.addTimeseries(timeSeries);
             }
-            batchSize++;
-            batchBytes += serializedSize;
-            writeRequestBuilder.addTimeseries(timeSeries);
         }
 
         public void startBatch() {
@@ -420,16 +440,27 @@ public class CortexIo {
      * <p>
      * Label names and metric names are sanitized according to Cortex requirements.
      */
-    interface TimeSeriesBuilder {
+    public interface TimeSeriesBuilder {
         TimeSeriesBuilder setMetricName(String name);
 
         TimeSeriesBuilder addLabel(String name, String value);
 
         TimeSeriesBuilder addSample(long epochMillis, double value);
+
+        TimeSeriesBuilder nextSeries();
+
+        default TimeSeriesBuilder addLabel(String name, int value) {
+            return addLabel(name, String.valueOf(value));
+        }
+
+        default TimeSeriesBuilder addLabel(String name, Integer value) {
+            return addLabel(name, String.valueOf(value));
+        }
+
     }
 
     @FunctionalInterface
-    interface BuildFromProcessContext<T> extends Serializable {
+    public interface BuildFromProcessContext<T> extends Serializable {
         void accept(DoFn<T, Void>.ProcessContext processContext, TimeSeriesBuilder builder);
     }
 
@@ -450,7 +481,7 @@ public class CortexIo {
     }
 
     @FunctionalInterface
-    interface BuildFromProcessContextAndWindow<T> extends Serializable {
+    public interface BuildFromProcessContextAndWindow<T> extends Serializable {
         void accept(DoFn<T, Void>.ProcessContext processContext, BoundedWindow window, TimeSeriesBuilder builder);
     }
 
@@ -471,7 +502,7 @@ public class CortexIo {
     }
 
     @FunctionalInterface
-    interface BuildFromElementAndTimestamp<T> extends Serializable {
+    public interface BuildFromElementAndTimestamp<T> extends Serializable {
         void accept(T t, Instant timestamp, TimeSeriesBuilder builder);
     }
 

@@ -41,6 +41,7 @@ import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.DefaultCoder;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.coders.VarIntCoder;
+import org.opennms.nephron.cortex.CortexIo;
 import org.opennms.nephron.elastic.FlowSummary;
 
 /**
@@ -97,6 +98,10 @@ public class CompoundKey {
 
     public void populate(FlowSummary flow) {
         type.populate(data, flow);
+    }
+
+    public void populate(CortexIo.TimeSeriesBuilder builder) {
+        type.populate(data, builder);
     }
 
     /**

@@ -28,6 +28,7 @@
 
 package org.opennms.nephron.testing.benchmark;
 
+import static org.opennms.nephron.Pipeline.attachWriteToCortex;
 import static org.opennms.nephron.Pipeline.registerCoders;
 
 import java.util.Objects;
@@ -70,6 +71,7 @@ public class Benchmark {
     // --runner=FlinkRunner --flinkMaster=localhost:8081
     // --flowsPerWindow=100
     // --flowsPerSecond=10000
+    // --cortexWriteUrl=http://localhost:9009/api/v1/push
     public static void main(String[] args) throws Exception {
         args = ensureArg("--blockOnRun=false", args);
         PipelineOptionsFactory.register(NephronOptions.class);
@@ -122,6 +124,8 @@ public class Benchmark {
                 .apply(inTestingProbe.getTransform())
                 .apply(new Pipeline.CalculateFlowStatistics(options))
                 .apply(outTestingProbe.getTransform());
+
+        attachWriteToCortex(options, flowSummaries);
 
         flowSummaries.apply(devNull("summaries"));
 

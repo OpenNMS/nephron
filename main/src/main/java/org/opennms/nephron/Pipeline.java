@@ -75,6 +75,7 @@ import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
 import org.opennms.nephron.coders.KafkaInputFlowDeserializer;
+import org.opennms.nephron.cortex.CortexIo;
 import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.elastic.IndexStrategy;
@@ -147,7 +148,47 @@ public class Pipeline {
             flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic(), kafkaProducerConfig));
         }
 
+        attachWriteToCortex(options, flowSummaries);
+
         return p;
+    }
+
+    public static void attachWriteToCortex(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        if (options.getCortexWriteUrl() != null) {
+            var cortexWrite = CortexIo.write(
+                    options.getCortexWriteUrl(),
+                    CortexIo.writeFn(Pipeline::cortexOutput)
+            );
+            if (options.getCortexOrgId() != null) {
+                cortexWrite.withOrgId(options.getCortexOrgId());
+            }
+            flowSummaries.apply(cortexWrite);
+        }
+    }
+
+    private static void cortexOutput(
+            DoFn<FlowSummaryData, Void>.ProcessContext processContext,
+            CortexIo.TimeSeriesBuilder builder
+    ) {
+        var fsd = processContext.element();
+        var pane = processContext.pane();
+        var paneId = pane.getTiming().name() + '-' + pane.getIndex();
+        doCortexOutput(fsd, paneId, "in", fsd.aggregate.getBytesIn(), builder);
+        builder.nextSeries();
+        doCortexOutput(fsd, paneId, "out", fsd.aggregate.getBytesOut(), builder);
+    }
+
+    private static void doCortexOutput(
+            FlowSummaryData fsd,
+            String paneId,
+            String direction,
+            long bytes,
+            CortexIo.TimeSeriesBuilder builder
+    ) {
+        builder.addLabel("pane", paneId);
+        builder.addLabel("direction", direction);
+        builder.addSample(fsd.windowStart, bytes);
+        fsd.key.populate(builder);
     }
 
     public static void registerCoders(org.apache.beam.sdk.Pipeline p) {
