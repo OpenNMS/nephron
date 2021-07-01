@@ -39,29 +39,43 @@ import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.transforms.windowing.WindowMappingFn;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
+import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
 import it.unimi.dsi.fastutil.HashCommon;
 
+/**
+ * When flows are assigned to windows the nodeId of the exporter and either the input snmp interface index or output
+ * snmp interface is used to calculate window shifts.
+ * <p>
+ * Different shifts for windows for different exporter/interfaces can be used because no aggregations are done across
+ * different exporter/interfaces. Using shifted windows for different exporter/interfaces spreads window completion
+ * load more evenly across time, thereby reducing peak loads.
+ * <p>
+ * In case of a flow with {@code flow.direction == INGRESS}) its input snmp interface index is used and otherwise
+ * its output interface index for calculating window shifts.
+ */
 public class UnalignedFixedWindows extends NonMergingWindowFn<FlowDocument, IntervalWindow> {
 
     public static UnalignedFixedWindows of(Duration size) {
         return new UnalignedFixedWindows(size);
     }
 
-    public static long perNodeShift(int nodeId, long windowSize) {
-        return Math.abs(HashCommon.mix(nodeId)) % windowSize;
+    public static long perNodeShift(int nodeId, int itfIdx, long windowSize) {
+        return Math.abs(31 * HashCommon.mix(nodeId) + HashCommon.mix(itfIdx)) % windowSize;
     }
 
     /**
      * Returns the start of a shifted window that includes the given timestamp.
      *
-     * Shifted windows start at: shift + windowNumber(nodeId, windowSize, timestamp) * windowSize,
+     * Shifted windows start at: shift + windowNumber(nodeId, itfIdx, windowSize, timestamp) * windowSize,
      */
-    public static long windowStartForTimestamp(int nodeId,
+    public static long windowStartForTimestamp(
+            int nodeId,
+            int itfIdx,
             long windowSize,
             long timestamp) {
-        long shift = perNodeShift(nodeId, windowSize);
+        long shift = perNodeShift(nodeId, itfIdx, windowSize);
         return timestamp - (timestamp - shift) % windowSize;
     }
 
@@ -70,21 +84,27 @@ public class UnalignedFixedWindows extends NonMergingWindowFn<FlowDocument, Inte
      */
     public static long windowNumber(
             int nodeId,
+            int itfIdx,
             long windowSize,
             long timestamp
     ) {
-        long shift = perNodeShift(nodeId, windowSize);
+        long shift = perNodeShift(nodeId, itfIdx, windowSize);
         return (timestamp - shift) / windowSize;
     }
 
     public static long windowStartForWindowNumber(
             int nodeId,
+            int itfIdx,
             long windowSize,
             long windowNumber
     ) {
-        long shift = perNodeShift(nodeId, windowSize);
+        long shift = perNodeShift(nodeId, itfIdx, windowSize);
         return shift + windowNumber * windowSize;
 
+    }
+
+    public static int getItfIdx(FlowDocument flow) {
+        return flow.getDirection() == Direction.INGRESS ? flow.getInputSnmpIfindex().getValue() : flow.getOutputSnmpIfindex().getValue();
     }
 
     private final long size;
@@ -97,7 +117,7 @@ public class UnalignedFixedWindows extends NonMergingWindowFn<FlowDocument, Inte
     public Collection<IntervalWindow> assignWindows(final AssignContext c) throws Exception {
         final FlowDocument flow = c.element();
         long timestamp = c.timestamp().getMillis();
-        long startMs = windowStartForTimestamp(flow.getExporterNode().getNodeId(), size, timestamp);
+        long startMs = windowStartForTimestamp(flow.getExporterNode().getNodeId(), getItfIdx(flow), size, timestamp);
         Instant start = Instant.ofEpochMilli(startMs);
         IntervalWindow window = new IntervalWindow(start, start.plus(this.size));
         return Collections.singleton(window);

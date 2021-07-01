@@ -59,6 +59,7 @@ import org.opennms.nephron.MissingFieldsException;
 import org.opennms.nephron.Pipeline;
 import org.opennms.nephron.UnalignedFixedWindows;
 import org.opennms.nephron.elastic.AggregationType;
+import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,14 +112,15 @@ public class TotalVolumeTest {
             long deltaSwitched = flow.getDeltaSwitched().getValue();
             long lastSwitched = flow.getLastSwitched().getValue();
             int nodeId = flow.getExporterNode().getNodeId();
+            int itfIdx = UnalignedFixedWindows.getItfIdx(flow);
 
-            long shift = UnalignedFixedWindows.perNodeShift(nodeId, windowSizeMs);
+            long shift = UnalignedFixedWindows.perNodeShift(nodeId, itfIdx, windowSizeMs);
             if (deltaSwitched < shift) {
                 return;
             }
 
-            long firstWindow = UnalignedFixedWindows.windowNumber(nodeId, windowSizeMs, deltaSwitched); // the first window the flow falls into
-            long lastWindow = UnalignedFixedWindows.windowNumber(nodeId, windowSizeMs, lastSwitched); // the last window the flow falls into (assuming lastSwitched is inclusive)
+            long firstWindow = UnalignedFixedWindows.windowNumber(nodeId, itfIdx, windowSizeMs, deltaSwitched); // the first window the flow falls into
+            long lastWindow = UnalignedFixedWindows.windowNumber(nodeId, itfIdx, windowSizeMs, lastSwitched); // the last window the flow falls into (assuming lastSwitched is inclusive)
             long nbWindows = lastWindow - firstWindow + 1;
 
             long timestamp = deltaSwitched;
@@ -127,6 +129,7 @@ public class TotalVolumeTest {
 
                     long windowStart = UnalignedFixedWindows.windowStartForTimestamp(
                             flow.getExporterNode().getNodeId(),
+                            itfIdx,
                             options.getFixedWindowSizeMs(),
                             timestamp
                     );
