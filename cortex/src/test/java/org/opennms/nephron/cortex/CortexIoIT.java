@@ -106,7 +106,7 @@ public class CortexIoIT {
     /**
      * An extension of the {@link CortexIo.WriteFn} class that records the results of calling cortex.
      */
-    private static class TestWriteFn extends CortexIo.WriteFn<Double> implements Callback {
+    private static class TestWriteFn extends CortexIo.WriteFn<Double> {
 
         private CortexIo.BuildFromElementAndTimestamp<Double> build;
         private List<CallResult> results = Collections.synchronizedList(new ArrayList<>());
@@ -126,17 +126,12 @@ public class CortexIoIT {
         }
 
         @Override
-        protected Callback getCallback() {
-            return this;
-        }
-
-        @Override
-        public void onFailure(Call call, IOException e) {
+        public void doOnFailure(Call call, IOException e) {
             results.add(new CallResult.Failure(call, e));
         }
 
         @Override
-        public void onResponse(Call call, Response response) throws IOException {
+        public void doOnResponse(Call call, Response response) {
             results.add(new CallResult.Success(call, response));
         }
     }

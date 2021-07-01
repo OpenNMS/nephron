@@ -32,11 +32,15 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.metrics.Counter;
+import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
@@ -65,17 +69,29 @@ import okhttp3.ResponseBody;
 import prometheus.PrometheusRemote;
 import prometheus.PrometheusTypes;
 
+/**
+ * Provides a write transformation for writing to Cortex.
+ * <p>
+ * The write transformation is configured by the {@link Write} class and is implemented by the {@link WriteFn} class.
+ */
 @Experimental(Experimental.Kind.SOURCE_SINK)
 public class CortexIo {
 
-    // Label name indicating the metric name of a timeseries.
-    public static final String METRIC_NAME_LABEL = "__name__";
+    // Label name indicating the metric name of a time series.
+    private static final String METRIC_NAME_LABEL = "__name__";
 
     private static final Logger LOG = LoggerFactory.getLogger(CortexIo.class);
 
     private static final MediaType PROTOBUF_MEDIA_TYPE = MediaType.parse("application/x-protobuf");
 
     private static final String X_SCOPE_ORG_ID_HEADER = "X-Scope-OrgID";
+
+    public static final String CORTEX_METRIC_NAMESPACE = "cortex";
+    public static final String CORTEX_WRITE_FAILURE_METRIC_NAME = "cortex_write_failure";
+    public static final String CORTEX_RESPONSE_FAILURE_METRIC_NAME = "cortex_response_failure";
+
+    private static Counter WRITE_FAILURE = Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_WRITE_FAILURE_METRIC_NAME);
+    private static Counter RESPONSE_FAILURE = Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_RESPONSE_FAILURE_METRIC_NAME);
 
     @FunctionalInterface
     interface CreateWriteFn<T> extends SerializableFunction<Write<T>, CortexIo.WriteFn<T>> {}
@@ -87,6 +103,11 @@ public class CortexIo {
         return new Write<>(writeUrl, createWriteFn);
     }
 
+    /**
+     * Stores the configuration of the transformation.
+     * <p>
+     * Expands to a {@link ParDo} transformation that is specified by  a subclass of the {@link WriteFn} class.
+     */
     public static class Write<T> extends PTransform<PCollection<T>, PDone> {
 
         private final String writeUrl;
@@ -175,7 +196,7 @@ public class CortexIo {
      * and that calls the {@link #outputTimeSeries(Consumer)} method.
      * <p>
      * Depending on the information required to transform input of type {@code T} into a Cortex protobuf time series
-     * different subclasses are used.
+     * different subclasses are used. The various {@link CortexIo#writeFn} methods instantiate these subclasses.
      */
     public abstract static class WriteFn<T> extends DoFn<T, Void> {
 
@@ -186,6 +207,14 @@ public class CortexIo {
         private transient PrometheusRemote.WriteRequest.Builder writeRequestBuilder;
         private transient long batchSize;
         private transient long batchBytes;
+
+        // metrics can not be updated in http response callbacks
+        // -> use AtomicLongs for intermediary storage and update the metrics when the bundle is finished
+        private transient AtomicLong writeFailures;
+        private transient AtomicLong responseFailures;
+
+        // synchronizes on-going http requests and bundle finalization
+        private transient Phaser phaser;
 
         public WriteFn(Write<T> spec) {
             this.spec = spec;
@@ -204,6 +233,17 @@ public class CortexIo {
                     .dispatcher(dispatcher)
                     .connectionPool(connectionPool)
                     .build();
+            phaser = new Phaser(1);
+            writeFailures = new AtomicLong();
+            responseFailures = new AtomicLong();
+        }
+
+        private static void recordFailures(AtomicLong al, Counter counter) {
+            var cnt = al.getAndSet(0);
+            if (cnt != 0) {
+                LOG.debug("record failure - count: " + cnt + "; metric: " + counter.getName());
+                counter.inc(cnt);
+            }
         }
 
         @StartBundle
@@ -212,8 +252,28 @@ public class CortexIo {
             startBatch();
         }
 
+        @FinishBundle
+        public void finishBundle() throws IOException, InterruptedException {
+            LOG.debug("finishBundle - instance: {}", this);
+            flushBatch();
+            // wait for all write requests to finish
+            // -> ensures that writeFailures/responseFailures are current
+            // -> blocks until the IO for the current bundle has completed
+            // -> decreases the chance that windows are processed out of order
+            phaser.arriveAndAwaitAdvance();
+            recordFailures(writeFailures, WRITE_FAILURE);
+            recordFailures(responseFailures, RESPONSE_FAILURE);
+        }
+
+        @Teardown
+        public void closeClient() throws IOException {
+            LOG.debug("teardown - instance: {}", this);
+            okHttpClient.dispatcher().executorService().shutdown();
+            okHttpClient.connectionPool().evictAll();
+        }
+
         /**
-         * Called by subclasses for adding a time series to the output.
+         * Called by subclasses for adding time series to the output.
          */
         protected void outputTimeSeries(Consumer<TimeSeriesBuilder> consumer) throws IOException {
             var builder = PrometheusTypes.TimeSeries.newBuilder();
@@ -227,6 +287,11 @@ public class CortexIo {
             }
 
             consumer.accept(new TimeSeriesBuilder() {
+                @Override
+                public TimeSeriesBuilder setMetricName(String name) {
+                    return addLabel(METRIC_NAME_LABEL, name);
+                }
+
                 @Override
                 public TimeSeriesBuilder addLabel(String name, String value) {
                     sanitize(name, value,
@@ -259,30 +324,6 @@ public class CortexIo {
             batchSize++;
             batchBytes += serializedSize;
             writeRequestBuilder.addTimeseries(timeSeries);
-        }
-
-        @FinishBundle
-        public void finishBundle()
-                throws IOException, InterruptedException {
-            LOG.debug("finishBundle - instance: {}", this);
-            flushBatch();
-        }
-
-        @Teardown
-        public void closeClient() throws IOException {
-            LOG.debug("teardown - instance: {}", this);
-            okHttpClient.dispatcher().executorService().shutdown();
-            okHttpClient.connectionPool().evictAll();
-        }
-
-        @Override
-        public TypeDescriptor<T> getInputTypeDescriptor() {
-            return super.getInputTypeDescriptor();
-        }
-
-        @Override
-        public TypeDescriptor<Void> getOutputTypeDescriptor() {
-            return super.getOutputTypeDescriptor();
         }
 
         public void startBatch() {
@@ -318,43 +359,70 @@ public class CortexIo {
 
             // TODO: bulkheading, retries, ...
 
-            okHttpClient.newCall(request).enqueue(getCallback());
+            // register an ongoing http request
+            // -> onCallback the request is unregistered
+            phaser.register();
+
+            okHttpClient.newCall(request).enqueue(
+                    new Callback() {
+                        @Override
+                        public void onFailure(Call call, IOException e) {
+                            try {
+                                LOG.error("Write to Cortex failed", e);
+                                writeFailures.incrementAndGet();
+                            } finally {
+                                phaser.arriveAndDeregister();
+                            }
+                            doOnFailure(call, e);
+                        }
+
+                        @Override
+                        public void onResponse(Call call, Response response) {
+                            try {
+                                LOG.trace("got response - code: {}, writeRequest: {}", response.code(), writeRequest);
+                                try (ResponseBody body = response.body()) {
+                                    if (!response.isSuccessful()) {
+                                        responseFailures.incrementAndGet();
+                                        String bodyAsString;
+                                        if (body != null) {
+                                            try {
+                                                bodyAsString = body.string();
+                                            } catch (IOException e) {
+                                                bodyAsString = "(error reading body)";
+                                            }
+                                        } else {
+                                            bodyAsString = "(null)";
+                                        }
+                                        LOG.error("Writing to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString);
+                                    }
+                                }
+                            } finally {
+                                phaser.arriveAndDeregister();
+                            }
+                            doOnResponse(call, response);
+                        }
+                    }
+            );
 
         }
 
-        protected Callback getCallback() {
-            return DEFAULT_WRITE_CALLBACK;
-        }
+        // hook method for subclasses, e.g. in tests
+        protected void doOnFailure(Call call, IOException e) {}
+        protected void doOnResponse(Call call, Response response) {}
 
     }
 
-    private static Callback DEFAULT_WRITE_CALLBACK = new Callback() {
-        @Override
-        public void onFailure(Call call, IOException e) {
-            LOG.error("Write to Cortex failed", e);
-        }
-
-        @Override
-        public void onResponse(Call call, Response response) {
-            try (ResponseBody body = response.body()) {
-                if (!response.isSuccessful()) {
-                    String bodyAsString;
-                    if (body != null) {
-                        try {
-                            bodyAsString = body.string();
-                        } catch (IOException e) {
-                            bodyAsString = "(error reading body)";
-                        }
-                    } else {
-                        bodyAsString = "(null)";
-                    }
-                    LOG.error("Writing to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString);
-                }
-            }
-        }
-    };
-
+    /**
+     * Allows to add labels and samples to an underlying protobuf builder.
+     * <p>
+     * The metric name is just a special kind of label. Therefore {@link #setMetricName(String)} should be called
+     * only once.
+     * <p>
+     * Label names and metric names are sanitized according to Cortex requirements.
+     */
     interface TimeSeriesBuilder {
+        TimeSeriesBuilder setMetricName(String name);
+
         TimeSeriesBuilder addLabel(String name, String value);
 
         TimeSeriesBuilder addSample(long epochMillis, double value);
