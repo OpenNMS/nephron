@@ -36,6 +36,8 @@ import java.util.Objects;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.DefaultCoder;
+import org.apache.beam.sdk.coders.NullableCoder;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.opennms.nephron.elastic.AggregationType;
@@ -49,13 +51,15 @@ import org.opennms.nephron.elastic.AggregationType;
 public class FlowSummaryData {
     public final AggregationType aggregationType;
     public final CompoundKey key;
+    public final String pane;
     public final Aggregate aggregate;
     public final long windowStart, windowEnd;
     public final int ranking;
 
-    public FlowSummaryData(AggregationType aggregationType, CompoundKey key, Aggregate aggregate, long windowStart, long windowEnd, int ranking) {
+    public FlowSummaryData(AggregationType aggregationType, CompoundKey key, String pane, Aggregate aggregate, long windowStart, long windowEnd, int ranking) {
         this.aggregationType = aggregationType;
         this.key = key;
+        this.pane = pane;
         this.aggregate = aggregate;
         this.windowStart = windowStart;
         this.windowEnd = windowEnd;
@@ -67,6 +71,7 @@ public class FlowSummaryData {
         return "FlowSummaryData{" +
                "aggregationType=" + aggregationType +
                ", key=" + key +
+               ", pane=" + pane +
                ", aggregate=" + aggregate +
                ", windowStart=" + windowStart +
                ", windowEnd=" + windowEnd +
@@ -83,12 +88,12 @@ public class FlowSummaryData {
             return false;
         }
         FlowSummaryData that = (FlowSummaryData) o;
-        return windowStart == that.windowStart && windowEnd == that.windowEnd && ranking == that.ranking && aggregationType == that.aggregationType && Objects.equals(this.key, that.key) && Objects.equals(this.aggregate, that.aggregate);
+        return windowStart == that.windowStart && windowEnd == that.windowEnd && ranking == that.ranking && aggregationType == that.aggregationType && Objects.equals(key, that.key) && Objects.equals(pane, that.pane) && Objects.equals(aggregate, that.aggregate);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(aggregationType, key, aggregate, windowStart, windowEnd, ranking);
+        return Objects.hash(aggregationType, key, pane, aggregate, windowStart, windowEnd, ranking);
     }
 
     public static class FlowSummaryDataCoder extends AtomicCoder<FlowSummaryData> {
@@ -96,12 +101,14 @@ public class FlowSummaryData {
         private static Coder<Integer> INT_CODER = VarIntCoder.of();
         private static Coder<Long> LONG_CODER = VarLongCoder.of();
         private static Coder<CompoundKey> KEY_CODER = new CompoundKey.CompoundKeyCoder();
+        private static Coder<String> STRING_CODER = NullableCoder.of(StringUtf8Coder.of());
         private static Coder<Aggregate> AGG_CODER = new Aggregate.AggregateCoder();
 
         @Override
         public void encode(FlowSummaryData value, OutputStream outStream) throws IOException {
             INT_CODER.encode(value.aggregationType.ordinal(), outStream);
             KEY_CODER.encode(value.key, outStream);
+            STRING_CODER.encode(value.pane, outStream);
             AGG_CODER.encode(value.aggregate, outStream);
             LONG_CODER.encode(value.windowStart, outStream);
             LONG_CODER.encode(value.windowEnd, outStream);
@@ -113,6 +120,7 @@ public class FlowSummaryData {
             return new FlowSummaryData(
                     AggregationType.values()[INT_CODER.decode(inStream)],
                     KEY_CODER.decode(inStream),
+                    STRING_CODER.decode(inStream),
                     AGG_CODER.decode(inStream),
                     LONG_CODER.decode(inStream),
                     LONG_CODER.decode(inStream),

@@ -49,7 +49,6 @@ import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
-import org.apache.beam.sdk.values.TypeDescriptor;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -107,7 +106,7 @@ public class CortexIo {
     /**
      * Stores the configuration of the transformation.
      * <p>
-     * Expands to a {@link ParDo} transformation that is specified by  a subclass of the {@link WriteFn} class.
+     * Expands to a {@link ParDo} transformation that is specified by a subclass of the {@link WriteFn} class.
      */
     public static class Write<T> extends PTransform<PCollection<T>, PDone> {
 
@@ -413,7 +412,7 @@ public class CortexIo {
                                         } else {
                                             bodyAsString = "(null)";
                                         }
-                                        LOG.error("Writing to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString);
+                                        LOG.error("Writing to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString.trim());
                                     }
                                 }
                             } finally {

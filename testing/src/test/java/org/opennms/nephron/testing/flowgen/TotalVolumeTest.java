@@ -98,6 +98,40 @@ public class TotalVolumeTest {
 
         SourceConfig sourceConfig = SourceConfig.of(options, SyntheticFlowTimestampPolicyFactory.withLimitedDelay(options, Pipeline.ReadFromKafka::getTimestamp));
 
+        Map<ResKey, Aggregate> expected = aggregateInMemory(options, sourceConfig);
+
+        org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
+        registerCoders(p);
+
+        PCollection<FlowSummaryData> flowSummaries = p
+                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
+                .apply(new Pipeline.CalculateFlowStatistics(options));
+
+        flowSummaries.apply(countVolumes());
+
+        PipelineResult mainResult = p.run();
+
+        PipelineResult.State state = mainResult.waitUntilFinish(Duration.standardMinutes(3));
+
+        LOG.debug("Pipeline result state: " + state);
+
+        var metrics = mainResult.metrics();
+
+        boolean check = true;
+
+        for (Map.Entry<ResKey, Aggregate> me : expected.entrySet()) {
+            var key = me.getKey();
+            var agg = me.getValue();
+            boolean c1 = check(metrics, true, key, agg);
+            boolean c2 = check(metrics, false, key, agg);
+            check &= c1 && c2;
+        }
+
+        assertTrue("unexpected results", check);
+
+    }
+
+    public static Map<ResKey, Aggregate> aggregateInMemory(FlowGenOptions options, SourceConfig sourceConfig) {
         Map<ResKey, Aggregate> expected = new HashMap<>();
 
         long windowSizeMs = options.getFixedWindowSizeMs();
@@ -156,42 +190,13 @@ public class TotalVolumeTest {
             }
 
         });
-
-        org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
-        registerCoders(p);
-
-        PCollection<FlowSummaryData> flowSummaries = p
-                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
-                .apply(new Pipeline.CalculateFlowStatistics(options));
-
-        flowSummaries.apply(countVolumes());
-
-        PipelineResult mainResult = p.run();
-
-        PipelineResult.State state = mainResult.waitUntilFinish(Duration.standardMinutes(3));
-
-        LOG.debug("Pipeline result state: " + state);
-
-        var metrics = mainResult.metrics();
-
-        boolean check = true;
-
-        for (Map.Entry<ResKey, Aggregate> me : expected.entrySet()) {
-            var key = me.getKey();
-            var agg = me.getValue();
-            boolean c1 = check(metrics, true, key, agg);
-            boolean c2 = check(metrics, false, key, agg);
-            check &= c1 && c2;
-        }
-
-        assertTrue("unexpected results", check);
-
+        return expected;
     }
 
     /**
      * Checks that the in-memory calculated aggregation result matches the value of the corresponding counter metric.
      */
-    private static boolean check(MetricResults metricResults, boolean inNotOut, ResKey resKey, Aggregate agg) {
+    public static boolean check(MetricResults metricResults, boolean inNotOut, ResKey resKey, Aggregate agg) {
         String strKey = resKey.asString();
         var iter = metricResults.queryMetrics(MetricsFilter.builder()
                 .addNameFilter(MetricNameFilter.named(strKey, inNotOut ? "in" : "out")).build()).getCounters().iterator();
@@ -201,7 +206,7 @@ public class TotalVolumeTest {
             if (metricResult.getAttempted() == expected) {
                 return true;
             } else {
-                LOG.error("mismatch - key: " + strKey + "; in: " + inNotOut + "; expected: " + expected + "; actual: " + metricResult.getCommitted());
+                LOG.error("mismatch - key: " + strKey + "; in: " + inNotOut + "; expected: " + expected + "; actual: " + metricResult.getAttempted());
                 return false;
             }
         } else {

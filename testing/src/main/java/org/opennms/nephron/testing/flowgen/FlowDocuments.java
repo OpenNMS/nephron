@@ -98,7 +98,7 @@ public class FlowDocuments {
     }
 
     public static FlowDocument getFlowDocument(FlowConfig cfg, long idx, FlowData fd) {
-        Instant lastSwitched = cfg.lastSwitched.apply(idx).plus(fd.fd2.lastSwitchedOffset);
+        Instant lastSwitched = cfg.lastSwitched.apply(idx, fd).plus(fd.fd2.lastSwitchedOffset);
         Instant deltaSwitched = lastSwitched.minus(fd.fd2.flowDuration);
 
         String srcAddress = ipAddress(fd.fd1.srcAddr);

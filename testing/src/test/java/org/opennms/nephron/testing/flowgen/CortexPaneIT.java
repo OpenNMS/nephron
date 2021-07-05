@@ -1,0 +1,264 @@
+/*******************************************************************************
+ * This file is part of OpenNMS(R).
+ *
+ * Copyright (C) 2021 The OpenNMS Group, Inc.
+ * OpenNMS(R) is Copyright (C) 1999-2021 The OpenNMS Group, Inc.
+ *
+ * OpenNMS(R) is a registered trademark of The OpenNMS Group, Inc.
+ *
+ * OpenNMS(R) is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License,
+ * or (at your option) any later version.
+ *
+ * OpenNMS(R) is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with OpenNMS(R).  If not, see:
+ *      http://www.gnu.org/licenses/
+ *
+ * For more information contact:
+ *     OpenNMS(R) Licensing <license@opennms.org>
+ *     http://www.opennms.org/
+ *     http://www.opennms.com/
+ *******************************************************************************/
+
+package org.opennms.nephron.testing.flowgen;
+
+import static org.junit.Assert.assertTrue;
+import static org.opennms.nephron.Pipeline.registerCoders;
+import static org.opennms.nephron.testing.flowgen.TotalVolumeTest.countVolumes;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.Map;
+import java.util.Objects;
+
+import org.apache.beam.sdk.PipelineResult;
+import org.apache.beam.sdk.coders.AtomicCoder;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.CoderException;
+import org.apache.beam.sdk.coders.InstantCoder;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.testing.PAssert;
+import org.apache.beam.sdk.transforms.Combine;
+import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.Filter;
+import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.SerializableBiFunction;
+import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
+import org.apache.beam.sdk.transforms.windowing.Window;
+import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.PCollection;
+import org.joda.time.Duration;
+import org.joda.time.Instant;
+import org.junit.Rule;
+import org.junit.Test;
+import org.opennms.nephron.Aggregate;
+import org.opennms.nephron.CompoundKey;
+import org.opennms.nephron.FlowSummaryData;
+import org.opennms.nephron.Pipeline;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.testcontainers.containers.BindMode;
+import org.testcontainers.containers.GenericContainer;
+
+public class CortexPaneIT {
+
+    private static Logger LOG = LoggerFactory.getLogger(CortexPaneIT.class);
+
+    private static final int CORTEX_HTTP_PORT = 9009;
+
+    private static boolean USE_LOCAL_CORTEX = false;
+    // docker run -d --name cortex -v /home/swachter/projects/opennms/nephron/cortex/src/test/resources/cortex.yaml:/etc/cortex/cortex.yaml -p 9009:9009 -p 9005:9005 cortexproject/cortex:v1.9.0 -config.file=/etc/cortex/cortex.yaml
+
+    @Rule
+    public GenericContainer cortex = new GenericContainer("cortexproject/cortex:v1.9.0")
+            .withExposedPorts(CORTEX_HTTP_PORT)
+            .withClasspathResourceMapping("cortex.yaml", "/etc/cortex/cortex.yaml", BindMode.READ_ONLY)
+            .withCommand("-config.file=/etc/cortex/cortex.yaml");
+
+    private int cortexPort() {
+        return USE_LOCAL_CORTEX ? 9009 : cortex.getMappedPort(CORTEX_HTTP_PORT);
+    }
+
+    @Test
+    public void test() {
+
+        FlowGenOptions options = PipelineOptionsFactory.fromArgs(
+                "--defaultMaxInputDelayMs=30000",
+                "--runner=FlinkRunner",
+//                "--flinkMaster=localhost:8081",
+                "--parallelism=1",
+                "--lateProcessingDelayMs=240000",
+                "--playbackMode=true",
+                "--numWindows=10",
+                "--flowsPerWindow=10000",
+                "--lastSwitchedSigmaMs=1000",
+                "--numExporters=2",
+                "--numInterfaces=2",
+                "--numApplications=2",
+                "--numHosts=2",
+                "--numEcns=2",
+                "--numDscps=2",
+                "--flowsPerSecond=0",
+                "--cortexWriteUrl=http://localhost:" + cortexPort() + "/api/v1/push"
+        ).withValidation().as(FlowGenOptions.class);
+
+        // the first exporter has a frozen clock that always returns the start time
+        SyntheticFlowTimestampPolicyFactory tpf =
+                SyntheticFlowTimestampPolicyFactory.withLimitedDelay(options, Pipeline.ReadFromKafka::getTimestamp);
+
+        var sourceConfig = SourceConfig.of(options, frozenLastSwitchedPolicy(options), tpf);
+
+        var expected = TotalVolumeTest.aggregateInMemory(options, sourceConfig);
+
+        org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
+        registerCoders(p);
+        p.getCoderRegistry().registerCoderForClass(Wpc.class, new Wpc.WpcCoder());
+
+        PCollection<FlowSummaryData> flowSummaries = p
+                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
+                .apply(new Pipeline.CalculateFlowStatistics(options));
+
+        Pipeline.attachWriteToElastic(options, flowSummaries);
+        Pipeline.attachWriteToCortex(options, flowSummaries);
+
+        flowSummaries.apply(countVolumes());
+
+//        flowSummaries.apply(
+//                FileIO.<FlowSummaryData>write()
+//                        .via(Contextful.fn(CortexPaneIT::formatFlowSummaryData), TextIO.sink())
+//                        .withNumShards(1)
+//                        .to("/home/swachter/beam-output/file")
+//        );
+
+        var duplicateKeys = flowSummaries
+                .apply(Window.into(new GlobalWindows()))
+                .apply(KEY_BY_WPC)
+                .apply(Combine.perKey((l1, l2) -> l1 + l2))
+                .apply(Filter.by(kv -> kv.getValue() > 1));
+
+        PAssert.that(duplicateKeys).satisfies(iter -> {
+            for (var i : iter) {
+                System.out.println("duplicate: " + i);
+            }
+            return null;
+        });
+
+        PipelineResult mainResult = p.run();
+
+        PipelineResult.State state = mainResult.waitUntilFinish(Duration.standardMinutes(3));
+
+        LOG.debug("Pipeline result state: " + state);
+
+        var metrics = mainResult.metrics();
+
+        boolean check = true;
+
+        for (Map.Entry<TotalVolumeTest.ResKey, Aggregate> me : expected.entrySet()) {
+            var key = me.getKey();
+            var agg = me.getValue();
+            boolean c1 = TotalVolumeTest.check(metrics, true, key, agg);
+            boolean c2 = TotalVolumeTest.check(metrics, false, key, agg);
+            check &= c1 && c2;
+        }
+
+        assertTrue("unexpected results", check);
+
+    }
+
+    private static ParDo.SingleOutput<FlowSummaryData, KV<Wpc, Long>> KEY_BY_WPC =
+            ParDo.of(new DoFn<FlowSummaryData, KV<Wpc, Long>>() {
+                @ProcessElement
+                public void process(ProcessContext pc) {
+                    var e = pc.element();
+                    pc.output(KV.of(new Wpc(Instant.ofEpochMilli(e.windowStart), e.pane, e.key), 1l));
+                }
+            });
+
+    private static String formatFlowSummaryData(FlowSummaryData element) {
+        var sb = new StringBuilder();
+        sb.append(Instant.ofEpochMilli(element.windowEnd))
+                .append(", ")
+                .append(element.key.toString())
+                .append(", ")
+                .append(element.pane);
+        return sb.toString();
+
+    }
+
+    private static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> frozenLastSwitchedPolicy(FlowGenOptions options) {
+        var minExporter = options.getMinExporter();
+        var uniformLastSwitchedPolicy = FlowConfig.uniformInWindowLastSwitchedPolicy(options);
+        var start = Instant.ofEpochMilli(options.getStartMs());
+        return (idx, fd) -> fd.fd1.nodeId == minExporter ? start : uniformLastSwitchedPolicy.apply(idx, fd);
+    }
+
+    private static class Wpc {
+
+        private static class WpcCoder extends AtomicCoder<Wpc> {
+            private static final Coder<Instant> INSTANT_CODER = InstantCoder.of();
+            private static final Coder<String> STRING_CODER = StringUtf8Coder.of();
+            private static final CompoundKey.CompoundKeyCoder COMPOUND_KEY_CODER = new CompoundKey.CompoundKeyCoder();
+
+            @Override
+            public void encode(Wpc value, OutputStream outStream) throws CoderException, IOException {
+                INSTANT_CODER.encode(value.window, outStream);
+                STRING_CODER.encode(value.pane, outStream);
+                COMPOUND_KEY_CODER.encode(value.key, outStream);
+            }
+
+            @Override
+            public Wpc decode(InputStream inStream) throws CoderException, IOException {
+                return new Wpc(
+                        INSTANT_CODER.decode(inStream),
+                        STRING_CODER.decode(inStream),
+                        COMPOUND_KEY_CODER.decode(inStream)
+                );
+            }
+        }
+
+        public final Instant window;
+        public final String pane;
+        public final CompoundKey key;
+
+        public Wpc(Instant window, String pane, CompoundKey key) {
+            this.window = window;
+            this.pane = pane;
+            this.key = key;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            Wpc wpc = (Wpc) o;
+            return Objects.equals(window, wpc.window) && Objects.equals(pane, wpc.pane) && Objects.equals(key, wpc.key);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(window, pane, key);
+        }
+
+        @Override
+        public String toString() {
+            return "Wpc{" +
+                   "window=" + window +
+                   ", pane='" + pane + '\'' +
+                   ", key=" + key +
+                   '}';
+        }
+    }
+
+}

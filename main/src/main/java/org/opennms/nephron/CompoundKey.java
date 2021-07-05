@@ -149,6 +149,11 @@ public class CompoundKey {
         return hash;
     }
 
+    @Override
+    public String toString() {
+        return groupedByKey();
+    }
+
     private final static Coder<Integer> INT_CODER = NullableCoder.of(VarIntCoder.of());
 
     public static class CompoundKeyCoder extends AtomicCoder<CompoundKey> {

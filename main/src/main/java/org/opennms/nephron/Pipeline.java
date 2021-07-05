@@ -50,6 +50,7 @@ import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Flatten;
+import org.apache.beam.sdk.transforms.GroupByKey;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.SerializableFunction;
@@ -112,22 +113,7 @@ public class Pipeline {
         org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
-        Map<String, Object> kafkaConsumerConfig = new HashMap<>();
-        Map<String, Object> kafkaProducerConfig = new HashMap<>();
-
-        if (!Strings.isNullOrEmpty(options.getKafkaClientProperties())) {
-            final Properties properties = new Properties();
-            try {
-                properties.load(new FileReader(options.getKafkaClientProperties()));
-            } catch (IOException e) {
-                LOG.error("Error loading properties file", e);
-                throw new RuntimeException("Error reading properties file", e);
-            }
-            for(Map.Entry<Object,Object> entry : properties.entrySet()) {
-                kafkaConsumerConfig.put(entry.getKey().toString(), entry.getValue());
-                kafkaProducerConfig.put(entry.getKey().toString(), entry.getValue());
-            }
-        }
+        Map<String, Object> kafkaConsumerConfig = loadKafkaClientProperties(options);
 
         kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, options.getGroupId());
         // Auto-commit should be disabled when checkpointing is on:
@@ -140,21 +126,47 @@ public class Pipeline {
         // Calculate the flow summary statistics
         PCollection<FlowSummaryData> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
 
-        // Write the results out to Elasticsearch
-        flowSummaries.apply(new WriteToElasticsearch(options));
-
-        // Optionally write out to Kafka as well
-        if (options.getFlowDestTopic() != null) {
-            flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic(), kafkaProducerConfig));
-        }
-
+        // optionally attach different kinds of sinks
+        attachWriteToElastic(options, flowSummaries);
+        attachWriteToKafka(options, flowSummaries);
         attachWriteToCortex(options, flowSummaries);
 
         return p;
     }
 
+    private static Map<String, Object> loadKafkaClientProperties(NephronOptions options) {
+        Map<String, Object> kafkaClientProperties = new HashMap<>();
+
+        if (!Strings.isNullOrEmpty(options.getKafkaClientProperties())) {
+            final Properties properties = new Properties();
+            try {
+                properties.load(new FileReader(options.getKafkaClientProperties()));
+            } catch (IOException e) {
+                LOG.error("Error loading properties file", e);
+                throw new RuntimeException("Error reading properties file", e);
+            }
+            for(Map.Entry<Object,Object> entry : properties.entrySet()) {
+                kafkaClientProperties.put(entry.getKey().toString(), entry.getValue());
+            }
+        }
+        return kafkaClientProperties;
+    }
+
+    public static void attachWriteToElastic(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        if (!Strings.isNullOrEmpty(options.getElasticUrl())) {
+            flowSummaries.apply(new WriteToElasticsearch(options));
+        }
+    }
+
+    public static void attachWriteToKafka(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        if (!Strings.isNullOrEmpty(options.getFlowDestTopic())) {
+            var kafkaProducerConfig = loadKafkaClientProperties(options);
+            flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic(), kafkaProducerConfig));
+        }
+    }
+
     public static void attachWriteToCortex(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
-        if (options.getCortexWriteUrl() != null) {
+        if (!Strings.isNullOrEmpty(options.getCortexWriteUrl())) {
             var cortexWrite = CortexIo.write(
                     options.getCortexWriteUrl(),
                     CortexIo.writeFn(Pipeline::cortexOutput)
@@ -171,11 +183,9 @@ public class Pipeline {
             CortexIo.TimeSeriesBuilder builder
     ) {
         var fsd = processContext.element();
-        var pane = processContext.pane();
-        var paneId = pane.getTiming().name() + '-' + pane.getIndex();
-        doCortexOutput(fsd, paneId, "in", fsd.aggregate.getBytesIn(), builder);
+        doCortexOutput(fsd, fsd.pane, "in", fsd.aggregate.getBytesIn(), builder);
         builder.nextSeries();
-        doCortexOutput(fsd, paneId, "out", fsd.aggregate.getBytesOut(), builder);
+        doCortexOutput(fsd, fsd.pane, "out", fsd.aggregate.getBytesOut(), builder);
     }
 
     private static void doCortexOutput(
@@ -565,8 +575,8 @@ public class Pipeline {
         });
     }
 
-    public static FlowSummaryData toFlowSummaryData(AggregationType aggregationType, IntervalWindow window, KV<CompoundKey, Aggregate> el, int ranking) {
-        return new FlowSummaryData(aggregationType, el.getKey(), el.getValue(), window.start().getMillis(), window.end().getMillis(), ranking);
+    public static FlowSummaryData toFlowSummaryData(AggregationType aggregationType, IntervalWindow window, String pane, KV<CompoundKey, Aggregate> el, int ranking) {
+        return new FlowSummaryData(aggregationType, el.getKey(), pane, el.getValue(), window.start().getMillis(), window.end().getMillis(), ranking);
     }
 
     public static FlowSummary toFlowSummary(FlowSummaryData fsd) {
@@ -747,7 +757,9 @@ public class Pipeline {
         PCollection<FlowSummaryData> summary = parentTotal.apply(transformPrefix + "total_summary", ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, FlowSummaryData>() {
             @ProcessElement
             public void processElement(ProcessContext c, IntervalWindow window) {
-                c.output(toFlowSummaryData(AggregationType.TOTAL, window, c.element(), 0));
+                var pane = c.pane();
+                var paneId = pane.getTiming().name() + '-' + pane.getIndex();
+                c.output(toFlowSummaryData(AggregationType.TOTAL, window, paneId, c.element(), 0));
             }
         }));
         return new TotalAndSummary(parentTotal, summary);
@@ -822,9 +834,11 @@ public class Pipeline {
                 .apply(transformPrefix + "top_k_summary", ParDo.of(new DoFn<List<KV<CompoundKey, Aggregate>>, FlowSummaryData>() {
                     @ProcessElement
                     public void processElement(ProcessContext c, IntervalWindow window) {
+                        var pane = c.pane();
+                        var paneId = pane.getTiming().name() + '-' + pane.getIndex();
                         int ranking = 1;
                         for (KV<CompoundKey, Aggregate> el : c.element()) {
-                            FlowSummaryData flowSummary = toFlowSummaryData(AggregationType.TOPK, window, el, ranking++);
+                            FlowSummaryData flowSummary = toFlowSummaryData(AggregationType.TOPK, window, paneId, el, ranking++);
                             c.output(flowSummary);
                         }
                     }
