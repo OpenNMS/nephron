@@ -28,6 +28,9 @@
 
 package org.opennms.nephron.testing.flowgen;
 
+import static io.restassured.RestAssured.with;
+import static org.hamcrest.Matchers.equalTo;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.opennms.nephron.Pipeline.registerCoders;
 import static org.opennms.nephron.testing.flowgen.TotalVolumeTest.countVolumes;
@@ -35,7 +38,6 @@ import static org.opennms.nephron.testing.flowgen.TotalVolumeTest.countVolumes;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Map;
 import java.util.Objects;
 
 import org.apache.beam.sdk.PipelineResult;
@@ -51,6 +53,7 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.SerializableBiFunction;
+import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
@@ -63,10 +66,14 @@ import org.opennms.nephron.Aggregate;
 import org.opennms.nephron.CompoundKey;
 import org.opennms.nephron.FlowSummaryData;
 import org.opennms.nephron.Pipeline;
+import org.opennms.nephron.RefType;
+import org.opennms.nephron.cortex.PaneAccumulator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
+
+import io.restassured.RestAssured;
 
 public class CortexPaneIT {
 
@@ -94,7 +101,7 @@ public class CortexPaneIT {
                 "--defaultMaxInputDelayMs=30000",
                 "--runner=FlinkRunner",
 //                "--flinkMaster=localhost:8081",
-                "--parallelism=1",
+                "--parallelism=4",
                 "--lateProcessingDelayMs=240000",
                 "--playbackMode=true",
                 "--numWindows=10",
@@ -118,40 +125,51 @@ public class CortexPaneIT {
 
         var expected = TotalVolumeTest.aggregateInMemory(options, sourceConfig);
 
-        org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
-        registerCoders(p);
-        p.getCoderRegistry().registerCoderForClass(Wpc.class, new Wpc.WpcCoder());
+        org.apache.beam.sdk.Pipeline pipeline = org.apache.beam.sdk.Pipeline.create(options);
+        registerCoders(pipeline);
+        pipeline.getCoderRegistry().registerCoderForClass(Wpc.class, new Wpc.WpcCoder());
 
-        PCollection<FlowSummaryData> flowSummaries = p
+        PCollection<FlowSummaryData> rawFlowSummaries = pipeline
                 .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
                 .apply(new Pipeline.CalculateFlowStatistics(options));
 
-        Pipeline.attachWriteToElastic(options, flowSummaries);
-        Pipeline.attachWriteToCortex(options, flowSummaries);
+        var processingDelay = Duration.millis(options.getLateProcessingDelayMs());
 
-        flowSummaries.apply(countVolumes());
+        var paneAccumulator = new PaneAccumulator<>(
+                CortexPaneIT::combineFlowSummaryData,
+                processingDelay,
+                new CompoundKey.CompoundKeyCoder(),
+                new FlowSummaryData.FlowSummaryDataCoder()
+        );
 
-//        flowSummaries.apply(
-//                FileIO.<FlowSummaryData>write()
-//                        .via(Contextful.fn(CortexPaneIT::formatFlowSummaryData), TextIO.sink())
-//                        .withNumShards(1)
-//                        .to("/home/swachter/beam-output/file")
-//        );
+        var accumulatedPanesflowSummarie = rawFlowSummaries
+                .apply(KEY_SUMMARIES)
+                .apply(paneAccumulator)
+                .apply(Values.create())
+                .apply(ASSIGN_PANE);
 
-        var duplicateKeys = flowSummaries
+        //Pipeline.attachWriteToElastic(options, accumulatedPanesflowSummarie);
+        Pipeline.attachWriteToCortex(options, accumulatedPanesflowSummarie);
+
+        accumulatedPanesflowSummarie.apply(countVolumes());
+
+        var duplicateKeys = accumulatedPanesflowSummarie
                 .apply(Window.into(new GlobalWindows()))
                 .apply(KEY_BY_WPC)
                 .apply(Combine.perKey((l1, l2) -> l1 + l2))
                 .apply(Filter.by(kv -> kv.getValue() > 1));
 
         PAssert.that(duplicateKeys).satisfies(iter -> {
+            var duplicates = false;
             for (var i : iter) {
-                System.out.println("duplicate: " + i);
+                LOG.error("duplicate: " + i);
+                duplicates = true;
             }
+            assertFalse("duplicates panes where detected", duplicates);
             return null;
         });
 
-        PipelineResult mainResult = p.run();
+        PipelineResult mainResult = pipeline.run();
 
         PipelineResult.State state = mainResult.waitUntilFinish(Duration.standardMinutes(3));
 
@@ -161,9 +179,9 @@ public class CortexPaneIT {
 
         boolean check = true;
 
-        for (Map.Entry<TotalVolumeTest.ResKey, Aggregate> me : expected.entrySet()) {
-            var key = me.getKey();
-            var agg = me.getValue();
+        for (var entry : expected.entrySet()) {
+            var key = entry.getKey();
+            var agg = entry.getValue();
             boolean c1 = TotalVolumeTest.check(metrics, true, key, agg);
             boolean c2 = TotalVolumeTest.check(metrics, false, key, agg);
             check &= c1 && c2;
@@ -171,6 +189,104 @@ public class CortexPaneIT {
 
         assertTrue("unexpected results", check);
 
+        // check that expected metric values are stored in Cortex
+
+        RestAssured.port = cortexPort();
+
+        // for each result that was calculated in memory:
+        for (var entry : expected.entrySet()) {
+            var key = entry.getKey();
+            var agg = entry.getValue();
+
+            // query for the corresponding metric and sum over pane and direction
+
+            var qry = new StringBuilder()
+                    .append("sum(")
+                    .append(key.key.type.name())
+                    .append('{');
+
+            var data = key.key.data;
+
+            qry.append("nodeId=\"").append(data.nodeId).append('"');
+
+            for (var p: key.key.type.getParts()) {
+                if (p == RefType.EXPORTER_PART) {
+                } else if (p == RefType.INTERFACE_PART) {
+                    qry.append(",ifIndex=\"").append(data.ifIndex).append('"');
+                } else if (p == RefType.DSCP_PART) {
+                    qry.append(",dscp=\"").append(data.dscp).append('"');
+                } else if (p == RefType.APPLICATION_PART) {
+                    qry.append(",application=\"").append(data.application).append('"');
+                } else if (p == RefType.HOST_PART) {
+                    qry.append(",host=\"").append(data.address).append('"');
+                } else if (p == RefType.CONVERSATION_PART) {
+                    qry.append(",location=\"").append(data.location).append('"');
+                    qry.append(",protocol=\"").append(data.protocol).append('"');
+                    qry.append(",host=\"").append(data.address).append('"');
+                    qry.append(",host2=\"").append(data.largerAddress).append('"');
+                    qry.append(",application=\"").append(data.application).append('"');
+                } else {
+                    throw new RuntimeException("unexpected part: " + p);
+                }
+            }
+
+            qry.append("})");
+
+            var response = with()
+                    .param("query", qry.toString())
+                    .param("time", (key.windowStart + options.getFixedWindowSizeMs()) / 1000)
+                    .get("/prometheus/api/v1/query");
+
+            response.body().prettyPrint();
+
+            response
+                    .then()
+                    .assertThat()
+                    .body("status", equalTo("success"))
+                    .body("data.result[0].value[1]", equalTo(String.valueOf(agg.getBytes())));
+
+        }
+
+    }
+
+    private static ParDo.SingleOutput<FlowSummaryData, KV<CompoundKey, FlowSummaryData>> KEY_SUMMARIES = ParDo.of(new DoFn<FlowSummaryData, KV<CompoundKey, FlowSummaryData>>() {
+        @ProcessElement
+        public void process(ProcessContext ctx) {
+            ctx.output(KV.of(ctx.element().key, ctx.element()));
+        }
+    });
+
+    private static ParDo.SingleOutput<KV<Integer, FlowSummaryData>, FlowSummaryData> ASSIGN_PANE = ParDo.of(new DoFn<KV<Integer, FlowSummaryData>, FlowSummaryData>() {
+        @ProcessElement
+        public void process(ProcessContext ctx) {
+            var idx = ctx.element().getKey();
+            var fs = ctx.element().getValue();
+            var f = new FlowSummaryData(
+                    fs.aggregationType,
+                    fs.key,
+                    "pane-" + idx,
+                    fs.aggregate,
+                    fs.windowStart,
+                    fs.windowEnd,
+                    fs.ranking
+            );
+            ctx.output(f);
+        }
+    });
+
+    private static FlowSummaryData combineFlowSummaryData(
+            FlowSummaryData d1,
+            FlowSummaryData d2
+    ) {
+        return new FlowSummaryData(
+                d1.aggregationType,
+                d1.key,
+                d1.pane,
+                Aggregate.merge(d1.aggregate, d2.aggregate),
+                d1.windowStart,
+                d1.windowEnd,
+                d1.ranking // TODO: What about handle ranking?
+        );
     }
 
     private static ParDo.SingleOutput<FlowSummaryData, KV<Wpc, Long>> KEY_BY_WPC =

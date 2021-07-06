@@ -139,14 +139,11 @@
             <artifactId>catheter</artifactId>
             <scope>test</scope>
         </dependency>
-<!--        <dependency>-->
-<!--            <groupId>org.opennms.nephron</groupId>-->
-<!--            <artifactId>nephron-main</artifactId>-->
-<!--            <version>${project.version}</version>-->
-<!--            <classifier>tests</classifier>-->
-<!--            <type>test-jar</type>-->
-<!--        </dependency>-->
-
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <profiles>
