@@ -77,6 +77,7 @@ import org.joda.time.Instant;
 import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
 import org.opennms.nephron.coders.KafkaInputFlowDeserializer;
 import org.opennms.nephron.cortex.CortexIo;
+import org.opennms.nephron.cortex.PaneAccumulator;
 import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.elastic.IndexStrategy;
@@ -126,13 +127,82 @@ public class Pipeline {
         // Calculate the flow summary statistics
         PCollection<FlowSummaryData> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
 
+        var maybeAccumulatedFlowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
+
         // optionally attach different kinds of sinks
-        attachWriteToElastic(options, flowSummaries);
-        attachWriteToKafka(options, flowSummaries);
-        attachWriteToCortex(options, flowSummaries);
+        attachWriteToElastic(options, maybeAccumulatedFlowSummaries);
+        attachWriteToKafka(options, maybeAccumulatedFlowSummaries);
+        attachWriteToCortex(options, maybeAccumulatedFlowSummaries);
 
         return p;
     }
+
+    public static PCollection<FlowSummaryData> accumulateSummariesIfNecessary(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        var outputDelay = options.getLateProcessingDelayMs() > 0 ?
+                          Duration.millis(options.getLateProcessingDelayMs()) : Duration.standardSeconds(15);
+        return options.getAccumulateSummaries() || cortexOutputEnabled(options) ?
+               accumulateFlowSummaries(flowSummaries, outputDelay) : flowSummaries;
+    }
+
+    public static PCollection<FlowSummaryData> accumulateFlowSummaries(
+            PCollection<FlowSummaryData> input,
+            Duration outputDelay
+    ) {
+        var paneAccumulator = new PaneAccumulator<>(
+                Pipeline::combineFlowSummaryData,
+                outputDelay,
+                new CompoundKey.CompoundKeyCoder(),
+                new FlowSummaryData.FlowSummaryDataCoder()
+        );
+        return input
+                .apply(KEY_SUMMARIES)
+                .apply(paneAccumulator)
+                .apply(Values.create())
+                .apply(ASSIGN_PANE);
+
+    }
+
+    private static FlowSummaryData combineFlowSummaryData(
+            FlowSummaryData d1,
+            FlowSummaryData d2
+    ) {
+        return new FlowSummaryData(
+                d1.aggregationType,
+                d1.key,
+                d1.pane,
+                Aggregate.merge(d1.aggregate, d2.aggregate),
+                d1.windowStart,
+                d1.windowEnd,
+                // when flow summaries of different panes are combineed then the ranking may become invalid
+                // -> fortunately the ranking is not used when querying for data
+                d1.ranking
+        );
+    }
+
+    private static ParDo.SingleOutput<FlowSummaryData, KV<CompoundKey, FlowSummaryData>> KEY_SUMMARIES = ParDo.of(new DoFn<FlowSummaryData, KV<CompoundKey, FlowSummaryData>>() {
+        @ProcessElement
+        public void process(ProcessContext ctx) {
+            ctx.output(KV.of(ctx.element().key, ctx.element()));
+        }
+    });
+
+    private static ParDo.SingleOutput<KV<Integer, FlowSummaryData>, FlowSummaryData> ASSIGN_PANE = ParDo.of(new DoFn<KV<Integer, FlowSummaryData>, FlowSummaryData>() {
+        @ProcessElement
+        public void process(ProcessContext ctx) {
+            var idx = ctx.element().getKey();
+            var fs = ctx.element().getValue();
+            var f = new FlowSummaryData(
+                    fs.aggregationType,
+                    fs.key,
+                    "pane-" + idx,
+                    fs.aggregate,
+                    fs.windowStart,
+                    fs.windowEnd,
+                    fs.ranking
+            );
+            ctx.output(f);
+        }
+    });
 
     private static Map<String, Object> loadKafkaClientProperties(NephronOptions options) {
         Map<String, Object> kafkaClientProperties = new HashMap<>();
@@ -166,7 +236,7 @@ public class Pipeline {
     }
 
     public static void attachWriteToCortex(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
-        if (!Strings.isNullOrEmpty(options.getCortexWriteUrl())) {
+        if (cortexOutputEnabled(options)) {
             var cortexWrite = CortexIo.write(
                     options.getCortexWriteUrl(),
                     CortexIo.writeFn(Pipeline::cortexOutput)
@@ -176,6 +246,10 @@ public class Pipeline {
             }
             flowSummaries.apply(cortexWrite);
         }
+    }
+
+    private static boolean cortexOutputEnabled(NephronOptions options) {
+        return !Strings.isNullOrEmpty(options.getCortexWriteUrl());
     }
 
     private static void cortexOutput(

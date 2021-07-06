@@ -28,6 +28,7 @@
 
 package org.opennms.nephron.testing.benchmark;
 
+import static org.opennms.nephron.Pipeline.accumulateSummariesIfNecessary;
 import static org.opennms.nephron.Pipeline.attachWriteToCortex;
 import static org.opennms.nephron.Pipeline.registerCoders;
 
@@ -68,7 +69,8 @@ public class Benchmark {
     /** Delay between perf samples. */
     private static final Duration PERF_DELAY = Duration.standardSeconds(15);
 
-    // --runner=FlinkRunner --flinkMaster=localhost:8081
+    // --runner=FlinkRunner
+    // --flinkMaster=localhost:8081
     // --flowsPerWindow=100
     // --flowsPerSecond=10000
     // --cortexWriteUrl=http://localhost:9009/api/v1/push
@@ -122,8 +124,11 @@ public class Benchmark {
         PCollection<FlowSummaryData> flowSummaries = pipeline
                 .apply(inputSetup.source())
                 .apply(inTestingProbe.getTransform())
-                .apply(new Pipeline.CalculateFlowStatistics(options))
-                .apply(outTestingProbe.getTransform());
+                .apply(new Pipeline.CalculateFlowStatistics(options));
+
+        flowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
+
+        flowSummaries = flowSummaries.apply(outTestingProbe.getTransform());
 
         attachWriteToCortex(options, flowSummaries);
 

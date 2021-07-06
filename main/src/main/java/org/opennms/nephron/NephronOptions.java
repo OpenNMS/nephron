@@ -145,6 +145,11 @@ public interface NephronOptions extends PipelineOptions, CortexOptions {
 
     void setAllowedLatenessMs(long value);
 
+    @Description("Determines if flow summaries calculated for different panes are accumulated. Cortex output implies flow summary accumulation.")
+    @Default.Boolean(false)
+    boolean getAccumulateSummaries();
+    void setAccumulateSummaries(boolean value);
+
     @Description("Elasticsearch Connection Timeout in milliseconds")
     @Default.Integer(30 * 1000) // 30 seconds
     int getElasticConnectTimeout();

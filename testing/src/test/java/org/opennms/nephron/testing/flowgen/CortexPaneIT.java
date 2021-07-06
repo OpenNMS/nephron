@@ -100,13 +100,14 @@ public class CortexPaneIT {
         FlowGenOptions options = PipelineOptionsFactory.fromArgs(
                 "--defaultMaxInputDelayMs=30000",
                 "--runner=FlinkRunner",
-//                "--flinkMaster=localhost:8081",
+                "--flinkMaster=localhost:8081",
                 "--parallelism=4",
                 "--lateProcessingDelayMs=240000",
+                "--earlyProcessingDelayMs=5000",
                 "--playbackMode=true",
                 "--numWindows=10",
                 "--flowsPerWindow=10000",
-                "--lastSwitchedSigmaMs=1000",
+                "--lastSwitchedSigmaMs=25000",
                 "--numExporters=2",
                 "--numInterfaces=2",
                 "--numApplications=2",
@@ -121,7 +122,7 @@ public class CortexPaneIT {
         SyntheticFlowTimestampPolicyFactory tpf =
                 SyntheticFlowTimestampPolicyFactory.withLimitedDelay(options, Pipeline.ReadFromKafka::getTimestamp);
 
-        var sourceConfig = SourceConfig.of(options, frozenLastSwitchedPolicy(options), tpf);
+        var sourceConfig = SourceConfig.of(options, skewedLastSwitchedPolicy(options), tpf);
 
         var expected = TotalVolumeTest.aggregateInMemory(options, sourceConfig);
 
@@ -133,27 +134,16 @@ public class CortexPaneIT {
                 .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
                 .apply(new Pipeline.CalculateFlowStatistics(options));
 
-        var processingDelay = Duration.millis(options.getLateProcessingDelayMs());
+        var outputDelay = Duration.millis(options.getLateProcessingDelayMs());
 
-        var paneAccumulator = new PaneAccumulator<>(
-                CortexPaneIT::combineFlowSummaryData,
-                processingDelay,
-                new CompoundKey.CompoundKeyCoder(),
-                new FlowSummaryData.FlowSummaryDataCoder()
-        );
+        var accumulatedPanesFlowSummaries = Pipeline.accumulateFlowSummaries(rawFlowSummaries, outputDelay);
 
-        var accumulatedPanesflowSummarie = rawFlowSummaries
-                .apply(KEY_SUMMARIES)
-                .apply(paneAccumulator)
-                .apply(Values.create())
-                .apply(ASSIGN_PANE);
+        //Pipeline.attachWriteToElastic(options, accumulatedPanesFlowSummaries);
+        Pipeline.attachWriteToCortex(options, accumulatedPanesFlowSummaries);
 
-        //Pipeline.attachWriteToElastic(options, accumulatedPanesflowSummarie);
-        Pipeline.attachWriteToCortex(options, accumulatedPanesflowSummarie);
+        accumulatedPanesFlowSummaries.apply(countVolumes());
 
-        accumulatedPanesflowSummarie.apply(countVolumes());
-
-        var duplicateKeys = accumulatedPanesflowSummarie
+        var duplicateKeys = accumulatedPanesFlowSummaries
                 .apply(Window.into(new GlobalWindows()))
                 .apply(KEY_BY_WPC)
                 .apply(Combine.perKey((l1, l2) -> l1 + l2))
@@ -249,46 +239,6 @@ public class CortexPaneIT {
 
     }
 
-    private static ParDo.SingleOutput<FlowSummaryData, KV<CompoundKey, FlowSummaryData>> KEY_SUMMARIES = ParDo.of(new DoFn<FlowSummaryData, KV<CompoundKey, FlowSummaryData>>() {
-        @ProcessElement
-        public void process(ProcessContext ctx) {
-            ctx.output(KV.of(ctx.element().key, ctx.element()));
-        }
-    });
-
-    private static ParDo.SingleOutput<KV<Integer, FlowSummaryData>, FlowSummaryData> ASSIGN_PANE = ParDo.of(new DoFn<KV<Integer, FlowSummaryData>, FlowSummaryData>() {
-        @ProcessElement
-        public void process(ProcessContext ctx) {
-            var idx = ctx.element().getKey();
-            var fs = ctx.element().getValue();
-            var f = new FlowSummaryData(
-                    fs.aggregationType,
-                    fs.key,
-                    "pane-" + idx,
-                    fs.aggregate,
-                    fs.windowStart,
-                    fs.windowEnd,
-                    fs.ranking
-            );
-            ctx.output(f);
-        }
-    });
-
-    private static FlowSummaryData combineFlowSummaryData(
-            FlowSummaryData d1,
-            FlowSummaryData d2
-    ) {
-        return new FlowSummaryData(
-                d1.aggregationType,
-                d1.key,
-                d1.pane,
-                Aggregate.merge(d1.aggregate, d2.aggregate),
-                d1.windowStart,
-                d1.windowEnd,
-                d1.ranking // TODO: What about handle ranking?
-        );
-    }
-
     private static ParDo.SingleOutput<FlowSummaryData, KV<Wpc, Long>> KEY_BY_WPC =
             ParDo.of(new DoFn<FlowSummaryData, KV<Wpc, Long>>() {
                 @ProcessElement
@@ -314,6 +264,16 @@ public class CortexPaneIT {
         var uniformLastSwitchedPolicy = FlowConfig.uniformInWindowLastSwitchedPolicy(options);
         var start = Instant.ofEpochMilli(options.getStartMs());
         return (idx, fd) -> fd.fd1.nodeId == minExporter ? start : uniformLastSwitchedPolicy.apply(idx, fd);
+    }
+
+    private static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> skewedLastSwitchedPolicy(FlowGenOptions options) {
+        var minExporter = options.getMinExporter();
+        var uniformLastSwitchedPolicy = FlowConfig.uniformInWindowLastSwitchedPolicy(options);
+        var start = Instant.ofEpochMilli(options.getStartMs());
+        return (idx, fd) -> {
+            var ls = uniformLastSwitchedPolicy.apply(idx, fd);
+            return fd.fd1.nodeId == minExporter ? ls.minus(10*60*1000) : ls;
+        };
     }
 
     private static class Wpc {
