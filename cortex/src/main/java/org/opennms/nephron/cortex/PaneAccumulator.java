@@ -40,18 +40,26 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.SerializableBiFunction;
+import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.joda.time.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.base.MoreObjects;
 
 /**
- * A stateful transform that accumulates values in different panes into one or more outputs.
+ * A stateful transform that accumulates values of different panes, flushes accumulated values after a given output
+ * delay, and assigns unique index numbers to the accumulated output.
  * <p>
- * The result collection contains (index, value) tuples for each accumulated value.
+ * {@code PaneAccumulator} is useful when writing to Cortex using {@link CortexIo}. Cortex requires that metric samples
+ * are written with increasing timestamps. The unique index number assigned by the {@code PaneAccumulator} can be used
+ * as a label value to disambiguate samples for the same timestamp.
  */
 public class PaneAccumulator<K, V> extends PTransform<PCollection<KV<K, V>>, PCollection<KV<K, KV<Integer, V>>>> {
+
+    private static final Logger LOG = LoggerFactory.getLogger(PaneAccumulator.class);
 
     private final SerializableBiFunction<V, V, V> combiner;
     private final Duration outputDelay;
@@ -93,24 +101,29 @@ public class PaneAccumulator<K, V> extends PTransform<PCollection<KV<K, V>>, PCo
         @ProcessElement
         public void process(
                 ProcessContext ctx,
+                BoundedWindow window,
                 @StateId("key") ValueState<K> keyState,
                 @AlwaysFetched @StateId("value") ValueState<V> valueState,
                 @TimerId("output") Timer timer
         ) {
-            var v = valueState.read();
-            if (v == null) {
+            var oldValue = valueState.read();
+            V newValue;
+            if (oldValue == null) {
+                LOG.debug("create state - key: {}; ctx.timestamp: {}; window.maxTimestamp: {}", ctx.element().getKey(), ctx.timestamp(), window.maxTimestamp());
                 keyState.write(ctx.element().getKey());
-                valueState.write(ctx.element().getValue());
+                newValue = ctx.element().getValue();
             } else {
-                var combined = combiner.apply(v, ctx.element().getValue());
-                valueState.write(combined);
+                newValue = combiner.apply(oldValue, ctx.element().getValue());
             }
-            timer.offset(outputDelay).setRelative();
+            LOG.trace("write state - key: {}; ctx.timestamp: {}; window.maxTimestamp: {}; newValue: {}", ctx.element().getKey(), ctx.timestamp(), window.maxTimestamp(), newValue);
+            valueState.write(newValue);
+            timer/*.withOutputTimestamp(window.maxTimestamp())*/.offset(outputDelay).setRelative();
         }
 
         @OnTimer("output")
         public void onOutput(
                 OnTimerContext ctx,
+                BoundedWindow window,
                 @AlwaysFetched @StateId("key") ValueState<K> keyState,
                 @AlwaysFetched @StateId("value") ValueState<V> valueState,
                 @AlwaysFetched @StateId("index") ValueState<Integer> indexState
@@ -118,7 +131,8 @@ public class PaneAccumulator<K, V> extends PTransform<PCollection<KV<K, V>>, PCo
             var key = keyState.read();
             var value = valueState.read();
             var idx = MoreObjects.firstNonNull(indexState.read(), 0);
-            ctx.output(KV.of(key, KV.of(idx, value)));
+            LOG.trace("output state - key: {}; ctx.timestamp: {}, window.maxTimestamp: {}; idx: {}", key, ctx.timestamp(), window.maxTimestamp(), idx);
+            ctx.outputWithTimestamp(KV.of(key, KV.of(idx, value)), window.maxTimestamp());
             valueState.clear();
             indexState.write(++idx);
         }
@@ -126,6 +140,7 @@ public class PaneAccumulator<K, V> extends PTransform<PCollection<KV<K, V>>, PCo
         @OnWindowExpiration
         public void onExpiration(
                 OutputReceiver<KV<K, KV<Integer, V>>> ctx,
+                BoundedWindow window,
                 @StateId("key") ValueState<K> keyState,
                 @AlwaysFetched @StateId("value") ValueState<V> valueState,
                 @StateId("index") ValueState<Integer> indexState
@@ -136,7 +151,8 @@ public class PaneAccumulator<K, V> extends PTransform<PCollection<KV<K, V>>, PCo
                 var il = indexState.readLater();
                 var key = kl.read();
                 var idx = MoreObjects.firstNonNull(il.read(), 0);
-                ctx.output(KV.of(key, KV.of(idx, value)));
+                LOG.trace("output expired state - key: {}; window.maxTimestamp: {}; idx: {}", key, window.maxTimestamp(), idx);
+                ctx.outputWithTimestamp(KV.of(key, KV.of(idx, value)), window.maxTimestamp());
             }
         }
 

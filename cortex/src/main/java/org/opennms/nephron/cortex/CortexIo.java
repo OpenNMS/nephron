@@ -73,6 +73,17 @@ import prometheus.PrometheusTypes;
  * Provides a write transformation for writing to Cortex.
  * <p>
  * The write transformation is configured by the {@link Write} class and is implemented by the {@link WriteFn} class.
+ * <p>
+ * The write transformation provides two counter metrics in the "cortex" namespace:
+ * <dl>
+ *     <dt>write_failure</dt>
+ *     <dd>Counts the number of failed write requests (requests that resulted in an exception)</dd>
+ *     <dt>response_failure</dt>
+ *     <dd>Counts the number of Cortex responses with a non-success result code</dd>
+ * </dl>
+ * <p>
+ * Cortex requires that samples of a specific metric are written with increasing timestamps. If a window has several
+ * panes for early/on-time/late results then {@link PaneAccumulator} can be used to assign unique index numbers.
  */
 @Experimental(Experimental.Kind.SOURCE_SINK)
 public class CortexIo {
@@ -87,11 +98,13 @@ public class CortexIo {
     private static final String X_SCOPE_ORG_ID_HEADER = "X-Scope-OrgID";
 
     public static final String CORTEX_METRIC_NAMESPACE = "cortex";
-    public static final String CORTEX_WRITE_FAILURE_METRIC_NAME = "cortex_write_failure";
-    public static final String CORTEX_RESPONSE_FAILURE_METRIC_NAME = "cortex_response_failure";
+    public static final String CORTEX_WRITE_METRIC_NAME = "write";
+    public static final String CORTEX_WRITE_FAILURE_METRIC_NAME = "write_failure";
+    public static final String CORTEX_RESPONSE_FAILURE_METRIC_NAME = "response_failure";
 
     private static Counter WRITE_FAILURE = Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_WRITE_FAILURE_METRIC_NAME);
     private static Counter RESPONSE_FAILURE = Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_RESPONSE_FAILURE_METRIC_NAME);
+    private static Counter WRITE = Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_WRITE_METRIC_NAME);
 
     @FunctionalInterface
     interface CreateWriteFn<T> extends SerializableFunction<Write<T>, CortexIo.WriteFn<T>> {}
@@ -210,6 +223,8 @@ public class CortexIo {
 
         // metrics can not be updated in http response callbacks
         // -> use AtomicLongs for intermediary storage and update the metrics when the bundle is finished
+        //    (the counter for writes would not require such an intermediary storage; it is done for uniformness reasons)
+        private transient AtomicLong writes;
         private transient AtomicLong writeFailures;
         private transient AtomicLong responseFailures;
 
@@ -234,14 +249,15 @@ public class CortexIo {
                     .connectionPool(connectionPool)
                     .build();
             phaser = new Phaser(1);
+            writes = new AtomicLong();
             writeFailures = new AtomicLong();
             responseFailures = new AtomicLong();
         }
 
-        private static void recordFailures(AtomicLong al, Counter counter) {
+        private static void incrementCounter(AtomicLong al, Counter counter) {
             var cnt = al.getAndSet(0);
             if (cnt != 0) {
-                LOG.debug("record failure - count: " + cnt + "; metric: " + counter.getName());
+                LOG.debug("increment counter - name: {};  count: {}", counter.getName(), cnt);
                 counter.inc(cnt);
             }
         }
@@ -261,8 +277,9 @@ public class CortexIo {
             // -> blocks until the IO for the current bundle has completed
             // -> decreases the chance that windows are processed out of order
             phaser.arriveAndAwaitAdvance();
-            recordFailures(writeFailures, WRITE_FAILURE);
-            recordFailures(responseFailures, RESPONSE_FAILURE);
+            incrementCounter(writes, WRITE);
+            incrementCounter(writeFailures, WRITE_FAILURE);
+            incrementCounter(responseFailures, RESPONSE_FAILURE);
         }
 
         @Teardown
@@ -382,6 +399,7 @@ public class CortexIo {
             // -> onCallback the request is unregistered
             phaser.register();
 
+            writes.incrementAndGet();
             okHttpClient.newCall(request).enqueue(
                     new Callback() {
                         @Override
@@ -412,7 +430,7 @@ public class CortexIo {
                                         } else {
                                             bodyAsString = "(null)";
                                         }
-                                        LOG.error("Writing to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString.trim());
+                                        LOG.error("Writing to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString.trim() + "; request: " + writeRequest);
                                     }
                                 }
                             } finally {
