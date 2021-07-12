@@ -56,13 +56,17 @@ import org.joda.time.Instant;
  * Stores data that is meant to be output to Cortex.
  * <p>
  * Cortex requires that written data is ordered by time. Beam may output several panes of data for each window.
- * In addition, panes of later windows may arrive earlier than panes of earlier windows.
+ * In addition, panes of later windows may arrive earlier than some panes of earlier windows.
  * <p>
  * This class accumulates data of different panes / windows and generates output that meets Cortex's ordering
  * constraint by assigning indexes. These indexes are used as labels to distinguish time series.
  */
 public abstract class Heap<V> {
 
+    /**
+     * Represents a value that was flushed from the heap. It contains an index that must be used to distinguish
+     * samples at the same timestamp.
+     */
     public static class Flushed<V> {
 
         public final V value;
@@ -87,14 +91,12 @@ public abstract class Heap<V> {
     /**
      * Gets the processing timestamp of the oldest unchanged value in the heap.
      * <p>
-     * The returned timestamp can be used to schedule a timer when the heap should be flushed the next time.
+     * The returned timestamp can be used to schedule a timer for checking for flushable values.
      */
     abstract Optional<Instant> oldestValueProcessingTimestamp();
 
     /**
-     * Flushes all
-     *
-     * @return
+     * Flushes all values that did not change during the specified duration.
      */
     abstract List<Flushed<V>> flush(Duration unchangedSince, Instant now);
 
@@ -196,7 +198,7 @@ public abstract class Heap<V> {
         }
 
         // latest event timestamps used in flushes
-        // -> event timestamps are ordered: the latest event timestamp comes first
+        // -> event timestamps are ordered: the newest event timestamp comes first
         private final List<Instant> flushedEventTimestamps;
 
         // eventTimestamp -> (value, lastUpdated)
@@ -211,9 +213,13 @@ public abstract class Heap<V> {
          * Determine the minimum index that can be used for the given timestamp.
          */
         private int findIndex(Instant eventTimestamp) {
+            // search for an existing flushed event timestamp that is smaller than the given timestamp
+            // -> if one is found it is increased to the given event timestamp and its index is returned
+            // -> if none is found all flushed event time stamps are greater than or equal to the given event timestamp;
+            //    in that case a new flushed event timestamp is added to the end of the list
             var idx = 0;
             while (idx < flushedEventTimestamps.size()) {
-                if (eventTimestamp.compareTo(flushedEventTimestamps.get(idx)) >= 0) {
+                if (flushedEventTimestamps.get(idx).compareTo(eventTimestamp) < 0) {
                     flushedEventTimestamps.set(idx, eventTimestamp);
                     return idx;
                 }

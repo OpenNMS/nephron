@@ -134,6 +134,8 @@ public class CortexIo {
         // -> the complete message will be some bytes larger
         private long maxBatchBytes = 512 * 1024;
 
+        // requests to Cortex contain samples of the same timestamp
+        // -> multiple request can be sent at the same time
         private int maxConcurrentHttpConnections = 5;
 
         private long readTimeoutMs = 10000;

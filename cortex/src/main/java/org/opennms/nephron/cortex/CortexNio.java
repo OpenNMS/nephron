@@ -94,8 +94,10 @@ import prometheus.PrometheusTypes;
  *     <dd>Counts the number of Cortex responses with a non-success result code</dd>
  * </dl>
  * <p>
- * Cortex requires that samples of a specific metric are written with increasing timestamps. If a window has several
- * panes for early/on-time/late results then {@link PaneAccumulator} can be used to assign unique index numbers.
+ * Cortex requires that samples of a specific metric are written with increasing timestamps. This class assigns
+ * index numbers to output values that can be used as an additional metric label that make time series strictly
+ * increasing even in case of multiple panes for the same window and panes of later windows completing before
+ * panes of earlier windows.
  */
 @Experimental(Experimental.Kind.SOURCE_SINK)
 public class CortexNio {
@@ -119,23 +121,25 @@ public class CortexNio {
     private static Counter WRITE = Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_WRITE_METRIC_NAME);
 
     @FunctionalInterface
-    public interface CreateWriteFn<K, V> extends SerializableFunction<Write<K, V>, CortexNio.WriteFn<K, V>> {}
+    public interface BuildTimeSeries<K, V> extends Serializable {
+        void accept(K key, V value, Instant eventTimestamp, int index, CortexIo.TimeSeriesBuilder builder);
+    }
 
-    public static <K, V> Write<K, V> write(
+    public static <K, V> Write<K, V> of(
             String writeUrl,
             Coder<K> keyCoder,
             Coder<V> valueCoder,
             Duration outputDelay,
             SerializableBiFunction<V, V, V> combiner,
-            CreateWriteFn<K, V> createWriteFn
+            BuildTimeSeries<K, V> build
     ) {
-        return new Write<>(writeUrl, keyCoder, valueCoder, outputDelay, combiner, createWriteFn);
+        return new Write<>(writeUrl, keyCoder, valueCoder, outputDelay, combiner, build);
     }
 
     /**
      * Stores the configuration of the transformation.
      * <p>
-     * Expands to a {@link ParDo} transformation that is specified by a subclass of the {@link WriteFn} class.
+     * Expands to a {@link ParDo} transformation that is specified by the {@link WriteFn} class.
      */
     public static class Write<K, V> extends PTransform<PCollection<KV<K, V>>, PDone> {
 
@@ -144,7 +148,7 @@ public class CortexNio {
         private final Coder<V> valueCoder;
         private final Duration outputDelay;
         private final SerializableBiFunction<V, V, V> combiner;
-        private final CreateWriteFn<K, V> createWriteFn;
+        private final BuildTimeSeries<K, V> build;
 
         private String orgId;
 
@@ -153,8 +157,6 @@ public class CortexNio {
         // threshold for the sum of the number of bytes of time series samples in a single batch
         // -> the complete message will be some bytes larger
         private long maxBatchBytes = 512 * 1024;
-
-        private int maxConcurrentHttpConnections = 5;
 
         private long readTimeoutMs = 10000;
         private long writeTimeoutMs = 10000;
@@ -167,7 +169,7 @@ public class CortexNio {
                 Coder<V> valueCoder,
                 Duration outputDelay,
                 SerializableBiFunction<V, V, V> combiner,
-                CreateWriteFn<K, V> createWriteFn
+                BuildTimeSeries<K, V> build
         ) {
             super("CortexWrite");
             this.writeUrl = writeUrl;
@@ -175,7 +177,7 @@ public class CortexNio {
             this.valueCoder = valueCoder;
             this.outputDelay = outputDelay;
             this.combiner = combiner;
-            this.createWriteFn = createWriteFn;
+            this.build = build;
         }
 
         public Write<K, V> withOrgId(String value) {
@@ -190,11 +192,6 @@ public class CortexNio {
 
         public Write<K, V> withMaxBatchBytes(long value) {
             this.maxBatchBytes = value;
-            return this;
-        }
-
-        public Write<K, V> withMaxConcurrentHttpConnections(int value) {
-            this.maxConcurrentHttpConnections = value;
             return this;
         }
 
@@ -219,11 +216,13 @@ public class CortexNio {
 
         @VisibleForTesting
         WriteFn<K, V> createWriteFn() {
-            return createWriteFn.apply(this);
+            return new WriteFn<>(this);
         }
 
         @Override
         public PDone expand(PCollection<KV<K, V>> input) {
+            // switch to the global window
+            // -> the state of the stateful WriteFn function is shared by the values of all timestamps
             input
                     .apply(Window.into(new GlobalWindows()))
                     .apply(ParDo.of(createWriteFn()));
@@ -237,7 +236,6 @@ public class CortexNio {
     public static class WriteFn<K, V> extends DoFn<KV<K, V>, Void> {
 
         private final Write<K, V> spec;
-        private final BuildTimeSeries<K, V> build;
 
         private transient OkHttpClient okHttpClient;
 
@@ -264,9 +262,8 @@ public class CortexNio {
         @TimerId("output")
         private final TimerSpec outputTimerSpec = TimerSpecs.timer(TimeDomain.PROCESSING_TIME);
 
-        public WriteFn(Write<K, V> spec, BuildTimeSeries<K, V> build) {
+        public WriteFn(Write<K, V> spec) {
             this.spec = spec;
-            this.build = build;
             keyStateSpec = StateSpecs.value(spec.keyCoder);
             heapStateSpec = StateSpecs.value(new Heap.HeapImpl.HeapImplCoder<>(spec.valueCoder));
         }
@@ -274,10 +271,12 @@ public class CortexNio {
         @Setup
         public void setup() {
             LOG.debug("setup - instance: {}", this);
-            var connectionPool = new ConnectionPool(spec.maxConcurrentHttpConnections, 5, TimeUnit.MINUTES);
+            // request to Cortex must not be sent in parallel
+            // -> request contain samples from different timestamps that must be ingested in sequence
+            var connectionPool = new ConnectionPool(1, 5, TimeUnit.MINUTES);
             var dispatcher = new Dispatcher();
-            dispatcher.setMaxRequests(spec.maxConcurrentHttpConnections);
-            dispatcher.setMaxRequestsPerHost(spec.maxConcurrentHttpConnections);
+            dispatcher.setMaxRequests(1);
+            dispatcher.setMaxRequestsPerHost(1);
             okHttpClient = new OkHttpClient.Builder()
                     .readTimeout(spec.readTimeoutMs, TimeUnit.MILLISECONDS)
                     .writeTimeout(spec.writeTimeoutMs, TimeUnit.MILLISECONDS)
@@ -360,14 +359,16 @@ public class CortexNio {
             var heap = heapState.read();
             Instant now = Instant.now();
             var fs = heap.flush(spec.outputDelay, now);
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("flush values from heap - key: {}; size: {}", keyState.read(), fs.size());
-            }
             if (!fs.isEmpty()) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("flush values from heap - ctx.timestamp: {}, key: {}; size: {}", ctx.timestamp(), keyState.read(), fs.size());
+                }
+                // some values where flushed from the heap
+                // -> the heap has changed and must be written back
                 heapState.write(heap);
                 var key = keyState.read();
                 for (var f : fs) {
-                    outputTimeSeries(builder -> build.accept(key, f.value, f.eventTimestamp, f.index, builder));
+                    outputTimeSeries(builder -> spec.build.accept(key, f.value, f.eventTimestamp, f.index, builder));
                 }
             }
             // schedule the output timer if the heap contains more values
@@ -394,7 +395,7 @@ public class CortexNio {
                 if (!fs.isEmpty()) {
                     var key = keyState.read();
                     for (var f : fs) {
-                        outputTimeSeries(builder -> build.accept(key, f.value, f.eventTimestamp, f.index, builder));
+                        outputTimeSeries(builder -> spec.build.accept(key, f.value, f.eventTimestamp, f.index, builder));
                     }
                 }
             }
@@ -555,17 +556,6 @@ public class CortexNio {
         protected void doOnFailure(Call call, IOException e) {}
         protected void doOnResponse(Call call, Response response) {}
 
-    }
-
-    @FunctionalInterface
-    public interface BuildTimeSeries<K, V> extends Serializable {
-        void accept(K key, V value, Instant eventTimestamp, int index, CortexIo.TimeSeriesBuilder builder);
-    }
-
-    public static <K, V> CreateWriteFn<K, V> writeFn(
-            BuildTimeSeries<K, V> build
-    ) {
-        return write -> new WriteFn(write, build);
     }
 
     public static void sanitize(String name, String value, BiConsumer<String, String> consumer) {
