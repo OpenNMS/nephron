@@ -10,10 +10,22 @@ The `Benchmark` application class allows to run the Nephron pipeline on syntheti
 
 ### Running the benchmark application
 
-The benchmark app can be run by executing the following command while being in the project's root folder:
+The benchmark application can be run by executing the following command while being in the project's root folder:
 
 ```
 mvn -Ptesting compile exec:java -Dmaven.test.skip=true -Dexec.mainClass=org.opennms.nephron.testing.benchmark.Benchmark -Dexec.args="--runner=FlinkRunner --fixedWindowSizeMs=10000 --numWindows=10 ..."
 ```
 
-(The execution uses the current sources and does not rely on installed Nephron artifacts.) 
+(The execution uses the current sources and does not rely on installed Nephron artifacts.)
+
+The following alias can be defined to simplify benchmark execution:
+
+```
+alias nephron-benchmark='function _nb() { mvn -Ptesting compile exec:java -Dmaven.test.skip=true -Dexec.mainClass=org.opennms.nephron.testing.benchmark.Benchmark -Dexec.args="$*"; }; _nb'
+```
+
+Having this alias in place the benchmark application can be run by:
+
+```
+nephron-benchmark --runner=FlinkRunner --fixedWindowSizeMs=10000 --numWindows=10 ...
+```
