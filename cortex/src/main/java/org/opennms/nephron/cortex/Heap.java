@@ -96,7 +96,7 @@ public abstract class Heap<V> {
     abstract Optional<Instant> oldestValueProcessingTimestamp();
 
     /**
-     * Flushes all values that did not change during the specified duration.
+     * Flushes all values that are on the heap for the specified duration.
      */
     abstract List<Flushed<V>> flush(Duration unchangedSince, Instant now);
 
@@ -106,38 +106,45 @@ public abstract class Heap<V> {
 
     static class HeapImpl<V> extends Heap<V> {
 
-        private static class ValueAndLastUpdated<V> {
+        /**
+         * Bundles a potentially accumulated value and the processing timestamp when it was created.
+         * <p>
+         * Flushing logic is based on the created timestamp. Alternatively, a "last updated" timestamp could have
+         * been tracked. However, relying on the created timestamp matches Beam's behavior for early and late
+         * processing where the first value for an early / late pane determines when the pane gets flushed.
+         */
+        private static class HeapValue<V> {
 
             private static Coder<Instant> INSTANT_CODER = InstantCoder.of();
 
             private V value;
-            private Instant lastUpdated;
+            private Instant created;
 
-            public ValueAndLastUpdated(V value, Instant lastUpdated) {
+            public HeapValue(V value, Instant created) {
                 this.value = value;
-                this.lastUpdated = lastUpdated;
+                this.created = created;
             }
 
-            public Instant getLastUpdated() {
-                return lastUpdated;
+            public Instant getCreated() {
+                return created;
             }
 
-            private static class ValueAndLastUpdatedCoder<V> extends AtomicCoder<ValueAndLastUpdated<V>> {
+            private static class HeapValueCoder<V> extends AtomicCoder<HeapValue<V>> {
                 private final Coder<V> valueCoder;
 
-                public ValueAndLastUpdatedCoder(Coder<V> valueCoder) {
+                public HeapValueCoder(Coder<V> valueCoder) {
                     this.valueCoder = valueCoder;
                 }
 
                 @Override
-                public void encode(ValueAndLastUpdated<V> value, OutputStream outStream) throws CoderException, IOException {
+                public void encode(HeapValue<V> value, OutputStream outStream) throws CoderException, IOException {
                     valueCoder.encode(value.value, outStream);
-                    INSTANT_CODER.encode(value.lastUpdated, outStream);
+                    INSTANT_CODER.encode(value.created, outStream);
                 }
 
                 @Override
-                public ValueAndLastUpdated<V> decode(InputStream inStream) throws CoderException, IOException {
-                    return new ValueAndLastUpdated<>(
+                public HeapValue<V> decode(InputStream inStream) throws CoderException, IOException {
+                    return new HeapValue<>(
                             valueCoder.decode(inStream),
                             INSTANT_CODER.decode(inStream)
                     );
@@ -149,12 +156,12 @@ public abstract class Heap<V> {
 
             private final Coder<V> valueCoder;
             private final ListCoder<Instant> listCoder;
-            private final MapCoder<Instant, ValueAndLastUpdated<V>> mapCoder;
+            private final MapCoder<Instant, HeapValue<V>> mapCoder;
 
             public HeapImplCoder(Coder<V> valueCoder) {
                 this.valueCoder = valueCoder;
                 listCoder = ListCoder.of(InstantCoder.of());
-                mapCoder = MapCoder.of(InstantCoder.of(), new ValueAndLastUpdated.ValueAndLastUpdatedCoder(valueCoder));
+                mapCoder = MapCoder.of(InstantCoder.of(), new HeapValue.HeapValueCoder(valueCoder));
             }
 
             @Override
@@ -202,9 +209,9 @@ public abstract class Heap<V> {
         private final List<Instant> flushedEventTimestamps;
 
         // eventTimestamp -> (value, lastUpdated)
-        private final Map<Instant, ValueAndLastUpdated<V>> values;
+        private final Map<Instant, HeapValue<V>> values;
 
-        HeapImpl(List<Instant> flushedEventTimestamps, Map<Instant, ValueAndLastUpdated<V>> values) {
+        HeapImpl(List<Instant> flushedEventTimestamps, Map<Instant, HeapValue<V>> values) {
             this.flushedEventTimestamps = flushedEventTimestamps;
             this.values = values;
         }
@@ -231,13 +238,12 @@ public abstract class Heap<V> {
 
         @Override
         public void add(V value, Instant eventTimeTimestamp, Instant now, BiFunction<V, V, V> combiner) {
-            var valu = values.get(eventTimeTimestamp);
-            if (valu != null) {
-                valu.value = combiner.apply(valu.value, value);
-                valu.lastUpdated = now;
+            var heapValue = values.get(eventTimeTimestamp);
+            if (heapValue != null) {
+                heapValue.value = combiner.apply(heapValue.value, value);
             } else {
-                valu = new ValueAndLastUpdated<>(value, now);
-                values.put(eventTimeTimestamp, valu);
+                heapValue = new HeapValue<>(value, now);
+                values.put(eventTimeTimestamp, heapValue);
             }
         }
 
@@ -251,23 +257,23 @@ public abstract class Heap<V> {
             return values
                     .values()
                     .stream()
-                    .map(ValueAndLastUpdated::getLastUpdated)
+                    .map(HeapValue::getCreated)
                     .reduce((i1, i2) -> i1.compareTo(i2) < 0 ? i1 : i2);
         }
 
         @Override
         public List<Flushed<V>> flush(Duration outputDelay, Instant now) {
             var threshold = now.minus(outputDelay);
-            List<Map.Entry<Instant, ValueAndLastUpdated<V>>> expired = new ArrayList<>();
+            List<Map.Entry<Instant, HeapValue<V>>> expired = new ArrayList<>();
             for (var i = values.entrySet().iterator(); i.hasNext(); ) {
                 var entry = i.next();
-                if (entry.getValue().lastUpdated.compareTo(threshold) <= 0) {
+                if (entry.getValue().created.compareTo(threshold) <= 0) {
                     expired.add(entry);
                     i.remove();
                 }
             }
             return expired.stream()
-                    .sorted(Comparator.comparing(e -> e.getValue().lastUpdated))
+                    .sorted(Comparator.comparing(e -> e.getValue().created))
                     .map(entry -> new Flushed<>(entry.getValue().value, entry.getKey(), findIndex(entry.getKey())))
                     .collect(Collectors.toList());
         }

@@ -54,7 +54,7 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.SerializableBiFunction;
-import org.apache.beam.sdk.transforms.SerializableFunction;
+import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
@@ -161,6 +161,8 @@ public class CortexNio {
         private long readTimeoutMs = 10000;
         private long writeTimeoutMs = 10000;
 
+        private boolean testMode = false;
+
         private Map<String, String> fixedLabels = new HashMap<>();
 
         public Write(
@@ -200,6 +202,11 @@ public class CortexNio {
             return this;
         }
 
+        public Write<K, V> withTestMode(boolean value) {
+            this.testMode = value;
+            return this;
+        }
+
         public Write<K, V> withWriteTimeoutMs(long value) {
             this.writeTimeoutMs = value;
             return this;
@@ -221,10 +228,20 @@ public class CortexNio {
 
         @Override
         public PDone expand(PCollection<KV<K, V>> input) {
-            // switch to the global window
-            // -> the state of the stateful WriteFn function is shared by the values of all timestamps
+            // switch to the global window (or - in test mode - at least to a very long lasting window)
+            // -> the state of the stateful WriteFn function is shared by the values in that window
+            // -> this can be used to have cross window control of the output
+
+            // the global window does never expire
+            // -> this has no impact on production when the pipeline runs forever
+            // -> however, this would make tests more difficult because results should be flushed when pipelines terminate
+            //
+            // TODO swachter: Check if the global window could also be used for tests.
+            //   How could its contents be flushed? More generally, orderly shutdown (drain) of Beam pipelines.
+
+            var windowFn = testMode ? FixedWindows.of(Duration.millis(1000l * 365 * 24 * 60 * 60 * 1000)) : new GlobalWindows();
             input
-                    .apply(Window.into(new GlobalWindows()))
+                    .apply(Window.into(windowFn))
                     .apply(ParDo.of(createWriteFn()));
             return PDone.in(input.getPipeline());
         }
