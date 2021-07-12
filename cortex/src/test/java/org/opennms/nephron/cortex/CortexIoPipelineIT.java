@@ -33,6 +33,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static io.restassured.RestAssured.with;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.opennms.nephron.cortex.CortexIoPipelineTest.ADD_KEY;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -47,6 +48,7 @@ import org.apache.beam.sdk.metrics.MetricNameFilter;
 import org.apache.beam.sdk.metrics.MetricsFilter;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
+import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
@@ -92,14 +94,12 @@ public class CortexIoPipelineIT {
         return USE_LOCAL_CORTEX ? 9009 : cortex.getMappedPort(CORTEX_HTTP_PORT);
     }
 
-    private static CortexIo.BuildFromProcessContext<Integer> BUILD_FROM_PROCESS_CONTEXT =
-            (processContext, builder) -> builder.addSample(processContext.timestamp().getMillis(), processContext.element());
+    private static CortexIo.BuildTimeSeries<Integer, Integer> BUILD_TIME_SERIES =
+            (key, value, timestamp, index, builder) -> builder.addSample(timestamp.getMillis(), value);
 
-    private static CortexIo.CreateWriteFn<Integer> CREATE_WRITE_FN = CortexIo.writeFn(BUILD_FROM_PROCESS_CONTEXT);
-
-    private CortexIo.Write<Integer> setupWrite(String metricName) {
+    private CortexIo.Write<Integer, Integer> setupWrite(String metricName) {
         return CortexIo
-                .write("http://localhost:" + cortexPort() + "/api/v1/push", CREATE_WRITE_FN)
+                .of("http://localhost:" + cortexPort() + "/api/v1/push", BUILD_TIME_SERIES)
                 .withMetricName(metricName)
                 ;
     }
@@ -138,6 +138,7 @@ public class CortexIoPipelineIT {
                                 .withAllowedLateness(Duration.ZERO)
                                 .discardingFiredPanes()
                 )
+                .apply(MapElements.via(ADD_KEY))
                 .apply(cortexWrite)
         ;
 

@@ -37,7 +37,7 @@ import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.NullableCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
-import org.opennms.nephron.cortex.CortexIo;
+import org.opennms.nephron.cortex.TimeSeriesBuilder;
 import org.opennms.nephron.elastic.ExporterNode;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.netmgt.flows.persistence.model.Direction;
@@ -59,7 +59,7 @@ public abstract class RefType {
 
     public abstract void populate(CompoundKeyData data, FlowSummary summary);
 
-    public abstract void populate(CompoundKeyData data, CortexIo.TimeSeriesBuilder builder);
+    public abstract void populate(CompoundKeyData data, TimeSeriesBuilder builder);
 
     public abstract void groupedByKey(CompoundKeyData data, StringBuilder sb);
 
@@ -111,7 +111,7 @@ public abstract class RefType {
         }
 
         @Override
-        public void populate(CompoundKeyData data, CortexIo.TimeSeriesBuilder builder) {
+        public void populate(CompoundKeyData data, TimeSeriesBuilder builder) {
             builder.addLabel("nodeId", data.nodeId);
         }
 
@@ -166,7 +166,7 @@ public abstract class RefType {
         }
 
         @Override
-        public void populate(CompoundKeyData data, CortexIo.TimeSeriesBuilder builder) {
+        public void populate(CompoundKeyData data, TimeSeriesBuilder builder) {
             builder.addLabel("ifIndex", data.ifIndex);
         }
 
@@ -215,7 +215,7 @@ public abstract class RefType {
         }
 
         @Override
-        public void populate(CompoundKeyData data, CortexIo.TimeSeriesBuilder builder) {
+        public void populate(CompoundKeyData data, TimeSeriesBuilder builder) {
             builder.addLabel("dscp", data.dscp);
         }
 
@@ -263,7 +263,7 @@ public abstract class RefType {
         }
 
         @Override
-        public void populate(CompoundKeyData data, CortexIo.TimeSeriesBuilder builder) {
+        public void populate(CompoundKeyData data, TimeSeriesBuilder builder) {
             builder.addLabel("application", data.application);
         }
 
@@ -314,7 +314,7 @@ public abstract class RefType {
         }
 
         @Override
-        public void populate(CompoundKeyData data, CortexIo.TimeSeriesBuilder builder) {
+        public void populate(CompoundKeyData data, TimeSeriesBuilder builder) {
             builder.addLabel("host", data.address);
         }
 
@@ -381,7 +381,7 @@ public abstract class RefType {
         }
 
         @Override
-        public void populate(CompoundKeyData data, CortexIo.TimeSeriesBuilder builder) {
+        public void populate(CompoundKeyData data, TimeSeriesBuilder builder) {
             builder.addLabel("location", data.location);
             builder.addLabel("protocol", data.protocol);
             builder.addLabel("host", data.address);

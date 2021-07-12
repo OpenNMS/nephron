@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
@@ -40,15 +41,29 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import org.apache.beam.sdk.annotations.Experimental;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.InstantCoder;
+import org.apache.beam.sdk.coders.ListCoder;
 import org.apache.beam.sdk.metrics.Counter;
 import org.apache.beam.sdk.metrics.Metrics;
+import org.apache.beam.sdk.state.StateSpec;
+import org.apache.beam.sdk.state.StateSpecs;
+import org.apache.beam.sdk.state.TimeDomain;
+import org.apache.beam.sdk.state.Timer;
+import org.apache.beam.sdk.state.TimerSpec;
+import org.apache.beam.sdk.state.TimerSpecs;
+import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.transforms.SerializableFunction;
-import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
+import org.apache.beam.sdk.transforms.SerializableBiFunction;
+import org.apache.beam.sdk.transforms.windowing.FixedWindows;
+import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
+import org.apache.beam.sdk.transforms.windowing.Window;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
+import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,20 +85,38 @@ import prometheus.PrometheusRemote;
 import prometheus.PrometheusTypes;
 
 /**
- * Provides a write transformation for writing to Cortex.
+ * Provides write transforms (sinks) for writing to Cortex.
  * <p>
- * The write transformation is configured by the {@link Write} class and is implemented by the {@link WriteFn} class.
+ * Cortex requires that samples of a specific metric are written with increasing timestamps. The write transforms assign
+ * index numbers to output values that can be used as an additional metric label that make time series strictly
+ * increasing even in case of multiple panes for the same window and panes of later windows completing before
+ * panes of earlier windows.
  * <p>
- * The write transformation provides two counter metrics in the "cortex" namespace:
+ * This class can provide two different kinds of sinks:
+ * <dl>
+ *     <dt>Non-accumulating sink</dt>
+ *     <dd>A sink that assigns unique index numbers to output values.</dd>
+ *     <dt>Accumulating sink</dt>
+ *     <dd>A sink that assigns unique index numbers to output values and additionally accumulates values
+ *     of different panes before they are output.</dd>
+ * </dl>
+ * Both transforms use Beam's state mechanism to track written event timestamps. By doing so, index numbers can be
+ * derived that allow to disambiguate samples for the same event timestamps. The accumulating sink
+ * additionally uses Beam's timer mechanism to hold back values for accumulation and flushes values after a configured
+ * output delay.
+ * <p>
+ * Note: The {@link PaneAccumulator} class can be used to achieve the same accumulation result that the accumulating
+ * sink has. It makes sense to use the {@link PaneAccumulator} if several sinks can benefit
+ * from accumulated outputs. In case of a single sink the accumulating Cortex sink is preferable.
+ * <p>
+ * Sinks are configured by the {@link Write} class and are implemented by subclasses of the {@link WriteFn} class.
+ * Sinks provide two counter metrics in the "cortex" namespace:
  * <dl>
  *     <dt>write_failure</dt>
  *     <dd>Counts the number of failed write requests (requests that resulted in an exception)</dd>
  *     <dt>response_failure</dt>
  *     <dd>Counts the number of Cortex responses with a non-success result code</dd>
  * </dl>
- * <p>
- * Cortex requires that samples of a specific metric are written with increasing timestamps. If a window has several
- * panes for early/on-time/late results then {@link PaneAccumulator} can be used to assign unique index numbers.
  */
 @Experimental(Experimental.Kind.SOURCE_SINK)
 public class CortexIo {
@@ -107,115 +140,176 @@ public class CortexIo {
     private static Counter WRITE = Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_WRITE_METRIC_NAME);
 
     @FunctionalInterface
-    interface CreateWriteFn<T> extends SerializableFunction<Write<T>, CortexIo.WriteFn<T>> {}
-
-    public static <T> Write<T> write(
-            String writeUrl,
-            CreateWriteFn<T> createWriteFn
-    ) {
-        return new Write<>(writeUrl, createWriteFn);
+    public interface BuildTimeSeries<K, V> extends Serializable {
+        void accept(K key, V value, Instant eventTimestamp, int index, TimeSeriesBuilder builder);
     }
 
     /**
-     * Stores the configuration of the transformation.
-     * <p>
-     * Expands to a {@link ParDo} transformation that is specified by a subclass of the {@link WriteFn} class.
+     * Creates a Cortex sink.
      */
-    public static class Write<T> extends PTransform<PCollection<T>, PDone> {
+    public static <K, V> Write<K, V> of(
+            String writeUrl,
+            BuildTimeSeries<K, V> build
+    ) {
+        return new WriteWithoutAccumulation<>(writeUrl, build);
+    }
 
-        private final String writeUrl;
-        private final CreateWriteFn<T> createWriteFn;
+    public static <K, V> Write<K, V> of(
+            String writeUrl,
+            BuildTimeSeries<K, V> build,
+            Coder<K> keyCoder,
+            Coder<V> valueCoder,
+            SerializableBiFunction<V, V, V> combiner,
+            Duration outputDelay
+    ) {
+        return new WriteWithAccumulation<>(writeUrl, build, keyCoder, valueCoder, combiner, outputDelay);
+    }
 
-        private String orgId;
+    /**
+     * Stores the configuration of the transforms.
+     * <p>
+     * Expands to a {@link ParDo} transforms that is specified by subclasses of the {@link WriteFn} class.
+     */
+    public abstract static class Write<K, V> extends PTransform<PCollection<KV<K, V>>, PDone> {
+
+        protected final String writeUrl;
+        protected final BuildTimeSeries<K, V> build;
+
+        protected String orgId;
 
         // maximum number of time series samples in a single batch
-        private long maxBatchSize = 10000;
+        protected long maxBatchSize = 10000;
         // threshold for the sum of the number of bytes of time series samples in a single batch
         // -> the complete message will be some bytes larger
-        private long maxBatchBytes = 512 * 1024;
+        protected long maxBatchBytes = 512 * 1024;
 
-        // requests to Cortex contain samples of the same timestamp
-        // -> multiple request can be sent at the same time
-        private int maxConcurrentHttpConnections = 5;
+        protected long readTimeoutMs = 10000;
+        protected long writeTimeoutMs = 10000;
 
-        private long readTimeoutMs = 10000;
-        private long writeTimeoutMs = 10000;
+        protected boolean testMode = false;
 
-        private Map<String, String> fixedLabels = new HashMap<>();
+        protected final Map<String, String> fixedLabels = new HashMap<>();
+
+        protected final List<BiConsumer<Call, Response>> responseHandlers = new ArrayList<>();
+        protected final List<BiConsumer<Call, Exception>> failureHandlers = new ArrayList<>();
 
         public Write(
                 String writeUrl,
-                CreateWriteFn<T> createWriteFn
+                BuildTimeSeries<K, V> build
         ) {
             super("CortexWrite");
             this.writeUrl = writeUrl;
-            this.createWriteFn = createWriteFn;
+            this.build = build;
         }
 
-        public Write<T> withOrgId(String value) {
+        public Write<K, V> withOrgId(String value) {
             this.orgId = orgId;
             return this;
         }
 
-        public Write<T> withMaxBatchSize(long value) {
+        public Write<K, V> withMaxBatchSize(long value) {
             this.maxBatchSize = value;
             return this;
         }
 
-        public Write<T> withMaxBatchBytes(long value) {
+        public Write<K, V> withMaxBatchBytes(long value) {
             this.maxBatchBytes = value;
             return this;
         }
 
-        public Write<T> withMaxConcurrentHttpConnections(int value) {
-            this.maxConcurrentHttpConnections = value;
-            return this;
-        }
-
-        public Write<T> withReadTimeoutMs(long value) {
+        public Write<K, V> withReadTimeoutMs(long value) {
             this.readTimeoutMs = value;
             return this;
         }
 
-        public Write<T> withWriteTimeoutMs(long value) {
+        public Write<K, V> withTestMode(boolean value) {
+            this.testMode = value;
+            return this;
+        }
+
+        public Write<K, V> withWriteTimeoutMs(long value) {
             this.writeTimeoutMs = value;
             return this;
         }
 
-        public Write<T> withFixedLabel(String name, String value) {
+        public Write<K, V> withFixedLabel(String name, String value) {
             sanitize(name, value, fixedLabels::put);
             return this;
         }
 
-        public Write<T> withMetricName(String value) {
+        public Write<K, V> withMetricName(String value) {
             return withFixedLabel(METRIC_NAME_LABEL, value);
         }
 
-        @VisibleForTesting
-        WriteFn<T> createWriteFn() {
-            return createWriteFn.apply(this);
+        public Write<K, V> withResponseHandler(BiConsumer<Call, Response> handler) {
+            responseHandlers.add(handler);
+            return this;
         }
 
+        public Write<K, V> withFailureHandler(BiConsumer<Call, Exception> handler) {
+            failureHandlers.add(handler);
+            return this;
+        }
+
+        @VisibleForTesting
+        abstract WriteFn<K, V, ?> createWriteFn();
+
         @Override
-        public PDone expand(PCollection<T> input) {
-            input.apply(ParDo.of(createWriteFn()));
+        public PDone expand(PCollection<KV<K, V>> input) {
+            // switch to the global window (or - in test mode - at least to a very long lasting window)
+            // -> the state of the stateful WriteFn function is shared by the values in that window
+            // -> this can be used to have cross window control of the output
+
+            // the global window does never expire
+            // -> this has no impact on production when the pipeline runs forever
+            // -> however, this would make tests more difficult because results should be flushed when pipelines terminate
+            //
+            // TODO swachter: Check if the global window could also be used for tests.
+            //   How could its contents be flushed? More generally, orderly shutdown (drain) of Beam pipelines.
+
+            var windowFn = testMode ? FixedWindows.of(Duration.millis(1000l * 365 * 24 * 60 * 60 * 1000)) : new GlobalWindows();
+            input
+                    .apply(Window.into(windowFn))
+                    .apply(ParDo.of(createWriteFn()));
             return PDone.in(input.getPipeline());
+        }
+    }
+
+    private static class WriteWithAccumulation<K, V> extends Write<K, V> {
+        private final Coder<K> keyCoder;
+        private final Coder<V> valueCoder;
+        private final SerializableBiFunction<V, V, V> combiner;
+        private final Duration outputDelay;
+        public WriteWithAccumulation(String writeUrl, BuildTimeSeries<K, V> build, Coder<K> keyCoder, Coder<V> valueCoder, SerializableBiFunction<V, V, V> combiner, Duration outputDelay) {
+            super(writeUrl, build);
+            this.keyCoder = keyCoder;
+            this.valueCoder = valueCoder;
+            this.combiner = combiner;
+            this.outputDelay = outputDelay;
+        }
+
+        WriteFn<K, V, ?> createWriteFn() {
+            return new WriteFnWithAccumulation<>(this);
         }
 
     }
 
-    /**
-     * Base function class for writing to Cortex.
-     * <p>
-     * Subclasses have to implement a method that is annotated by {@link org.apache.beam.sdk.transforms.DoFn.ProcessElement}
-     * and that calls the {@link #outputTimeSeries(Consumer)} method.
-     * <p>
-     * Depending on the information required to transform input of type {@code T} into a Cortex protobuf time series
-     * different subclasses are used. The various {@link CortexIo#writeFn} methods instantiate these subclasses.
-     */
-    public abstract static class WriteFn<T> extends DoFn<T, Void> {
+    private static class WriteWithoutAccumulation<K, V> extends Write<K, V> {
+        public WriteWithoutAccumulation(String writeUrl, BuildTimeSeries<K, V> build) {
+            super(writeUrl, build);
+        }
 
-        private final Write<T> spec;
+        WriteFn<K, V, ?> createWriteFn() {
+            return new WriteFnWithoutAccumulation<>(this);
+        }
+    }
+
+    /**
+     * Function class for writing to Cortex.
+     */
+    public static abstract class WriteFn<K, V, W extends Write<K, V>> extends DoFn<KV<K, V>, Void> {
+
+        protected final W spec;
 
         private transient OkHttpClient okHttpClient;
 
@@ -233,17 +327,19 @@ public class CortexIo {
         // synchronizes on-going http requests and bundle finalization
         private transient Phaser phaser;
 
-        public WriteFn(Write<T> spec) {
+        public WriteFn(W spec) {
             this.spec = spec;
         }
 
         @Setup
         public void setup() {
             LOG.debug("setup - instance: {}", this);
-            var connectionPool = new ConnectionPool(spec.maxConcurrentHttpConnections, 5, TimeUnit.MINUTES);
+            // request to Cortex must not be sent in parallel
+            // -> request contain samples from different timestamps that must be ingested in sequence
+            var connectionPool = new ConnectionPool(1, 5, TimeUnit.MINUTES);
             var dispatcher = new Dispatcher();
-            dispatcher.setMaxRequests(spec.maxConcurrentHttpConnections);
-            dispatcher.setMaxRequestsPerHost(spec.maxConcurrentHttpConnections);
+            dispatcher.setMaxRequests(1);
+            dispatcher.setMaxRequestsPerHost(1);
             okHttpClient = new OkHttpClient.Builder()
                     .readTimeout(spec.readTimeoutMs, TimeUnit.MILLISECONDS)
                     .writeTimeout(spec.writeTimeoutMs, TimeUnit.MILLISECONDS)
@@ -291,9 +387,6 @@ public class CortexIo {
             okHttpClient.connectionPool().evictAll();
         }
 
-        /**
-         * Called by subclasses for adding time series to the output.
-         */
         protected void outputTimeSeries(Consumer<TimeSeriesBuilder> consumer) throws IOException {
             var builders = new ArrayList<PrometheusTypes.TimeSeries.Builder>();
 
@@ -412,7 +505,7 @@ public class CortexIo {
                             } finally {
                                 phaser.arriveAndDeregister();
                             }
-                            doOnFailure(call, e);
+                            spec.failureHandlers.forEach(handler -> handler.accept(call, e));
                         }
 
                         @Override
@@ -438,108 +531,141 @@ public class CortexIo {
                             } finally {
                                 phaser.arriveAndDeregister();
                             }
-                            doOnResponse(call, response);
+                            spec.responseHandlers.forEach(handler -> handler.accept(call, response));
                         }
                     }
             );
 
         }
 
-        // hook method for subclasses, e.g. in tests
-        protected void doOnFailure(Call call, IOException e) {}
-        protected void doOnResponse(Call call, Response response) {}
+    }
+
+    /**
+     * A Cortex sink that assigns unique index numbers.
+     */
+    public static class WriteFnWithoutAccumulation<K, V> extends WriteFn<K, V, WriteWithoutAccumulation<K, V>> {
+
+        @StateId("flushed")
+        private final StateSpec<ValueState<List<Instant>>> flushedStateSpec;
+
+        public WriteFnWithoutAccumulation(WriteWithoutAccumulation<K, V> spec) {
+            super(spec);
+            flushedStateSpec = StateSpecs.value(ListCoder.of(InstantCoder.of()));
+        }
+
+        @ProcessElement
+        public void processElement(
+                ProcessContext ctx,
+                @AlwaysFetched @StateId("flushed") ValueState<List<Instant>> flushedState
+        ) throws Exception {
+            var flushedEventTimestamps = flushedState.read();
+            if (flushedEventTimestamps == null) {
+                flushedEventTimestamps = new ArrayList<>();
+            }
+            var index = Heap.findIndex(ctx.timestamp(), flushedEventTimestamps);
+            flushedState.write(flushedEventTimestamps);
+            LOG.trace("add value to heap - ctx.timestamp: {}; key: {}; value: {}", ctx.timestamp(), ctx.element().getKey(), ctx.element().getValue());
+            outputTimeSeries(builder -> spec.build.accept(ctx.element().getKey(), ctx.element().getValue(), ctx.timestamp(), index, builder));
+        }
 
     }
 
     /**
-     * Allows to add labels and samples to an underlying protobuf builder.
-     * <p>
-     * The metric name is just a special kind of label. Therefore {@link #setMetricName(String)} should be called
-     * only once.
-     * <p>
-     * Label names and metric names are sanitized according to Cortex requirements.
+     * A Cortex sink that assigns unique index numbers and accumulates values.
      */
-    public interface TimeSeriesBuilder {
-        TimeSeriesBuilder setMetricName(String name);
+    public static class WriteFnWithAccumulation<K, V> extends WriteFn<K, V, WriteWithAccumulation<K, V>> {
+        @StateId("key")
+        private final StateSpec<ValueState<K>> keyStateSpec;
 
-        TimeSeriesBuilder addLabel(String name, String value);
+        @StateId("heap")
+        private final StateSpec<ValueState<Heap.HeapImpl<V>>> heapStateSpec;
 
-        TimeSeriesBuilder addSample(long epochMillis, double value);
+        @TimerId("output")
+        private final TimerSpec outputTimerSpec = TimerSpecs.timer(TimeDomain.PROCESSING_TIME);
 
-        TimeSeriesBuilder nextSeries();
-
-        default TimeSeriesBuilder addLabel(String name, int value) {
-            return addLabel(name, String.valueOf(value));
+        public WriteFnWithAccumulation(WriteWithAccumulation<K, V> spec) {
+            super(spec);
+            keyStateSpec = StateSpecs.value(spec.keyCoder);
+            heapStateSpec = StateSpecs.value(new Heap.HeapImpl.HeapImplCoder<>(spec.valueCoder));
         }
 
-        default TimeSeriesBuilder addLabel(String name, Integer value) {
-            return addLabel(name, String.valueOf(value));
+        @ProcessElement
+        public void processElement(
+                ProcessContext ctx,
+                @StateId("key") ValueState<K> keyState,
+                @AlwaysFetched @StateId("heap") ValueState<Heap.HeapImpl<V>> heapState,
+                @TimerId("output") Timer timer
+        ) throws Exception {
+            var heap = heapState.read();
+            if (heap == null) {
+                LOG.debug("create heap - key: ", ctx.element().getKey());
+                heap = new Heap.HeapImpl<>(new ArrayList<>(), new HashMap<>());
+                // also set the keyState for remembering the key
+                keyState.write(ctx.element().getKey());
+            }
+            if (heap.isEmpty()) {
+                // the first value is added to the heap
+                // -> that value has to be flushed after the given output delay
+                //    (if the value gets not accumulated in the meantime)
+                timer.offset(spec.outputDelay).setRelative();
+            }
+            LOG.trace("add value to heap - ctx.timestamp: {}; key: {}; value: {}", ctx.timestamp(), ctx.element().getKey(), ctx.element().getValue());
+            heap.add(ctx.element().getValue(), ctx.timestamp(), Instant.now(), spec.combiner);
+            heapState.write(heap);
         }
 
-    }
-
-    @FunctionalInterface
-    public interface BuildFromProcessContext<T> extends Serializable {
-        void accept(DoFn<T, Void>.ProcessContext processContext, TimeSeriesBuilder builder);
-    }
-
-    public static <T> CreateWriteFn<T> writeFn(
-            BuildFromProcessContext<T> build
-    ) {
-        // an anonymous inner class did not work with Beam's type wizardry -> use a local class
-        class LocalWriteFn extends WriteFn<T> {
-            public LocalWriteFn(Write<T> spec) {
-                super(spec);
+        @OnTimer("output")
+        public void onOutput(
+                OnTimerContext ctx,
+                @StateId("key") ValueState<K> keyState,
+                @AlwaysFetched @StateId("heap") ValueState<Heap.HeapImpl<V>> heapState,
+                @TimerId("output") Timer timer
+        ) throws IOException {
+            var heap = heapState.read();
+            Instant now = Instant.now();
+            var fs = heap.flush(spec.outputDelay, now);
+            if (!fs.isEmpty()) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("flush values from heap - ctx.timestamp: {}, key: {}; size: {}", ctx.timestamp(), keyState.read(), fs.size());
+                }
+                // some values where flushed from the heap
+                // -> the heap has changed and must be written back
+                heapState.write(heap);
+                var key = keyState.read();
+                for (var f : fs) {
+                    outputTimeSeries(builder -> spec.build.accept(key, f.value, f.eventTimestamp, f.index, builder));
+                }
             }
-            @ProcessElement
-            public void processElement(ProcessContext processContext) throws Exception {
-                outputTimeSeries(builder -> build.accept(processContext, builder));
-            }
-        }
-        return LocalWriteFn::new;
-    }
-
-    @FunctionalInterface
-    public interface BuildFromProcessContextAndWindow<T> extends Serializable {
-        void accept(DoFn<T, Void>.ProcessContext processContext, BoundedWindow window, TimeSeriesBuilder builder);
-    }
-
-    public static <T> CreateWriteFn<T> writeFn(
-            BuildFromProcessContextAndWindow<T> build
-    ) {
-        // an anonymous inner class did not work with Beam's type wizardry -> use a local class
-        class LocalWriteFn extends WriteFn<T> {
-            public LocalWriteFn(Write<T> spec) {
-                super(spec);
-            }
-            @ProcessElement
-            public void processElement(ProcessContext processContext, BoundedWindow window) throws Exception {
-                outputTimeSeries(builder -> build.accept(processContext, window, builder));
+            // schedule the output timer if the heap contains more values
+            var oldestTimestamp = heap.oldestValueProcessingTimestamp();
+            if (oldestTimestamp.isPresent()) {
+                var d = new Duration(oldestTimestamp.get().plus(spec.outputDelay), now);
+                LOG.trace("schedule next heap check - duration: {}", d);
+                timer.offset(d).setRelative();
             }
         }
-        return LocalWriteFn::new;
-    }
 
-    @FunctionalInterface
-    public interface BuildFromElementAndTimestamp<T> extends Serializable {
-        void accept(T t, Instant timestamp, TimeSeriesBuilder builder);
-    }
-
-    public static <T> CreateWriteFn<T> writeFn(
-            BuildFromElementAndTimestamp<T> build
-    ) {
-        // an anonymous inner class did not work with Beam's type wizardry -> use a local class
-        class LocalWriteFn extends WriteFn<T> {
-            public LocalWriteFn(Write<T> spec) {
-                super(spec);
-            }
-
-            @ProcessElement
-            public void processElement(@Element T element, @Timestamp Instant timestamp) throws Exception {
-                outputTimeSeries(builder -> build.accept(element, timestamp, builder));
+        @OnWindowExpiration
+        public void onExpiration(
+                @StateId("key") ValueState<K> keyState,
+                @AlwaysFetched @StateId("heap") ValueState<Heap.HeapImpl<V>> heapState
+        ) throws IOException {
+            var heap = heapState.read();
+            if (heap != null) {
+                // flush all values (they are all older than 'now')
+                var fs = heap.flush(Duration.ZERO, Instant.now());
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("flush values from heap on window expiration - key: {}; size: {}", keyState.read(), fs.size());
+                }
+                if (!fs.isEmpty()) {
+                    var key = keyState.read();
+                    for (var f : fs) {
+                        outputTimeSeries(builder -> spec.build.accept(key, f.value, f.eventTimestamp, f.index, builder));
+                    }
+                }
             }
         }
-        return LocalWriteFn::new;
+
     }
 
     public static void sanitize(String name, String value, BiConsumer<String, String> consumer) {

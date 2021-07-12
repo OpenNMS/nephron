@@ -2,7 +2,7 @@
 <Configuration status="WARN">
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
-            <PatternLayout pattern="%d %-5p [%t] %c{1.}: %m%n"/>
+            <PatternLayout pattern="%d{ABSOLUTE} %-5p [%tid] %c{1.}: %m%n"/>
         </Console>
     </Appenders>
     <Loggers>
@@ -12,10 +12,13 @@
         <Logger name="org.apache.beam.sdk.io.kafka" level="WARN"/>
         <Logger name="org.apache.kafka.clients" level="WARN"/>
         <Logger name="org.apache.kafka.common" level="WARN"/>
+        <Logger name="org.elasticsearch.client.RestClient" level="ERROR"/>
         <!-- Keep this one at INFO for metrics -->
         <Logger name="org.opennms.nephron.flows" level="INFO"/>
+        <Logger name="org.opennms.nephron.Pipeline" level="DEBUG"/>
         <Logger name="org.opennms.nephron.testing" level="DEBUG"/>
         <Logger name="org.opennms.nephron.cortex" level="DEBUG"/>
+        <Logger name="org.opennms.nephron.cortex.PaneAccumulator" level="DEBUG"/>
         <Root level="INFO">
             <AppenderRef ref="Console"/>
         </Root>

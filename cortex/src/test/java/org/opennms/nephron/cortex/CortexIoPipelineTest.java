@@ -34,13 +34,9 @@ import static org.mockserver.model.HttpResponse.response;
 import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.testing.TestStream;
-import org.apache.beam.sdk.transforms.Combine;
-import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.SimpleFunction;
-import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
-import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
@@ -49,6 +45,7 @@ import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Rule;
 import org.junit.Test;
+import org.mockserver.client.MockServerClient;
 import org.mockserver.junit.MockServerRule;
 import org.mockserver.verify.VerificationTimes;
 
@@ -63,27 +60,28 @@ public class CortexIoPipelineTest {
     @Rule
     public TestPipeline pipeline = TestPipeline.create();
 
-    public void test(CortexIo.CreateWriteFn<Integer> createWriteFn) {
+    private static final String PUSH_PATH = "/api/v1/push";
 
-        var mockServerClient = mockServerRule.getClient();
+    public void test(
+            MockServerClient mockServerClient,
+            CortexIo.Write cortexWrite,
+            int windowSizeSeconds,
+            int numWindows,
+            int numExpectedSamples
+    ) {
 
-        String pushPath = "/api/v1/push";
         mockServerClient
-                .when(request().withMethod("POST").withPath(pushPath))
+                .when(request().withMethod("POST").withPath(PUSH_PATH))
                 .respond(response().withStatusCode(201));
-
-        var cortexWrite = CortexIo.write("http://localhost:" + mockServerClient.getPort() + pushPath, createWriteFn);
-
 
         var testStreamBuilder = TestStream.create(VarIntCoder.of());
 
-        var windowSizeSeconds = 5;
-        var numWindows = 3;
-
-        for (int i = 0; i < windowSizeSeconds * numWindows; i++) {
-            Instant timestamp = Instant.ofEpochMilli(i * 1000);
-            testStreamBuilder = testStreamBuilder.addElements(TimestampedValue.of(i, timestamp));
-            testStreamBuilder = testStreamBuilder.advanceWatermarkTo(timestamp);
+        for (int w = 0; w < numWindows; w++) {
+            for (int s = 0; s < windowSizeSeconds; s++) {
+                Instant timestamp = Instant.ofEpochMilli(w * windowSizeSeconds * 1000);
+                testStreamBuilder = testStreamBuilder.addElements(TimestampedValue.of(w * windowSizeSeconds + s, timestamp));
+                testStreamBuilder = testStreamBuilder.advanceWatermarkTo(timestamp);
+            }
         }
         var testStream = testStreamBuilder.advanceWatermarkToInfinity();
 
@@ -95,9 +93,7 @@ public class CortexIoPipelineTest {
                                 .withAllowedLateness(Duration.ZERO)
                                 .discardingFiredPanes()
                 )
-                .apply(MapElements.via(addKey))
-                .apply(Combine.perKey(CortexIoPipelineTest::sum))
-                .apply(Values.create())
+                .apply(MapElements.via(ADD_KEY))
                 .apply(cortexWrite)
         ;
 
@@ -105,21 +101,13 @@ public class CortexIoPipelineTest {
         pipelineResult.waitUntilFinish();
 
         mockServerClient.verify(
-                request().withPath(pushPath),
-                VerificationTimes.exactly(numWindows)
+                request().withPath(PUSH_PATH),
+                VerificationTimes.exactly(numExpectedSamples)
         );
 
     }
 
-    public static int sum(Iterable<Integer> iter) {
-        var sum = 0;
-        for (var i: iter) {
-            sum += i;
-        }
-        return sum;
-    }
-
-    public static SimpleFunction<Integer, KV<Integer, Integer>> addKey = new SimpleFunction<>() {
+    public static SimpleFunction<Integer, KV<Integer, Integer>> ADD_KEY = new SimpleFunction<>() {
         @Override
         public KV<Integer, Integer> apply(Integer input) {
             // use the same key for all elements
@@ -129,57 +117,42 @@ public class CortexIoPipelineTest {
     };
 
     @Test
-    public void test1() {
-        test(CortexIo.writeFn(CortexIoPipelineTest::buildFromIntAndTimestamp));
+    public void samplesGetAccumulated() {
+        var mockServerClient = mockServerRule.getClient();
+        var cortexWrite = CortexIo.of(
+                "http://localhost:" + mockServerClient.getPort() + PUSH_PATH,
+                CortexIoPipelineTest::buildTimeSeries,
+                VarIntCoder.of(),
+                VarIntCoder.of(),
+                CortexIoPipelineTest::plus,
+                Duration.standardSeconds(5)
+        ).withMaxBatchSize(1);
+        test(mockServerClient, cortexWrite, 5, 3, 3); // a sample for each window
     }
 
     @Test
-    public void test2() {
-        test(CortexIo.writeFn(CortexIoPipelineTest::buildFromProcessContext));
+    public void samplesGetPassedThrough() {
+        var mockServerClient = mockServerRule.getClient();
+        var cortexWrite = CortexIo.of(
+                "http://localhost:" + mockServerClient.getPort() + PUSH_PATH,
+                CortexIoPipelineTest::buildTimeSeries
+        ).withMaxBatchSize(1);
+        test(mockServerClient, cortexWrite, 5, 3, 5 * 3); // a sample for each input value
     }
 
-    @Test
-    public void test3() {
-        test(CortexIo.writeFn(CortexIoPipelineTest::buildFromProcessContextAndWindow));
-    }
-
-
-    public static void buildFromIntAndTimestamp(
+    public static void buildTimeSeries(
+            Integer key,
             Integer value,
             Instant timestamp,
-            CortexIo.TimeSeriesBuilder builder
+            int index,
+            TimeSeriesBuilder builder
     ) {
         builder
-                .addLabel("evenOrOdd", value % 2 == 0 ? "even" : "odd")
+                .addLabel("index", index)
                 .addSample(timestamp.getMillis(), value);
     }
 
-    public static void buildFromProcessContext(
-            DoFn<Integer, Void>.ProcessContext processContext,
-            CortexIo.TimeSeriesBuilder builder
-    ) {
-        var value = processContext.element();
-        var timestamp = processContext.timestamp();
-        var pane = processContext.pane();
-        builder
-                .addLabel("evenOrOdd", value % 2 == 0 ? "even" : "odd")
-                .addLabel("pane", pane.getTiming().name() + '-' + pane.getIndex())
-                .addSample(timestamp.getMillis(), value);
+    private static int plus(int i1, int i2) {
+        return i1 + i2;
     }
-
-    public static void buildFromProcessContextAndWindow(
-            DoFn<Integer, Void>.ProcessContext processContext,
-            BoundedWindow window,
-            CortexIo.TimeSeriesBuilder builder
-    ) {
-        var value = processContext.element();
-        var timestamp = processContext.timestamp();
-        var pane = processContext.pane();
-        builder
-                .addLabel("evenOrOdd", value % 2 == 0 ? "even" : "odd")
-                .addLabel("pane", pane.getTiming().name() + '-' + pane.getIndex())
-                .addLabel("window", window.getClass().getSimpleName())
-                .addSample(timestamp.getMillis(), value);
-    }
-
 }

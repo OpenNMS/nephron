@@ -40,7 +40,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 import org.apache.beam.repackaged.core.org.apache.commons.lang3.ArrayUtils;
-import org.opennms.nephron.cortex.CortexIo;
+import org.opennms.nephron.cortex.TimeSeriesBuilder;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
@@ -113,7 +113,7 @@ public enum CompoundKeyType {
         }
     }
 
-    void populate(CompoundKeyData data, CortexIo.TimeSeriesBuilder builder) {
+    void populate(CompoundKeyData data, TimeSeriesBuilder builder) {
         builder.setMetricName(name());
         for (RefType refType: parts) {
             refType.populate(data, builder);

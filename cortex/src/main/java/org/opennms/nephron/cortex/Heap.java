@@ -220,20 +220,7 @@ public abstract class Heap<V> {
          * Determine the minimum index that can be used for the given timestamp.
          */
         private int findIndex(Instant eventTimestamp) {
-            // search for an existing flushed event timestamp that is smaller than the given timestamp
-            // -> if one is found it is increased to the given event timestamp and its index is returned
-            // -> if none is found all flushed event time stamps are greater than or equal to the given event timestamp;
-            //    in that case a new flushed event timestamp is added to the end of the list
-            var idx = 0;
-            while (idx < flushedEventTimestamps.size()) {
-                if (flushedEventTimestamps.get(idx).compareTo(eventTimestamp) < 0) {
-                    flushedEventTimestamps.set(idx, eventTimestamp);
-                    return idx;
-                }
-                idx++;
-            }
-            flushedEventTimestamps.add(eventTimestamp);
-            return idx;
+            return findIndex(eventTimestamp, flushedEventTimestamps);
         }
 
         @Override
@@ -277,5 +264,22 @@ public abstract class Heap<V> {
                     .map(entry -> new Flushed<>(entry.getValue().value, entry.getKey(), findIndex(entry.getKey())))
                     .collect(Collectors.toList());
         }
+    }
+
+    public static int findIndex(Instant eventTimestamp, List<Instant> flushedEventTimestamps) {
+        // search for an existing flushed event timestamp that is smaller than the given timestamp
+        // -> if one is found it is increased to the given event timestamp and its index is returned
+        // -> if none is found all flushed event time stamps are greater than or equal to the given event timestamp;
+        //    in that case a new flushed event timestamp is added to the end of the list
+        var idx = 0;
+        while (idx < flushedEventTimestamps.size()) {
+            if (flushedEventTimestamps.get(idx).compareTo(eventTimestamp) < 0) {
+                flushedEventTimestamps.set(idx, eventTimestamp);
+                return idx;
+            }
+            idx++;
+        }
+        flushedEventTimestamps.add(eventTimestamp);
+        return idx;
     }
 }

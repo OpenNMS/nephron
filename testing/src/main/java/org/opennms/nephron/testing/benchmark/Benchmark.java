@@ -30,6 +30,7 @@ package org.opennms.nephron.testing.benchmark;
 
 import static org.opennms.nephron.Pipeline.accumulateSummariesIfNecessary;
 import static org.opennms.nephron.Pipeline.attachWriteToCortex;
+import static org.opennms.nephron.Pipeline.attachWriteToElastic;
 import static org.opennms.nephron.Pipeline.registerCoders;
 
 import java.util.Objects;
@@ -45,9 +46,7 @@ import org.apache.beam.sdk.values.PCollection;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.nephron.FlowSummaryData;
-import org.opennms.nephron.NephronOptions;
 import org.opennms.nephron.Pipeline;
-import org.opennms.nephron.testing.flowgen.FlowGenOptions;
 import org.opennms.nephron.testing.flowgen.TestingProbe;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
@@ -74,10 +73,21 @@ public class Benchmark {
     // --flowsPerWindow=100
     // --flowsPerSecond=10000
     // --cortexWriteUrl=http://localhost:9009/api/v1/push
+    //
+    // e.g.: --runner=FlinkRunner --flinkMaster=localhost:8081 --numWindows=20 --fixedWindowSizeMs=10000 --earlyProcessingDelayMs=5000 --lateProcessingDelayMs=5000 --playbackMode=false --elasticUrl=http://localhost:9200 --cortexWriteUrl=http://localhost:9009/api/v1/push --parallelism=4 --flowsPerSecond=8000 --lastSwitchedSigmaMs=5000 --numExporters=2 --numInterfaces=2 --numProtocols=1 --numApplications=2 --numHosts=2 --numEcns=1 --numDscps=1 --cortexMaxBatchSize=100
+    //
+    // start Cortex in container:
+    // ====
+    // docker run -d --name cortex -v /home/swachter/projects/opennms/nephron/cortex/src/test/resources/cortex.yaml:/etc/cortex/cortex.yaml -p 9009:9009 -p 9005:9005 cortexproject/cortex:v1.9.0 -config.file=/etc/cortex/cortex.yaml
+
     public static void main(String[] args) throws Exception {
         args = ensureArg("--blockOnRun=false", args);
-        PipelineOptionsFactory.register(NephronOptions.class);
-        PipelineOptionsFactory.register(FlowGenOptions.class);
+        // the benchmark may write to ES; disabled by default (override default from NephronOptions)
+        args = ensureArg("--elasticUrl=", args);
+        //PipelineOptionsFactory.register(NephronOptions.class);
+        //PipelineOptionsFactory.register(CortexOptions.class);
+        //PipelineOptionsFactory.register(FlowGenOptions.class);
+//        PipelineOptionsFactory.register(DirectOptions.class);
         var options = PipelineOptionsFactory.fromArgs(args).withValidation().as(BenchmarkOptions.class);
         new Benchmark(options).run();
     }
@@ -130,7 +140,8 @@ public class Benchmark {
 
         flowSummaries = flowSummaries.apply(outTestingProbe.getTransform());
 
-        attachWriteToCortex(options, flowSummaries);
+        attachWriteToElastic(options, flowSummaries);
+        attachWriteToCortex(options, flowSummaries, true);
 
         flowSummaries.apply(devNull("summaries"));
 

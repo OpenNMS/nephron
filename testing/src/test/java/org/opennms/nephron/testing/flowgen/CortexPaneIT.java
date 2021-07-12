@@ -53,7 +53,6 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.SerializableBiFunction;
-import org.apache.beam.sdk.transforms.Values;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
@@ -62,12 +61,10 @@ import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Rule;
 import org.junit.Test;
-import org.opennms.nephron.Aggregate;
 import org.opennms.nephron.CompoundKey;
 import org.opennms.nephron.FlowSummaryData;
 import org.opennms.nephron.Pipeline;
 import org.opennms.nephron.RefType;
-import org.opennms.nephron.cortex.PaneAccumulator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.BindMode;
@@ -100,7 +97,7 @@ public class CortexPaneIT {
         FlowGenOptions options = PipelineOptionsFactory.fromArgs(
                 "--defaultMaxInputDelayMs=30000",
                 "--runner=FlinkRunner",
-                "--flinkMaster=localhost:8081",
+//                "--flinkMaster=localhost:8081",
                 "--parallelism=4",
                 "--lateProcessingDelayMs=240000",
                 "--earlyProcessingDelayMs=5000",
@@ -139,7 +136,7 @@ public class CortexPaneIT {
         var accumulatedPanesFlowSummaries = Pipeline.accumulateFlowSummaries(rawFlowSummaries, outputDelay);
 
         //Pipeline.attachWriteToElastic(options, accumulatedPanesFlowSummaries);
-        Pipeline.attachWriteToCortex(options, accumulatedPanesFlowSummaries);
+        Pipeline.attachWriteToCortex(options, accumulatedPanesFlowSummaries, true);
 
         accumulatedPanesFlowSummaries.apply(countVolumes());
 
@@ -222,9 +219,11 @@ public class CortexPaneIT {
 
             qry.append("})");
 
+            LOG.debug("key: {}; timestamp: {}; query: {}; bytes: {}", key.key, Instant.ofEpochMilli(key.windowEnd), qry, agg.getBytes());
+
             var response = with()
                     .param("query", qry.toString())
-                    .param("time", (key.windowStart + options.getFixedWindowSizeMs()) / 1000)
+                    .param("time", key.windowEnd / 1000 + 1)
                     .get("/prometheus/api/v1/query");
 
             response.body().prettyPrint();
@@ -266,10 +265,9 @@ public class CortexPaneIT {
         return (idx, fd) -> fd.fd1.nodeId == minExporter ? start : uniformLastSwitchedPolicy.apply(idx, fd);
     }
 
-    private static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> skewedLastSwitchedPolicy(FlowGenOptions options) {
+    public static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> skewedLastSwitchedPolicy(FlowGenOptions options) {
         var minExporter = options.getMinExporter();
         var uniformLastSwitchedPolicy = FlowConfig.uniformInWindowLastSwitchedPolicy(options);
-        var start = Instant.ofEpochMilli(options.getStartMs());
         return (idx, fd) -> {
             var ls = uniformLastSwitchedPolicy.apply(idx, fd);
             return fd.fd1.nodeId == minExporter ? ls.minus(10*60*1000) : ls;

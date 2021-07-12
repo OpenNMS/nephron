@@ -28,6 +28,7 @@
 
 package org.opennms.nephron;
 
+import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
 
@@ -40,5 +41,20 @@ public interface CortexOptions extends PipelineOptions {
     @Description("OrgId that is set in the X-Scope-OrgID header.")
     String getCortexOrgId();
     void setCortexOrgId(String value);
+
+    @Description("The maximum number of batched samples.")
+    @Default.Integer(10000)
+    int getCortexMaxBatchSize();
+    void setCortexMaxBatchSize(int value);
+
+    @Description("The maximum number of bytes sent in one batch. (The actual number of sent bytes may be slightly larger.)")
+    @Default.Integer(512 * 1024)
+    int getCortexMaxBatchBytes();
+    void setCortexMaxBatchBytes(int value);
+
+    @Description("Specifies if the Cortex sink should accumulate flow summaries in memory before writing. If the more general option --accumulateSummaries is activated then --cortexAccumulate has no additional effect.")
+    @Default.Boolean(true)
+    boolean getCortexAccumulate();
+    void setCortexAccumulate(boolean value);
 
 }

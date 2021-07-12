@@ -42,9 +42,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.beam.sdk.state.ValueState;
+import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.values.KV;
 import org.joda.time.Instant;
 import org.junit.Rule;
 import org.junit.Test;
+import org.mockito.Mockito;
 import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 
@@ -106,48 +110,34 @@ public class CortexIoIT {
     /**
      * An extension of the {@link CortexIo.WriteFn} class that records the results of calling cortex.
      */
-    private static class TestWriteFn extends CortexIo.WriteFn<Double> {
+    private class WriteFnAndResults {
 
-        private CortexIo.BuildFromElementAndTimestamp<Double> build;
-        private List<CallResult> results = Collections.synchronizedList(new ArrayList<>());
+        private final CortexIo.WriteFnWithoutAccumulation<Double, Double> writeFn;
+        private final List<CallResult> results = Collections.synchronizedList(new ArrayList<>());
+        private final List<Instant> flushedTimestamps = new ArrayList<>();
+        private final ValueState<List<Instant>> flushedTimestampsState = Mockito.mock(ValueState.class);
 
-        public TestWriteFn(CortexIo.Write<Double> spec, CortexIo.BuildFromElementAndTimestamp<Double> build) {
-            super(spec);
-            this.build = build;
+        private WriteFnAndResults(String metricName) {
+            writeFn = (CortexIo.WriteFnWithoutAccumulation<Double, Double>) CortexIo
+                    .of("http://localhost:" + cortexPort() + "/api/v1/push", BUILD_FROM_ELEMENT_AND_TIMESTAMP)
+                    .withMetricName(metricName)
+                    .withResponseHandler((call, result) -> results.add(new CallResult.Success(call, result)))
+                    .withFailureHandler((call, exception) -> results.add(new CallResult.Failure(call, exception)))
+                    .createWriteFn();
+            Mockito.when(flushedTimestampsState.read()).thenReturn(flushedTimestamps);
         }
 
-        public List<CallResult> getResults() {
-            return results;
+        private void processElement(double value, Instant timestamp) throws Exception {
+            var pc = Mockito.mock(DoFn.ProcessContext.class);
+            Mockito.when(pc.element()).thenReturn(KV.of(value, value));
+            Mockito.when(pc.timestamp()).thenReturn(timestamp);
+            writeFn.processElement(pc, flushedTimestampsState);
         }
 
-        @ProcessElement
-        public void processElement(@Element Double element, @Timestamp Instant timestamp) throws Exception {
-            outputTimeSeries(builder -> build.accept(element, timestamp, builder));
-        }
-
-        @Override
-        public void doOnFailure(Call call, IOException e) {
-            results.add(new CallResult.Failure(call, e));
-        }
-
-        @Override
-        public void doOnResponse(Call call, Response response) {
-            results.add(new CallResult.Success(call, response));
-        }
     }
 
-    private static CortexIo.BuildFromElementAndTimestamp<Double> BUILD_FROM_ELEMENT_AND_TIMESTAMP =
-            (element, timestamp, builder) -> builder.addSample(timestamp.getMillis(), element);
-
-    private static CortexIo.CreateWriteFn<Double> CREATE_WRITE_FN =
-            spec -> new TestWriteFn(spec, BUILD_FROM_ELEMENT_AND_TIMESTAMP);
-
-    private TestWriteFn setupWriteFn(String metricName) {
-        var cortexWrite = CortexIo
-                .write("http://localhost:" + cortexPort() + "/api/v1/push", CREATE_WRITE_FN)
-                .withMetricName(metricName);
-        return (TestWriteFn) cortexWrite.createWriteFn();
-    }
+    private static CortexIo.BuildTimeSeries<Double, Double> BUILD_FROM_ELEMENT_AND_TIMESTAMP =
+            (key, value, timestamp, index, builder) -> builder.addSample(timestamp.getMillis(), value);
 
     @Test
     public void singleSample() throws Exception {
@@ -156,21 +146,22 @@ public class CortexIoIT {
         var value = 77.7;
 
         String metricName = "singleSample";
-        TestWriteFn writeFn = setupWriteFn(metricName);
+        var writeFnAndResults = new WriteFnAndResults(metricName);
+        var writeFn = writeFnAndResults.writeFn;
 
         writeFn.setup();
         writeFn.startBundle();
 
-        writeFn.processElement(value, timestamp);
+        writeFnAndResults.processElement(value, timestamp);
 
         writeFn.finishBundle();
         writeFn.closeClient();
 
         await().atMost(15, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
                 .ignoreExceptions()
-                .until(() -> writeFn.getResults().size(), greaterThanOrEqualTo(1));
+                .until(() -> writeFnAndResults.results.size(), greaterThanOrEqualTo(1));
 
-        var result0 = writeFn.getResults().get(0);
+        var result0 = writeFnAndResults.results.get(0);
 
         assertThat(result0, instanceOf(CallResult.Success.class));
 
@@ -196,14 +187,15 @@ public class CortexIoIT {
         var start = Instant.ofEpochMilli(100_000);
 
         String metricName = "multipleSamples";
-        TestWriteFn writeFn = setupWriteFn(metricName);
+        var writeFnAndResults = new WriteFnAndResults(metricName);
+        var writeFn = writeFnAndResults.writeFn;
 
         writeFn.setup();
         writeFn.startBundle();
 
         var timestamp = start;
         for (int i = 0; i <= 1000; i++) {
-            writeFn.processElement((double)i, timestamp);
+            writeFnAndResults.processElement(i, timestamp);
             timestamp = timestamp.plus(1000);
         }
 
@@ -212,9 +204,9 @@ public class CortexIoIT {
 
         await().atMost(15, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
                 .ignoreExceptions()
-                .until(() -> writeFn.getResults().size(), greaterThanOrEqualTo(1));
+                .until(() -> writeFnAndResults.results.size(), greaterThanOrEqualTo(1));
 
-        var result0 = writeFn.getResults().get(0);
+        var result0 = writeFnAndResults.results.get(0);
 
         assertThat(result0, instanceOf(CallResult.Success.class));
 
@@ -243,23 +235,24 @@ public class CortexIoIT {
         var timestamp = Instant.ofEpochMilli(100_000);
 
         String metricName = "outOfOrderSampleFails";
-        TestWriteFn writeFn = setupWriteFn(metricName);
+        var writeFnAndResults = new WriteFnAndResults(metricName);
+        var writeFn = writeFnAndResults.writeFn;
 
         writeFn.setup();
 
         writeFn.startBundle();
-        writeFn.processElement(1.0, timestamp);
+        writeFnAndResults.processElement(1.0, timestamp);
         // write a different value one second earlier -> the value gets ignored
-        writeFn.processElement(2.0, timestamp.minus(1000));
+        writeFnAndResults.processElement(2.0, timestamp.minus(1000));
         writeFn.finishBundle();
 
         writeFn.closeClient();
 
         await().atMost(15, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
                 .ignoreExceptions()
-                .until(() -> writeFn.getResults().size(), greaterThanOrEqualTo(1));
+                .until(() -> writeFnAndResults.results.size(), greaterThanOrEqualTo(1));
 
-        var result0 = writeFn.getResults().get(0);
+        var result0 = writeFnAndResults.results.get(0);
 
         assertThat(result0, instanceOf(CallResult.Success.class));
 
@@ -300,26 +293,27 @@ public class CortexIoIT {
         var timestamp = Instant.ofEpochMilli(100_000);
 
         String metricName = "outOfOrderBundlesInSeparateBundlesFail";
-        TestWriteFn writeFn = setupWriteFn(metricName);
+        var writeFnAndResults = new WriteFnAndResults(metricName);
+        var writeFn = writeFnAndResults.writeFn;
 
         writeFn.setup();
 
         writeFn.startBundle();
-        writeFn.processElement(1.0, timestamp);
+        writeFnAndResults.processElement(1.0, timestamp);
         writeFn.finishBundle();
         writeFn.startBundle();
         // try to write a different value at the same timestamp -> this should fail
-        writeFn.processElement(2.0, timestamp.minus(1000));
+        writeFnAndResults.processElement(2.0, timestamp.minus(1000));
         writeFn.finishBundle();
 
         writeFn.closeClient();
 
         await().atMost(15, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
                 .ignoreExceptions()
-                .until(() -> writeFn.getResults().size(), greaterThanOrEqualTo(1));
+                .until(() -> writeFnAndResults.results.size(), greaterThanOrEqualTo(1));
 
-        var result0 = writeFn.getResults().get(0);
-        var result1 = writeFn.getResults().get(1);
+        var result0 = writeFnAndResults.results.get(0);
+        var result1 = writeFnAndResults.results.get(1);
 
         assertThat(result0, instanceOf(CallResult.Success.class));
         assertThat(result1, instanceOf(CallResult.Success.class));
@@ -334,27 +328,28 @@ public class CortexIoIT {
         var timestamp = Instant.ofEpochMilli(100_000);
 
         String metricName = "updateSampleFails";
-        TestWriteFn writeFn = setupWriteFn(metricName);
+        var writeFnAndResults = new WriteFnAndResults(metricName);
+        var writeFn = writeFnAndResults.writeFn;
 
         writeFn.setup();
 
         writeFn.startBundle();
-        writeFn.processElement(1.0, timestamp);
+        writeFnAndResults.processElement(1.0, timestamp);
         writeFn.finishBundle();
 
         writeFn.startBundle();
         // try to write a different value at the same timestamp -> this should fail
-        writeFn.processElement(2.0, timestamp);
+        writeFnAndResults.processElement(2.0, timestamp);
         writeFn.finishBundle();
 
         writeFn.closeClient();
 
         await().atMost(15, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS)
                 .ignoreExceptions()
-                .until(() -> writeFn.getResults().size(), greaterThanOrEqualTo(2));
+                .until(() -> writeFnAndResults.results.size(), greaterThanOrEqualTo(2));
 
-        var result0 = writeFn.getResults().get(0);
-        var result1 = writeFn.getResults().get(1);
+        var result0 = writeFnAndResults.results.get(0);
+        var result1 = writeFnAndResults.results.get(1);
 
         assertThat(result0, instanceOf(CallResult.Success.class));
         assertThat(result1, instanceOf(CallResult.Success.class));

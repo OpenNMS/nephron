@@ -52,10 +52,6 @@ import com.google.common.base.MoreObjects;
 /**
  * A stateful transform that accumulates values of different panes, flushes accumulated values after a given output
  * delay, and assigns unique index numbers to the accumulated output.
- * <p>
- * {@code PaneAccumulator} is useful when writing to Cortex using {@link CortexIo}. Cortex requires that metric samples
- * are written with increasing timestamps. The unique index number assigned by the {@code PaneAccumulator} can be used
- * as a label value to disambiguate samples for the same timestamp.
  */
 public class PaneAccumulator<K, V> extends PTransform<PCollection<KV<K, V>>, PCollection<KV<K, KV<Integer, V>>>> {
 

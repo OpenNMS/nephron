@@ -164,13 +164,15 @@ public class TotalVolumeTest {
                             options.getFixedWindowSizeMs(),
                             timestamp
                     );
+                    long windowEnd = windowStart + windowSizeMs;
+
                     IntervalWindow window = new IntervalWindow(Instant.ofEpochMilli(windowStart), new Duration(windowSizeMs));
 
                     // total aggregations are calculated for EXPORTER_INTERFACE and EXPORTER_INTERFACE_TOS only
                     for (CompoundKeyType compoundKeyType : Arrays.asList(EXPORTER_INTERFACE, EXPORTER_INTERFACE_TOS)) {
                         try {
                             CompoundKey key = compoundKeyType.create(flow);
-                            ResKey resKey = new ResKey(windowStart, key);
+                            ResKey resKey = new ResKey(windowEnd, key);
                             Aggregate aggregate = Pipeline.aggregatize(window, flow, "", "");
                             Aggregate previous = expected.get(resKey);
                             Aggregate next = previous != null ? Aggregate.merge(previous, aggregate) : aggregate;
@@ -225,7 +227,7 @@ public class TotalVolumeTest {
                     public void processElement(ProcessContext c) {
                         FlowSummaryData fsd = c.element();
                         if (fsd.aggregationType == AggregationType.TOPK) return;
-                        ResKey resKey = new ResKey(fsd.windowStart, fsd.key);
+                        ResKey resKey = new ResKey(fsd.windowEnd, fsd.key);
                         String strKey = resKey.asString();
                         Metrics.counter(strKey, "in").inc(fsd.aggregate.getBytesIn());
                         Metrics.counter(strKey, "out").inc(fsd.aggregate.getBytesOut());
@@ -234,17 +236,17 @@ public class TotalVolumeTest {
     }
 
     public static class ResKey {
-        public final long windowStart;
+        public final long windowEnd;
         public final CompoundKey key;
 
-        public ResKey(long windowStart, CompoundKey key) {
-            this.windowStart = windowStart;
+        public ResKey(long windowEnd, CompoundKey key) {
+            this.windowEnd = windowEnd;
             this.key = key;
         }
 
         public String asString() {
             StringBuilder sb = new StringBuilder();
-            sb.append(windowStart).append('-').append(key);
+            sb.append(windowEnd).append('-').append(key);
             return sb.toString();
         }
 
@@ -257,12 +259,12 @@ public class TotalVolumeTest {
                 return false;
             }
             ResKey resKey = (ResKey) o;
-            return windowStart == resKey.windowStart && key.equals(resKey.key);
+            return windowEnd == resKey.windowEnd && key.equals(resKey.key);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(windowStart, key);
+            return Objects.hash(windowEnd, key);
         }
     }
 

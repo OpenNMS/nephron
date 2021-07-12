@@ -37,6 +37,7 @@ import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.transforms.PTransform;
+import org.apache.beam.sdk.transforms.SerializableBiFunction;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
@@ -44,6 +45,8 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.nephron.Pipeline;
+import org.opennms.nephron.testing.flowgen.FlowConfig;
+import org.opennms.nephron.testing.flowgen.FlowDocuments;
 import org.opennms.nephron.testing.flowgen.FlowGenOptions;
 import org.opennms.nephron.testing.flowgen.SourceConfig;
 import org.opennms.nephron.testing.flowgen.SyntheticFlowSource;
@@ -75,7 +78,7 @@ public abstract class InputSetup {
 
     public InputSetup(BenchmarkOptions options) {
         this.options = options;
-        this.sourceConfig = SourceConfig.of(options, SyntheticFlowTimestampPolicyFactory.withLimitedDelay(options, Pipeline.ReadFromKafka::getTimestamp));
+        this.sourceConfig = SourceConfig.of(options, skewedLastSwitchedPolicy(options), SyntheticFlowTimestampPolicyFactory.withLimitedDelay(options, Pipeline.ReadFromKafka::getTimestamp));
     }
 
     abstract PTransform<PBegin, PCollection<FlowDocument>> source();
@@ -171,6 +174,15 @@ public abstract class InputSetup {
         public void generate() throws Exception {
         }
 
+    }
+
+    public static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> skewedLastSwitchedPolicy(FlowGenOptions options) {
+        var minExporter = options.getMinExporter();
+        var lastSwitchedPolicy = FlowConfig.CURRENT_TIME_LAST_SWITCHED_POLICY;
+        return (idx, fd) -> {
+            var ls = lastSwitchedPolicy.apply(idx, fd);
+            return fd.fd1.nodeId == minExporter ? ls.minus(10*60*1000) : ls;
+        };
     }
 
 }

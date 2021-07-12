@@ -7,6 +7,9 @@
 # X-Scope-OrgID header. `fake` will be substituted in instead.
 auth_enabled: false
 
+querier:
+  lookback_delta: 15s
+
 server:
   http_listen_port: 9009
 
