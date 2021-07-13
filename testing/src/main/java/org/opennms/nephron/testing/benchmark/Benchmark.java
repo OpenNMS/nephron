@@ -81,15 +81,26 @@ public class Benchmark {
     // docker run -d --name cortex -v /home/swachter/projects/opennms/nephron/cortex/src/test/resources/cortex.yaml:/etc/cortex/cortex.yaml -p 9009:9009 -p 9005:9005 cortexproject/cortex:v1.9.0 -config.file=/etc/cortex/cortex.yaml
 
     public static void main(String[] args) throws Exception {
-        args = ensureArg("--blockOnRun=false", args);
-        // the benchmark may write to ES; disabled by default (override default from NephronOptions)
-        args = ensureArg("--elasticUrl=", args);
+
         //PipelineOptionsFactory.register(NephronOptions.class);
         //PipelineOptionsFactory.register(CortexOptions.class);
         //PipelineOptionsFactory.register(FlowGenOptions.class);
 //        PipelineOptionsFactory.register(DirectOptions.class);
-        var options = PipelineOptionsFactory.fromArgs(args).withValidation().as(BenchmarkOptions.class);
-        new Benchmark(options).run();
+
+        var paramLists = ArgsParser.parse(args).expand().asLists();
+
+        System.out.println("Number of paramLists: " + paramLists.size());
+        paramLists.forEach(pl -> System.out.println("paramList: " + pl));
+
+        for (var paramList: paramLists) {
+            var as = paramList.toArray(new String[0]);
+            as = ensureArg("--blockOnRun=false", as);
+            // the benchmark may write to ES; disabled by default (override default from NephronOptions)
+            as = ensureArg("--elasticUrl=", as);
+            var options = PipelineOptionsFactory.fromArgs(as).withValidation().as(BenchmarkOptions.class);
+            new Benchmark(options).run();
+        }
+
     }
 
     private static String[] ensureArg(String argAssignment, String[] args) {
