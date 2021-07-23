@@ -32,7 +32,6 @@ import java.util.Iterator;
 import java.util.Random;
 import java.util.Spliterator;
 import java.util.Spliterators;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
@@ -83,12 +82,12 @@ public class FlowDocuments {
 
     /**
      * Creates a length limited stream of flows.
-     *
+     * <p>
      * The {@code minSplits} and {@code maxSplits} properties of the given {@code SourceConfig} must be equal.
-     *
+     * <p>
      * The stream is implemented by first splitting the SourceConfig according to the minimum/maximum number of splits
      * and then returning flows from each split in a round-robing fashion.
-     *
+     * <p>
      * This tries to mimic how a source is processed by Flink. Flink also tries to split its input. However, Flink may
      * process splits in parallel and the order of processed elements may not be the same. Yet, the collection of all
      * returned flows should be the same.

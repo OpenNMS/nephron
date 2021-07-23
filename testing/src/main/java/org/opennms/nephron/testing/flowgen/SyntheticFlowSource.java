@@ -56,7 +56,7 @@ import net.jqwik.api.RandomGenerator;
 
 /**
  * A source of synthetically generated flows.
- *
+ * <p>
  * Flow generation can be parameterized by a {@link SourceConfig} instance. Flows are generated deterministically
  * base on the supplied seed value for a random number generator.
  */
@@ -97,7 +97,7 @@ public class SyntheticFlowSource extends UnboundedSource<FlowDocument, FlowReade
 
     @Override
     public List<? extends UnboundedSource<FlowDocument, FlowReader.CheckpointMark>> split(int desiredNumSplits, PipelineOptions options) throws Exception {
-        // Note: desiredNumSplits may be larget than the configured parallelism because a single task instance can
+        // Note: desiredNumSplits may be larger than the configured parallelism because a single task instance can
         // use several source instances.
         LOG.debug("desired number of splits: " + desiredNumSplits);
         return sourceConfig.split(desiredNumSplits).stream()
