@@ -75,10 +75,15 @@ public interface FlowGenOptions extends NephronOptions {
     Integer getNumClockSkewGroups();
     void setNumClockSkewGroups(Integer num);
 
-    @Description("Clock skew difference between different clock skew groups.")
+    @Description("Clock skew difference between different clock skew groups. Must be a positive number.")
     @Default.Long(10000)
     Long getClockSkewMs();
     void setClockSkewMs(Long num);
+
+    @Description("Determines if skewed clocks are ahead of time, behind of time, or both.")
+    @Default.Enum("BOTH")
+    ClockSkewDirection getClockSkewDirection();
+    void setClockSkewDirection(ClockSkewDirection value);
 
     @Description("The minimum interface number.")
     @Default.Integer(3)

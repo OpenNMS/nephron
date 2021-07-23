@@ -79,7 +79,7 @@ public class TotalVolumeTest {
         // Only the "total" aggregations are checked because checking "topK" aggregations would require to replicate the
         // topK pruning logic.
         //
-        // Flow summaries calculated by the pipeline are use to increment counter metrics that are named
+        // Flow summaries calculated by the pipeline are used to increment counter metrics that are named
         // by the window start and aggregation key. This allows to compare the in-memory result with the
         // result returned by the pipeline.
 
@@ -145,10 +145,7 @@ public class TotalVolumeTest {
                 "--numApplications=4",
                 "--numHosts=4",
                 "--numEcns=4",
-                "--numDscps=6",
-
-                "--numClockSkewGroups=1",
-                "--clockSkewMs=-40000" // some exporters return timestamps in the past
+                "--numDscps=6"
         ).withValidation().as(FlowGenOptions.class);
 
         var start = Instant.now();
@@ -202,8 +199,12 @@ public class TotalVolumeTest {
                 "--numEcns=4",
                 "--numDscps=6",
 
+                // exporters in group 0 have a clock skew of -40 seconds
+                // exporters in group 1 have no clock skew
+                // exporters in group 2 have a clock skew of 40 seconds
                 "--numClockSkewGroups=3",
-                "--clockSkewMs=-40000", // some exporters return timestamps in the past
+                "--clockSkewDirection=BOTH",
+                "--clockSkewMs=40000",
 
                 "--allowedLatenessMs=100000",
                 "--lateProcessingDelayMs=2000",
@@ -213,7 +214,7 @@ public class TotalVolumeTest {
 
         // generate flows in playback mode but use current time as start
         // -> late processing can only be tested if event time is related to processing time
-        // -> playback mode allows to process exactly the same flow twice: one in-memory and once by the pipeline
+        // -> playback mode allows to process exactly the same flows twice: once in-memory and once by the pipeline
         var start = Instant.now();
         options.setStartMs(start.getMillis());
 

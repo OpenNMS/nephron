@@ -58,14 +58,30 @@ public class FlowConfig implements Serializable {
     }
 
     /**
-     * A clock skew policy that calculates for each nodeId a groupId between 0 and {@link FlowGenOptions#getNumClockSkewGroups()}
-     * and this groupId as a factor for multiplying the {@link FlowGenOptions#getClockSkewMs()}.
+     * A clock skew policy that calculates for each nodeId a clock skew group number between 0 and
+     * {@link FlowGenOptions#getNumClockSkewGroups()} and uses that group number as a factor for multiplying
+     * the {@link FlowGenOptions#getClockSkewMs()}.
      */
     public static SerializableFunction<Integer, Duration> groupClockSkewPolicy(FlowGenOptions options) {
         int minExporter = options.getMinExporter();
         int numClockSkewGroups = options.getNumClockSkewGroups();
-        long clockSkewMs = options.getClockSkewMs();
-        return nodeId -> Duration.millis(((nodeId - minExporter) % numClockSkewGroups) * clockSkewMs);
+        long clockSkewMs;
+        long clockSkewShiftMs;
+        switch (options.getClockSkewDirection()) {
+            case AHEAD:
+                clockSkewMs = Math.abs(options.getClockSkewMs());
+                clockSkewShiftMs = 0;
+                break;
+            case BEHIND:
+                clockSkewMs = -Math.abs(options.getClockSkewMs());
+                clockSkewShiftMs = 0;
+                break;
+            default:
+                clockSkewMs = Math.abs(options.getClockSkewMs());
+                clockSkewShiftMs = clockSkewMs * options.getNumClockSkewGroups() / 2;
+                break;
+        }
+        return nodeId -> Duration.millis(((nodeId - minExporter) % numClockSkewGroups) * clockSkewMs - clockSkewShiftMs);
     }
 
     /**
