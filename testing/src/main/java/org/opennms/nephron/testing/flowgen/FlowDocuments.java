@@ -28,8 +28,12 @@
 
 package org.opennms.nephron.testing.flowgen;
 
+import java.util.Iterator;
 import java.util.Random;
+import java.util.Spliterator;
+import java.util.Spliterators;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import org.joda.time.Duration;
 import org.joda.time.Instant;
@@ -76,6 +80,45 @@ public class FlowDocuments {
         return stream(sourceConfig.flowConfig, sourceConfig.seed, sourceConfig.maxIdx, sourceConfig.idxInc, sourceConfig.idxOffset);
     }
 
+    /**
+     * Creates a length limited stream of flows.
+     * <p>
+     * The {@code minSplits} and {@code maxSplits} properties of the given {@code SourceConfig} must be equal.
+     * <p>
+     * The stream is implemented by first splitting the SourceConfig according to the minimum/maximum number of splits
+     * and then returning flows from each split in a round-robing fashion.
+     * <p>
+     * This tries to mimic how a source is processed by Flink. Flink also tries to split its input. However, Flink may
+     * process splits in parallel and the order of processed elements may not be the same. Yet, the collection of all
+     * returned flows should be the same.
+     */
+    public static Stream<FlowDocument> splittedStream(
+            SourceConfig sourceConfig
+    ) {
+        if (sourceConfig.minSplits != sourceConfig.maxSplits) {
+            throw new RuntimeException("minimum and maximum number of splits must be equals - minSplits: " + sourceConfig.minSplits + "; maxSplits: " + sourceConfig.maxSplits);
+        }
+        var iters = sourceConfig.split(sourceConfig.minSplits).stream().map(FlowDocuments::stream).map(s -> s.iterator()).toArray(l -> new Iterator[l]);
+        var iter = new Iterator<FlowDocument>() {
+            int idx = 0;
+            @Override
+            public boolean hasNext() {
+                var cnt = iters.length;
+                while (cnt-- > 0) {
+                    if (iters[idx].hasNext()) return true;
+                    idx = (idx + 1) % iters.length;
+                }
+                return false;
+            }
+
+            @Override
+            public FlowDocument next() {
+                return (FlowDocument)iters[idx].next();
+            }
+        };
+        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(iter, Spliterator.ORDERED), false);
+    }
+
     public static Stream<FlowDocument> stream(
             FlowConfig cfg,
             long seed,
@@ -98,7 +141,9 @@ public class FlowDocuments {
     }
 
     public static FlowDocument getFlowDocument(FlowConfig cfg, long idx, FlowData fd) {
-        Instant lastSwitched = cfg.lastSwitched.apply(idx).plus(fd.fd2.lastSwitchedOffset);
+        Instant lastSwitchedWithoutClockSkew = cfg.lastSwitched.apply(idx).plus(fd.fd2.lastSwitchedOffset);
+        Duration clockSkew = cfg.clockSkew.apply(fd.fd1.nodeId);
+        Instant lastSwitched = lastSwitchedWithoutClockSkew.plus(clockSkew);
         Instant deltaSwitched = lastSwitched.minus(fd.fd2.flowDuration);
 
         String srcAddress = ipAddress(fd.fd1.srcAddr);

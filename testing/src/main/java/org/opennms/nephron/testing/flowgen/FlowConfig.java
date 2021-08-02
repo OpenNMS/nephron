@@ -58,6 +58,33 @@ public class FlowConfig implements Serializable {
     }
 
     /**
+     * A clock skew policy that calculates for each nodeId a clock skew group number between 0 and
+     * {@link FlowGenOptions#getNumClockSkewGroups()} and uses that group number as a factor for multiplying
+     * the {@link FlowGenOptions#getClockSkewMs()}.
+     */
+    public static SerializableFunction<Integer, Duration> groupClockSkewPolicy(FlowGenOptions options) {
+        int minExporter = options.getMinExporter();
+        int numClockSkewGroups = options.getNumClockSkewGroups();
+        long clockSkewMs;
+        long clockSkewShiftMs;
+        switch (options.getClockSkewDirection()) {
+            case AHEAD:
+                clockSkewMs = Math.abs(options.getClockSkewMs());
+                clockSkewShiftMs = 0;
+                break;
+            case BEHIND:
+                clockSkewMs = -Math.abs(options.getClockSkewMs());
+                clockSkewShiftMs = 0;
+                break;
+            default:
+                clockSkewMs = Math.abs(options.getClockSkewMs());
+                clockSkewShiftMs = clockSkewMs * options.getNumClockSkewGroups() / 2;
+                break;
+        }
+        return nodeId -> Duration.millis(((nodeId - minExporter) % numClockSkewGroups) * clockSkewMs - clockSkewShiftMs);
+    }
+
+    /**
      * Returns a function that always return the current time instant.
      */
     public static SerializableFunction<Long, Instant> CURRENT_TIME_LAST_SWITCHED_POLICY = idx -> Instant.now();
@@ -91,6 +118,11 @@ public class FlowConfig implements Serializable {
     public final SerializableFunction<Long, Instant> lastSwitched;
 
     /**
+     * A function that given a nodeId returns the clockSkew for that node.
+     */
+    public final SerializableFunction<Integer, Duration> clockSkew;
+
+    /**
      * LastSwitched timestamps are randomized by a normal distribution with the given sigma.
      */
     public final Duration lastSwitchedSigma;
@@ -101,7 +133,7 @@ public class FlowConfig implements Serializable {
      */
     public final double flowDurationLambda;
 
-    public FlowConfig(int minExporter, int numExporters, int minInterface, int numInterfaces, int numProtocols, int numApplications, int numHosts, int numEcns, int numDscps, SerializableFunction<Long, Instant> lastSwitched, Duration lastSwitchedSigma, double flowDurationLambda) {
+    public FlowConfig(int minExporter, int numExporters, int minInterface, int numInterfaces, int numProtocols, int numApplications, int numHosts, int numEcns, int numDscps, SerializableFunction<Long, Instant> lastSwitched, SerializableFunction<Integer, Duration> clockSkew, Duration lastSwitchedSigma, double flowDurationLambda) {
         this.minExporter = minExporter;
         this.numExporters = numExporters;
         this.minInterface = minInterface;
@@ -112,11 +144,16 @@ public class FlowConfig implements Serializable {
         this.numEcns = numEcns;
         this.numDscps = numDscps;
         this.lastSwitched = lastSwitched;
+        this.clockSkew = clockSkew;
         this.lastSwitchedSigma = lastSwitchedSigma;
         this.flowDurationLambda = flowDurationLambda;
     }
 
-    public FlowConfig(FlowGenOptions opts, SerializableFunction<Long, Instant> lastSwitched) {
+    public FlowConfig(
+            FlowGenOptions opts,
+            SerializableFunction<Long, Instant> lastSwitched,
+            SerializableFunction<Integer, Duration> clockSkew
+    ) {
         this(
                 opts.getMinExporter(),
                 opts.getNumExporters(),
@@ -128,6 +165,7 @@ public class FlowConfig implements Serializable {
                 opts.getNumEcns(),
                 opts.getNumDscps(),
                 lastSwitched,
+                clockSkew,
                 Duration.millis(opts.getLastSwitchedSigmaMs()),
                 opts.getFlowDurationLambda()
         );
