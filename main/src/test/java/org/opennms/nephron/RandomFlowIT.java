@@ -28,23 +28,24 @@
 
 package org.opennms.nephron;
 
-import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.anEmptyMap;
 import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.lessThanOrEqualTo;
+import static org.hamcrest.Matchers.not;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.LongSummaryStatistics;
 import java.util.Map;
@@ -52,16 +53,18 @@ import java.util.Random;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.TestFlinkRunner;
+import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
+import org.apache.beam.sdk.io.kafka.KafkaRecord;
+import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration;
-import org.apache.flink.test.util.MiniClusterWithClientResource;
+import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.http.HttpHost;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.elasticsearch.action.ActionListener;
@@ -80,13 +83,13 @@ import org.elasticsearch.search.sort.SortOrder;
 import org.hamcrest.Matcher;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.catheter.Exporter;
 import org.opennms.nephron.catheter.Simulation;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.generator.Handler;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.KafkaContainer;
@@ -99,15 +102,9 @@ import com.google.common.io.Resources;
 /**
  * Complete end-to-end test - reading & writing to/from Kafka
  */
-@Ignore("flaps in CircleCI, see NMS-13282")
 public class RandomFlowIT {
     private static final Logger LOG = LoggerFactory.getLogger(RandomFlowIT.class);
 
-    @Rule
-    public MiniClusterWithClientResource miniClusterResource = new MiniClusterWithClientResource(new MiniClusterResourceConfiguration.Builder()
-                                                                                                                .setNumberTaskManagers(2)
-                                                                                                                .setNumberSlotsPerTaskManager(3)
-                                                                                                                .build());
     @Rule
     public KafkaContainer kafka = new KafkaContainer();
 
@@ -152,7 +149,7 @@ public class RandomFlowIT {
     }
 
     @Test
-    public void canPee() throws Exception {
+    public void testRates() throws Exception {
         final NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + this.kafka.getBootstrapServers(),
                 "--elasticUrl=http://" + this.elastic.getHttpHostAddress(),
                 "--parallelism=6",
@@ -170,23 +167,8 @@ public class RandomFlowIT {
 
         final TestFlinkRunner runner = TestFlinkRunner.fromOptions(options);
 
-        // fire up the pipeline
-        final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(runner.getPipelineOptions().as(NephronOptions.class));
-
-        final Thread t = new Thread(() -> {
-            try {
-                runner.run(pipeline);
-            } catch (RuntimeException ex) {
-                if (ex.getCause() instanceof InterruptedException) {
-                    return;
-                }
-                ex.printStackTrace();
-            }
-        });
-        t.start();
-
-        // wait until the pipeline's Kafka consumer has started
-        Thread.sleep(5_000);
+        // create the pipeline
+        final org.apache.beam.sdk.Pipeline pipeline = createPipeline(runner.getPipelineOptions().as(NephronOptions.class));
 
         final Instant start = Instant.now().minus(Duration.ofSeconds(10));
 
@@ -226,27 +208,11 @@ public class RandomFlowIT {
                 .withStartTime(start)
                 .build();
 
-        simulation.start();
+        runSimulation(options, pipeline, simulation);
 
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE");
 
-        await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
-                .ignoreExceptions()
-                .until(() -> getFirstNFlowSummmariesFromES(1, options, query).get().size(), greaterThanOrEqualTo(1));
-
-        Thread.sleep(100_000L);
-
-        simulation.stop();
-        simulation.join();
-
-        t.interrupt();
-        t.join();
-
-        // get all documents from elastic search while skipping the first 3 entries because they are incomplete windows
-        final List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(100, options, query).get()
-                .stream()
-                .skip(3)
-                .collect(Collectors.toList());
+        final List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(10000, options, query).get();
 
         final Map<String, LongSummaryStatistics> summaries = flowSummaries.stream()
                 .collect(Collectors.groupingBy(FlowSummary::getGroupedByKey,
@@ -274,12 +240,12 @@ public class RandomFlowIT {
     }
 
     @Test
-    public void canPeeWithClockSkew() throws Exception {
+    public void testRatesWithClockSkew() throws Exception {
         final NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + this.kafka.getBootstrapServers(),
                 "--elasticUrl=http://" + this.elastic.getHttpHostAddress(),
                 "--parallelism=6",
                 "--fixedWindowSizeMs=10000",
-                "--allowedLatenessMs=10000",
+                "--allowedLatenessMs=50000",
                 "--lateProcessingDelayMs=2000",
                 "--defaultMaxInputDelayMs=2000",
                 "--flowDestTopic=opennms-flows-aggregated")
@@ -292,23 +258,8 @@ public class RandomFlowIT {
 
         final TestFlinkRunner runner = TestFlinkRunner.fromOptions(options);
 
-        // fire up the pipeline
-        final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(runner.getPipelineOptions().as(NephronOptions.class));
-
-        final Thread t = new Thread(() -> {
-            try {
-                runner.run(pipeline);
-            } catch (RuntimeException ex) {
-                if (ex.getCause() instanceof InterruptedException) {
-                    return;
-                }
-                ex.printStackTrace();
-            }
-        });
-        t.start();
-
-        // wait until the pipeline's Kafka consumer has started
-        Thread.sleep(5_000);
+        // create the pipeline
+        final org.apache.beam.sdk.Pipeline pipeline = createPipeline(runner.getPipelineOptions().as(NephronOptions.class));
 
         final Instant start = Instant.now().minus(Duration.ofSeconds(10));
 
@@ -350,24 +301,12 @@ public class RandomFlowIT {
                 .withStartTime(start)
                 .build();
 
-        simulation.start();
+        runSimulation(options, pipeline, simulation);
 
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE");
 
-        await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
-                .ignoreExceptions()
-                .until(() -> getFirstNFlowSummmariesFromES(1, options, query).get().size(), greaterThanOrEqualTo(1));
-
-        Thread.sleep(100_000L);
-
-        simulation.stop();
-        simulation.join();
-
-        t.interrupt();
-        t.join();
-
         // get all documents from elastic search
-        final List<FlowSummary> flowSummaries = new ArrayList<>(getFirstNFlowSummmariesFromES(100, options, query).get());
+        final List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(10000, options, query).get();
 
         final Map<String, List<FlowSummary>> lists = flowSummaries.stream()
                 .collect(Collectors.groupingBy(FlowSummary::getGroupedByKey,
@@ -380,35 +319,31 @@ public class RandomFlowIT {
             }
         }
 
-        final Map<String, LongSummaryStatistics> summaries = new TreeMap<>();
-
-        for (final Map.Entry<String, List<FlowSummary>> list : lists.entrySet()) {
-            // skip first entry per router since it is incomplete
-            if (!list.getValue().isEmpty()) {
-                list.getValue().remove(0);
-                summaries.put(list.getKey(), list.getValue().stream().collect(Collectors.summarizingLong(FlowSummary::getBytesTotal)));
-            }
-        }
-
-        for (final Map.Entry<String, LongSummaryStatistics> entry : summaries.entrySet()) {
-            LOG.info(entry.getKey() + " --> avg: " + entry.getValue().getAverage() + ", min: " + entry.getValue().getMin() + ", max: " + entry.getValue().getMax() + ", count: " + entry.getValue().getCount());
-        }
-
-        assertThat(summaries, is(aMapWithSize(3)));
-
         final long allowedError = 100;
 
-        assertThat(summaries.get("Test:Router1-12").getCount(), lessThan(allowedError));
+        // for each exporter check that the expected volume is contained in each window
+        for (var exporterAndVolume: Arrays.asList(Map.entry(1, 11_000_000l), Map.entry(2, 12_000_000l), Map.entry(3, 13_000_000l))) {
 
-        assertThat(summaries.get("Test:Router2-13").getCount(), lessThan(summaries.get("Test:Router3-14").getCount()));
+            // Beam may output several panes for each window
+            // -> the result in each single pane does not meet the expected data volume but the sum over all panes of a windows does
 
-        assertThat(summaries.get("Test:Router2-13").getAverage(), closeTo(12_000_000.0, allowedError));
-        assertThat(summaries.get("Test:Router2-13").getMin(), longCloseTo(12_000_000L, allowedError));
-        assertThat(summaries.get("Test:Router2-13").getMax(), longCloseTo(12_000_000L, allowedError));
+            // calculate the LongSummaryStatistic over all panes for each window
+            var summaries = flowSummaries.stream()
+                    .filter(fs -> fs.getExporter().getNodeId() == exporterAndVolume.getKey())
+                    .collect(Collectors.groupingBy(FlowSummary::getTimestamp, Collectors.summarizingLong(FlowSummary::getBytesTotal)));
 
-        assertThat(summaries.get("Test:Router3-14").getAverage(), closeTo(13_000_000.0, allowedError));
-        assertThat(summaries.get("Test:Router3-14").getMin(), longCloseTo(13_000_000L, allowedError));
-        assertThat(summaries.get("Test:Router3-14").getMax(), longCloseTo(13_000_000L, allowedError));
+            assertThat(summaries, not(anEmptyMap()));
+
+            LOG.info("flow summary statistics for node: {}", exporterAndVolume.getKey());
+            for (var entry : summaries.entrySet()) {
+                LOG.info(Instant.ofEpochMilli(entry.getKey()) + " --> " + entry.getValue());
+            }
+
+            // check that the sum of transferred bytes matches the expected volume in all windows
+            summaries.values()
+                    .forEach(summaryStatistic -> assertThat(summaryStatistic.getSum(), longCloseTo(exporterAndVolume.getValue(), allowedError)));
+
+        }
 
     }
 
@@ -421,21 +356,41 @@ public class RandomFlowIT {
         sourceBuilder.query(query);
         searchRequest.source(sourceBuilder);
         elasticClient.searchAsync(searchRequest, RequestOptions.DEFAULT, toFuture(future));
-        return future.thenApply(s -> Arrays.stream(s.getHits().getHits())
-                .map(hit -> {
-                    try {
-                        final FlowSummary flowSummary = objectMapper.readValue(hit.getSourceAsString(), FlowSummary.class);
-                        flowSummary.setId(hit.getId());
-                        return flowSummary;
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                })
-                .collect(Collectors.toList()));
+        return future.thenApply(s -> {
+            var summaries = Arrays.stream(s.getHits().getHits())
+                    .map(hit -> {
+                        try {
+                            final FlowSummary flowSummary = objectMapper.readValue(hit.getSourceAsString(), FlowSummary.class);
+                            flowSummary.setId(hit.getId());
+                            return flowSummary;
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    })
+                    .collect(Collectors.toList());
+
+            // determine the minimum and maximum timestamps for each exporter
+            // -> the results of windows with these timestamps may be incomplete
+            // -> remove flows with these timestamps
+            var minColl = Collectors.mapping(FlowSummary::getTimestamp, Collectors.minBy(Comparator.naturalOrder()));
+            var maxColl = Collectors.mapping(FlowSummary::getTimestamp, Collectors.maxBy(Comparator.naturalOrder()));
+            var mins = summaries.stream().collect(Collectors.groupingBy(FlowSummary::getExporter, minColl));
+            var maxs = summaries.stream().collect(Collectors.groupingBy(FlowSummary::getExporter, maxColl));
+
+            LOG.info("retrieved flows - size: " + summaries.size());
+
+            var filtered = summaries.stream()
+                    .filter(fs -> mins.get(fs.getExporter()).map(m -> m != fs.getTimestamp()).orElse(true))
+                    .filter(fs -> maxs.get(fs.getExporter()).map(m -> m != fs.getTimestamp()).orElse(true))
+                    .collect(Collectors.toList());
+
+            LOG.info("filtered flows - size: " + summaries.size());
+            return filtered;
+        });
     }
 
     @Test
-    public void canPeeApplications() throws Exception {
+    public void testRatesPerApplication() throws Exception {
         final NephronOptions options = PipelineOptionsFactory.fromArgs("--bootstrapServers=" + this.kafka.getBootstrapServers(),
                 "--elasticUrl=http://" + this.elastic.getHttpHostAddress(),
                 "--parallelism=6",
@@ -454,23 +409,8 @@ public class RandomFlowIT {
 
         final TestFlinkRunner runner = TestFlinkRunner.fromOptions(options);
 
-        // fire up the pipeline
-        final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(runner.getPipelineOptions().as(NephronOptions.class));
-
-        final Thread t = new Thread(() -> {
-            try {
-                runner.run(pipeline);
-            } catch (RuntimeException ex) {
-                if (ex.getCause() instanceof InterruptedException) {
-                    return;
-                }
-                ex.printStackTrace();
-            }
-        });
-        t.start();
-
-        // wait until the pipeline's Kafka consumer has started
-        Thread.sleep(5_000);
+        // create the pipeline
+        final org.apache.beam.sdk.Pipeline pipeline = createPipeline(runner.getPipelineOptions().as(NephronOptions.class));
 
         final Instant start = Instant.now().minus(Duration.ofSeconds(10));
 
@@ -510,24 +450,12 @@ public class RandomFlowIT {
                 .withStartTime(start)
                 .build();
 
-        simulation.start();
+        runSimulation(options, pipeline, simulation);
 
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE_APPLICATION");
 
-        await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
-                .ignoreExceptions()
-                .until(() -> getFirstNFlowSummmariesFromES(1, options, query).get().size(), greaterThanOrEqualTo(1));
-
-        Thread.sleep(100_000L);
-
-        simulation.stop();
-        simulation.join();
-
-        t.interrupt();
-        t.join();
-
         // get all documents from elastic search
-        final List<FlowSummary> flowSummaries = new ArrayList<>(getFirstNFlowSummmariesFromES(10000, options, query).get());
+        final List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(10000, options, query).get();
 
         for(final FlowSummary flowSummary : flowSummaries) {
             LOG.info("{}", flowSummary);
@@ -554,7 +482,7 @@ public class RandomFlowIT {
         for(final Map.Entry<String, Long> entry : expected.entrySet()) {
             boolean first = true;
             for(final long pointInTime : new TreeSet<Long>(summaries.get(entry.getKey()).keySet())) {
-                LOG.info(entry.getKey() + "@"+pointInTime+" --> sum: " + summaries.get(entry.getKey()).get(pointInTime));
+                LOG.info(entry.getKey() + "@" + pointInTime + " --> sum: " + summaries.get(entry.getKey()).get(pointInTime));
                 if (first) {
                     first = false;
                 } else {
@@ -562,6 +490,13 @@ public class RandomFlowIT {
                 }
             }
         }
+    }
+
+    private void runSimulation(NephronOptions options, org.apache.beam.sdk.Pipeline pipeline, Simulation simulation) throws InterruptedException {
+        var simulationThread = forkSimulation(options, simulation);
+        var pipelineResult = pipeline.run();
+        pipelineResult.waitUntilFinish();
+        simulationThread.join();
     }
 
     /**
@@ -587,4 +522,102 @@ public class RandomFlowIT {
         Response response = elasticClient.getLowLevelClient().performRequest(request);
         assertThat(response.getWarnings(), hasSize(0));
     }
+
+    /**
+     * Creates the pipeline and wires it with its Kafka input and ElasticSearch output.
+     * <p>
+     * Uses a special timestamp policy factory that ensures that the pipeline run finishes.
+     */
+    private org.apache.beam.sdk.Pipeline createPipeline(NephronOptions options) {
+        // use a timestamp policy that finishes processing when the input is idle for some time
+        TimestampPolicyFactory<byte[], FlowDocument> tpf = timestampPolicyFactory(
+                org.joda.time.Duration.millis(options.getDefaultMaxInputDelayMs()),
+                org.joda.time.Duration.standardSeconds(5)
+        );
+        return Pipeline.create(options, tpf);
+    }
+
+    /**
+     * Returns a timestamp policy factory that advances the watermark to TIMESTAMP_MAX_VALUE when it was
+     * idle for the specified duration.
+     * <p>
+     * After the watermark is advanced to TIMESTAMP_MAX_VALUE the pipeline run finishes.
+     */
+    private static TimestampPolicyFactory<byte[], FlowDocument> timestampPolicyFactory(org.joda.time.Duration maxInputDelay, org.joda.time.Duration maxInputIdleDuration) {
+        return (tp, previousWatermark) -> new CustomTimestampPolicyWithLimitedDelay<>(
+                Pipeline.ReadFromKafka::getTimestamp,
+                maxInputDelay,
+                previousWatermark
+        ) {
+            private org.joda.time.Instant idleSince = null;
+            private boolean closed = false;
+
+            @Override
+            public org.joda.time.Instant getTimestampForRecord(PartitionContext ctx, KafkaRecord<byte[], FlowDocument> record) {
+                idleSince = org.joda.time.Instant.now();
+                return super.getTimestampForRecord(ctx, record);
+            }
+
+            @Override
+            public org.joda.time.Instant getWatermark(PartitionContext ctx) {
+                // does not work if the source is split
+                if (closed || idleSince != null &&
+                              new org.joda.time.Duration(idleSince, org.joda.time.Instant.now()).isLongerThan(maxInputIdleDuration)
+                ) {
+                    closed = true;
+                    return BoundedWindow.TIMESTAMP_MAX_VALUE;
+                } else {
+                    return super.getWatermark(ctx);
+                }
+            }
+
+        };
+    }
+
+    /**
+     * Waits for a consumer with the expected groupId to register.
+     * <p>
+     * Blocks execution until the pipeline is ready to read from Kafka.
+     */
+    private static void waitForConsumer(NephronOptions options) throws Exception {
+        var start = Instant.now();
+        var conf = new HashMap<String, Object>() {{
+            put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, options.getBootstrapServers());
+        }};
+        try (var kafkaClient = AdminClient.create(conf)) {
+            while (true) {
+                Duration elapsed = Duration.between(start, Instant.now());
+                List<String> groupIds = kafkaClient.listConsumerGroups().all().get().
+                        stream().map(s -> s.groupId()).collect(Collectors.toList());
+                if (groupIds.contains(options.getGroupId())) {
+                    LOG.info("waited for consumer: " + elapsed.getSeconds() + "s");
+                    kafkaClient.close();
+                    return;
+                } else if (elapsed.getSeconds() > 90) {
+                    throw new RuntimeException("Kafka consumer did not register");
+                }
+                Thread.sleep(100);
+            }
+        }
+    }
+
+    /**
+     * Forks a thread that waits for the pipeline being ready and then writes the simulated flows.
+     */
+    private static Thread forkSimulation(NephronOptions options, Simulation simulation) {
+        var thread = new Thread(() -> {
+            try {
+                waitForConsumer(options);
+                simulation.start();
+                Thread.sleep(100_000L);
+                simulation.stop();
+                simulation.join();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+        thread.start();
+        return thread;
+    }
+
 }

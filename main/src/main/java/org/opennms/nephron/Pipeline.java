@@ -108,6 +108,19 @@ public class Pipeline {
      */
     public static org.apache.beam.sdk.Pipeline create(NephronOptions options) {
         Objects.requireNonNull(options);
+        TimestampPolicyFactory<byte[], FlowDocument> timestampPolicyFactory =
+                getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs()));
+        return create(options, timestampPolicyFactory);
+    }
+
+    /**
+     * Creates a new pipeline from the given set of runtime options using the given {@code TimestampPolicyFactory}.
+     */
+    public static org.apache.beam.sdk.Pipeline create(
+            NephronOptions options,
+            TimestampPolicyFactory<byte[], FlowDocument> timestampPolicyFactory
+    ) {
+        Objects.requireNonNull(options);
         org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
@@ -132,7 +145,6 @@ public class Pipeline {
         // Auto-commit should be disabled when checkpointing is on:
         // the state in the checkpoints are used to derive the offsets instead
         kafkaConsumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, options.getAutoCommit());
-        TimestampPolicyFactory<byte[], FlowDocument> timestampPolicyFactory = getKafkaInputTimestampPolicyFactory(Duration.millis(options.getDefaultMaxInputDelayMs()));
         PCollection<FlowDocument> streamOfFlows = p.apply(new ReadFromKafka(options.getBootstrapServers(),
                 options.getFlowSourceTopic(), kafkaConsumerConfig, timestampPolicyFactory));
 
