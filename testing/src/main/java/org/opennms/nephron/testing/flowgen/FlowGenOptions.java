@@ -31,8 +31,38 @@ package org.opennms.nephron.testing.flowgen;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.opennms.nephron.NephronOptions;
-import org.opennms.nephron.testing.benchmark.InputSetup;
 
+/**
+ * Defines the distribution of generated flows.
+ *
+ * Parameters can be grouped into the following areas:
+ *
+ * <dl>
+ *     <dt>Randomness</dt>
+ *     <dd>
+ *         <ul>
+ *             <li>seed</li>
+ *             <li>playbackMode</li>
+ *             <li>startMs (only use in playback mode)</li>
+ *         </ul>
+ *     </dd>
+ *     <dt>Flow instances</dt>
+ *     <dd>
+ *         <ul>
+ *             <li>fixedWindowsSizeMs (inherited from NephronOptions)</li>
+ *             <li>numWindows</li>
+ *             <li>flowsPerWindow || flowsPerSecond</li>
+ *         </ul>
+ *     </dd>
+ *     <dt>Flow attributes</dt>
+ *     <dd>
+ *         <ul>
+ *             <li>numExporters, numInterfaces, numApplications, numHosts, numDscps, numEcns</li>
+ *             <li>lastSwitchedSigma, flowDurationLambda</li>
+ *         </ul>
+ *     </dd>
+ * </dl>
+ */
 public interface FlowGenOptions extends NephronOptions {
 
     @Description("Seed for generating synthetic flows.")
