@@ -217,7 +217,7 @@ public class RandomFlowIT {
         final List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(10000, options, query).get();
 
         final Map<String, LongSummaryStatistics> summaries = flowSummaries.stream()
-                .collect(Collectors.groupingBy(FlowSummary::getGroupedByKey,
+                .collect(Collectors.groupingBy(FlowAnalyzerIT::exporterAndInterface,
                         Collectors.summarizingLong(FlowSummary::getBytesTotal)));
 
         for (final Map.Entry<String, LongSummaryStatistics> entry : summaries.entrySet()) {
@@ -311,7 +311,7 @@ public class RandomFlowIT {
         final List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(10000, options, query).get();
 
         final Map<String, List<FlowSummary>> lists = flowSummaries.stream()
-                .collect(Collectors.groupingBy(FlowSummary::getGroupedByKey,
+                .collect(Collectors.groupingBy(FlowAnalyzerIT::exporterAndInterface,
                         Collectors.toList()));
 
         for (final Map.Entry<String, List<FlowSummary>> entry : lists.entrySet()) {
@@ -468,7 +468,7 @@ public class RandomFlowIT {
         }
 
         final Map<String, List<FlowSummary>> lists = flowSummaries.stream()
-                .collect(Collectors.groupingBy(f -> f.getGroupedByKey().substring(0, 15),
+                .collect(Collectors.groupingBy(FlowAnalyzerIT::exporterAndInterface,
                         Collectors.toList()));
 
         final Map<String, Map<Long, Long>> summaries = new TreeMap<>();

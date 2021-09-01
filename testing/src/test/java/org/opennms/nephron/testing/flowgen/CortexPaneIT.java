@@ -125,7 +125,6 @@ public class CortexPaneIT {
 
         org.apache.beam.sdk.Pipeline pipeline = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(pipeline);
-        pipeline.getCoderRegistry().registerCoderForClass(Wpk.class, new Wpk.WpkCoder());
 
         PCollection<FlowSummaryData> rawFlowSummaries = pipeline
                 .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
@@ -225,17 +224,6 @@ public class CortexPaneIT {
 
     }
 
-    private static ParDo.SingleOutput<FlowSummaryData, KV<Wpk, Long>> KEY_BY_WPC =
-            ParDo.of(new DoFn<FlowSummaryData, KV<Wpk, Long>>() {
-                @ProcessElement
-                public void process(ProcessContext pc) {
-                    var e = pc.element();
-                    var pane = pc.pane();
-                    var paneId = pane.getTiming().name() + '-' + pane.getIndex();
-                    pc.output(KV.of(new Wpk(Instant.ofEpochMilli(e.windowStart), paneId, e.key), 1l));
-                }
-            });
-
     private static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> frozenLastSwitchedPolicy(FlowGenOptions options) {
         var minExporter = options.getMinExporter();
         var uniformLastSwitchedPolicy = FlowConfig.uniformInWindowLastSwitchedPolicy(options);
@@ -250,67 +238,6 @@ public class CortexPaneIT {
             var ls = uniformLastSwitchedPolicy.apply(idx, fd);
             return fd.fd1.nodeId == minExporter ? ls.minus(10*60*1000) : ls;
         };
-    }
-
-    private static class Wpk {
-
-        private static class WpkCoder extends AtomicCoder<Wpk> {
-            private static final Coder<Instant> INSTANT_CODER = InstantCoder.of();
-            private static final Coder<String> STRING_CODER = StringUtf8Coder.of();
-            private static final CompoundKey.CompoundKeyCoder COMPOUND_KEY_CODER = new CompoundKey.CompoundKeyCoder();
-
-            @Override
-            public void encode(Wpk value, OutputStream outStream) throws CoderException, IOException {
-                INSTANT_CODER.encode(value.window, outStream);
-                STRING_CODER.encode(value.pane, outStream);
-                COMPOUND_KEY_CODER.encode(value.key, outStream);
-            }
-
-            @Override
-            public Wpk decode(InputStream inStream) throws CoderException, IOException {
-                return new Wpk(
-                        INSTANT_CODER.decode(inStream),
-                        STRING_CODER.decode(inStream),
-                        COMPOUND_KEY_CODER.decode(inStream)
-                );
-            }
-        }
-
-        public final Instant window;
-        public final String pane;
-        public final CompoundKey key;
-
-        public Wpk(Instant window, String pane, CompoundKey key) {
-            this.window = window;
-            this.pane = pane;
-            this.key = key;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            Wpk wpk = (Wpk) o;
-            return Objects.equals(window, wpk.window) && Objects.equals(pane, wpk.pane) && Objects.equals(key, wpk.key);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(window, pane, key);
-        }
-
-        @Override
-        public String toString() {
-            return "Wpc{" +
-                   "window=" + window +
-                   ", pane='" + pane + '\'' +
-                   ", key=" + key +
-                   '}';
-        }
     }
 
 }

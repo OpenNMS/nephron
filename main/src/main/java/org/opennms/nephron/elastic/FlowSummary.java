@@ -52,14 +52,8 @@ public class FlowSummary {
     @JsonProperty("range_end")
     private long rangeEndMs;
 
-    @JsonProperty("ranking")
-    private int ranking;
-
     @JsonProperty("grouped_by")
     private CompoundKeyType groupedBy;
-
-    @JsonProperty("grouped_by_key")
-    private String groupedByKey;
 
     @JsonProperty("aggregation_type")
     private AggregationType aggregationType;
@@ -108,14 +102,6 @@ public class FlowSummary {
         this.id = id;
     }
 
-    public String getGroupedByKey() {
-        return groupedByKey;
-    }
-
-    public void setGroupedByKey(String groupedByKey) {
-        this.groupedByKey = groupedByKey;
-    }
-
     public long getTimestamp() {
         return timestamp;
     }
@@ -138,14 +124,6 @@ public class FlowSummary {
 
     public void setRangeEndMs(long rangeEndMs) {
         this.rangeEndMs = rangeEndMs;
-    }
-
-    public int getRanking() {
-        return ranking;
-    }
-
-    public void setRanking(int ranking) {
-        this.ranking = ranking;
     }
 
     public CompoundKeyType getGroupedBy() {
@@ -268,9 +246,7 @@ public class FlowSummary {
         return timestamp == that.timestamp &&
                 rangeStartMs == that.rangeStartMs &&
                 rangeEndMs == that.rangeEndMs &&
-                ranking == that.ranking &&
                 Objects.equals(id, that.id) &&
-                Objects.equals(groupedByKey, that.groupedByKey) &&
                 groupedBy == that.groupedBy &&
                 aggregationType == that.aggregationType &&
                 Objects.equals(bytesIngress, that.bytesIngress) &&
@@ -289,7 +265,7 @@ public class FlowSummary {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, timestamp, rangeStartMs, rangeEndMs, ranking, groupedBy, groupedByKey, aggregationType, bytesIngress, bytesEgress, bytesTotal, dscp, congestionEncountered, nonEcnCapableTransport, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
+        return Objects.hash(id, timestamp, rangeStartMs, rangeEndMs, groupedBy, aggregationType, bytesIngress, bytesEgress, bytesTotal, dscp, congestionEncountered, nonEcnCapableTransport, exporter, ifIndex, application, hostAddress, hostName, conversationKey);
     }
 
     @Override
@@ -297,10 +273,8 @@ public class FlowSummary {
         return "FlowSummary{" +
                 "id='" + id + '\'' +
                 ", timestamp=" + timestamp +
-                ", groupedByKey='" + groupedByKey + '\'' +
                 ", rangeStartMs=" + rangeStartMs +
                 ", rangeEndMs=" + rangeEndMs +
-                ", ranking=" + ranking +
                 ", groupedBy=" + groupedBy +
                 ", aggregationType=" + aggregationType +
                 ", bytesIngress=" + bytesIngress +

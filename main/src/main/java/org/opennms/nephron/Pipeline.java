@@ -157,14 +157,8 @@ public class Pipeline {
             FlowSummaryData d2
     ) {
         return new FlowSummaryData(
-                d1.aggregationType,
                 d1.key,
-                Aggregate.merge(d1.aggregate, d2.aggregate),
-                d1.windowStart,
-                d1.windowEnd,
-                // when flow summaries of different panes are combined then the ranking may become invalid
-                // -> fortunately the ranking is not used when querying for data
-                d1.ranking
+                Aggregate.merge(d1.aggregate, d2.aggregate)
         );
     }
 
@@ -499,7 +493,7 @@ public class Pipeline {
 
         @Override
         public PDone expand(PCollection<FlowSummaryData> input) {
-            return input.apply("SerializeToJson", toJson())
+            return input.apply("SerializeToJson", FLOW_SUMMARY_DATA_TO_JSON)
                     .apply("WriteToElasticsearch", ElasticsearchIO.write().withConnectionConfiguration(esConfig)
                             .withRetryConfiguration(
                                     ElasticsearchIO.RetryConfiguration.create(this.elasticRetryCount,
@@ -612,7 +606,7 @@ public class Pipeline {
 
         @Override
         public PDone expand(PCollection<FlowSummaryData> input) {
-            return input.apply(toJson())
+            return input.apply(FLOW_SUMMARY_DATA_TO_JSON)
                     .apply(KafkaIO.<Void, String>write()
                             .withProducerConfigUpdates(kafkaProducerConfig)
                             .withBootstrapServers(bootstrapServers) // Order matters: bootstrap server overwrite producer properties
@@ -623,15 +617,14 @@ public class Pipeline {
         }
     }
 
-    private static ParDo.SingleOutput<FlowSummaryData, String> toJson() {
-        return ParDo.of(new DoFn<FlowSummaryData, String>() {
+    private static ParDo.SingleOutput<FlowSummaryData, String> FLOW_SUMMARY_DATA_TO_JSON =
+        ParDo.of(new DoFn<FlowSummaryData, String>() {
             @ProcessElement
-            public void processElement(ProcessContext c) throws JsonProcessingException {
-                FlowSummary flowSummary = toFlowSummary(c.element());
+            public void processElement(ProcessContext c, IntervalWindow window) throws JsonProcessingException {
+                FlowSummary flowSummary = toFlowSummary(c.element(), window);
                 c.output(MAPPER.writeValueAsString(flowSummary));
             }
         });
-    }
 
     static class SumBytes extends Combine.BinaryCombineFn<Aggregate> {
         @Override
@@ -719,17 +712,17 @@ public class Pipeline {
         });
     }
 
-    public static FlowSummaryData toFlowSummaryData(AggregationType aggregationType, IntervalWindow window, KV<CompoundKey, Aggregate> el, int ranking) {
-        return new FlowSummaryData(aggregationType, el.getKey(), el.getValue(), window.start().getMillis(), window.end().getMillis(), ranking);
+    public static FlowSummaryData toFlowSummaryData(KV<CompoundKey, Aggregate> el) {
+        return new FlowSummaryData(el.getKey(), el.getValue());
     }
 
-    public static FlowSummary toFlowSummary(FlowSummaryData fsd) {
+    public static FlowSummary toFlowSummary(FlowSummaryData fsd, IntervalWindow window) {
         FlowSummary flowSummary = new FlowSummary();
         fsd.key.populate(flowSummary);
-        flowSummary.setAggregationType(fsd.aggregationType);
+        flowSummary.setAggregationType(fsd.key.type.isTotalNotTopK() ? AggregationType.TOTAL : AggregationType.TOPK);
 
-        flowSummary.setRangeStartMs(fsd.windowStart);
-        flowSummary.setRangeEndMs(fsd.windowEnd);
+        flowSummary.setRangeStartMs(window.start().getMillis());
+        flowSummary.setRangeEndMs(window.end().getMillis());
         // Use the range end as the timestamp
         flowSummary.setTimestamp(flowSummary.getRangeEndMs());
 
@@ -742,7 +735,6 @@ public class Pipeline {
         if (fsd.key.getType() == CompoundKeyType.EXPORTER_INTERFACE_HOST || fsd.key.getType() == CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST) {
             flowSummary.setHostName(Strings.emptyToNull(fsd.aggregate.getHostname()));
         }
-        flowSummary.setRanking(fsd.ranking);
 
         return flowSummary;
     }
@@ -907,8 +899,8 @@ public class Pipeline {
 
         PCollection<FlowSummaryData> summary = parentTotal.apply(transformPrefix + "total_summary", ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, FlowSummaryData>() {
             @ProcessElement
-            public void processElement(ProcessContext c, IntervalWindow window) {
-                c.output(toFlowSummaryData(AggregationType.TOTAL, window, c.element(), 0));
+            public void processElement(ProcessContext c) {
+                c.output(toFlowSummaryData(c.element()));
             }
         }));
         return new TotalAndSummary(parentTotal, summary);
@@ -982,10 +974,9 @@ public class Pipeline {
                 .apply(transformPrefix + "flatten", Values.create())
                 .apply(transformPrefix + "top_k_summary", ParDo.of(new DoFn<List<KV<CompoundKey, Aggregate>>, FlowSummaryData>() {
                     @ProcessElement
-                    public void processElement(ProcessContext c, IntervalWindow window) {
-                        int ranking = 1;
+                    public void processElement(ProcessContext c) {
                         for (KV<CompoundKey, Aggregate> el : c.element()) {
-                            FlowSummaryData flowSummary = toFlowSummaryData(AggregationType.TOPK, window,  el, ranking++);
+                            FlowSummaryData flowSummary = toFlowSummaryData(el);
                             c.output(flowSummary);
                         }
                     }

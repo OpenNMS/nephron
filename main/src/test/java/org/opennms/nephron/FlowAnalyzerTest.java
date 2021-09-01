@@ -143,11 +143,9 @@ public class FlowAnalyzerTest {
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summary = new FlowSummary();
-        summary.setGroupedByKey("SomeFs:SomeFid-98");
         summary.setTimestamp(WND.startPlusWindowSizeMs);
         summary.setRangeStartMs(WND.startMs);
         summary.setRangeEndMs(WND.startPlusWindowSizeMs);
-        summary.setRanking(0);
         summary.setGroupedBy(EXPORTER_INTERFACE);
         summary.setAggregationType(AggregationType.TOTAL);
         // the flow spans two minutes, the window 1 minute -> divide by 2
@@ -226,11 +224,9 @@ public class FlowAnalyzerTest {
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();
-        summaryFromOnTimePane.setGroupedByKey("SomeFs:SomeFid-98");
         summaryFromOnTimePane.setTimestamp(startMs + 60_000L);
         summaryFromOnTimePane.setRangeStartMs(startMs);
         summaryFromOnTimePane.setRangeEndMs(startMs + 60_000L);
-        summaryFromOnTimePane.setRanking(0);
         summaryFromOnTimePane.setGroupedBy(EXPORTER_INTERFACE);
         summaryFromOnTimePane.setAggregationType(AggregationType.TOTAL);
         summaryFromOnTimePane.setBytesIngress(203L);
@@ -316,11 +312,9 @@ public class FlowAnalyzerTest {
 
         final FlowSummary[] summaries = new FlowSummary[]{
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(0);
                     this.setGroupedBy(EXPORTER_INTERFACE);
                     this.setAggregationType(AggregationType.TOTAL);
                     this.setBytesIngress(1402L);
@@ -333,11 +327,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.1\",\"10.0.0.3\",\"SomeApplication\"]");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(1);
                     this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(1337L);
@@ -351,11 +343,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.1\",\"10.0.0.2\",\"SomeApplication\"]");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(2);
                     this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(42L);
@@ -369,11 +359,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-[\"\",6,\"10.0.0.2\",\"10.0.0.3\",\"SomeApplication\"]");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(3);
                     this.setGroupedBy(EXPORTER_INTERFACE_CONVERSATION);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(23L);
@@ -387,11 +375,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-SomeApplication");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(1);
                     this.setGroupedBy(EXPORTER_INTERFACE_APPLICATION);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(1402L);
@@ -405,11 +391,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.1");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(1);
                     this.setGroupedBy(EXPORTER_INTERFACE_HOST);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(1379L);
@@ -424,11 +408,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.2");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(3);
                     this.setGroupedBy(EXPORTER_INTERFACE_HOST);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(65L);
@@ -443,11 +425,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-10.0.0.3");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(2);
                     this.setGroupedBy(EXPORTER_INTERFACE_HOST);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(1360L);
@@ -462,11 +442,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-0");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(0);
                     this.setGroupedBy(EXPORTER_INTERFACE_TOS);
                     this.setAggregationType(AggregationType.TOTAL);
                     this.setBytesIngress(1402L);
@@ -480,11 +458,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-0-[\"\",6,\"10.0.0.1\",\"10.0.0.3\",\"SomeApplication\"]");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(1);
                     this.setGroupedBy(EXPORTER_INTERFACE_TOS_CONVERSATION);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(1337L);
@@ -499,11 +475,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-0-[\"\",6,\"10.0.0.1\",\"10.0.0.2\",\"SomeApplication\"]");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(2);
                     this.setGroupedBy(EXPORTER_INTERFACE_TOS_CONVERSATION);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(42L);
@@ -518,11 +492,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-0-[\"\",6,\"10.0.0.2\",\"10.0.0.3\",\"SomeApplication\"]");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(3);
                     this.setGroupedBy(EXPORTER_INTERFACE_TOS_CONVERSATION);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(23L);
@@ -537,11 +509,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-0-SomeApplication");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(1);
                     this.setGroupedBy(EXPORTER_INTERFACE_TOS_APPLICATION);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(1402L);
@@ -556,11 +526,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-0-10.0.0.1");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(1);
                     this.setGroupedBy(EXPORTER_INTERFACE_TOS_HOST);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(1379L);
@@ -576,11 +544,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-0-10.0.0.2");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(3);
                     this.setGroupedBy(EXPORTER_INTERFACE_TOS_HOST);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(65L);
@@ -596,11 +562,9 @@ public class FlowAnalyzerTest {
                 }},
 
                 new FlowSummary() {{
-                    this.setGroupedByKey("SomeFs:SomeFid-98-0-10.0.0.3");
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(2);
                     this.setGroupedBy(EXPORTER_INTERFACE_TOS_HOST);
                     this.setAggregationType(AggregationType.TOPK);
                     this.setBytesIngress(1360L);
@@ -851,11 +815,9 @@ public class FlowAnalyzerTest {
                         new Expected(EXPORTER_INTERFACE_TOS_HOST, 2, "SomeFs:SomeFid-98-3-10.0.0.2", AggregationType.TOPK, 17, false, 3, null, "10.0.0.2", null),
                         }
                 ).map(e -> new FlowSummary() {{
-                    this.setGroupedByKey(e.groupedByKey);
                     this.setTimestamp(WND.startPlusWindowSizeMs);
                     this.setRangeStartMs(WND.startMs);
                     this.setRangeEndMs(WND.startPlusWindowSizeMs);
-                    this.setRanking(e.ranking);
                     this.setGroupedBy(e.groupedBy);
                     this.setAggregationType(e.aggregationType);
                     this.setBytesIngress((long)e.bytes);
