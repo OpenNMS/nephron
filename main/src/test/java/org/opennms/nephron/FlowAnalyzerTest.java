@@ -91,6 +91,8 @@ public class FlowAnalyzerTest {
     static WindowingDef WINDOW_DEF = new WindowingDef(Duration.standardMinutes(1), EXPORTER_NODE.getNodeId());
     static Wnd WND = WINDOW_DEF.at(1_500_000_000_000l);
 
+    static Pipeline.WindowedFlows WINDOWED_FLOWS = new Pipeline.WindowedFlows(Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2));
+
 //    private PipelineOptions flinkOptions = TestFlinkRunner
 //            .fromOptions(PipelineOptionsFactory.as(NephronOptions.class)).getPipelineOptions();
 
@@ -138,7 +140,7 @@ public class FlowAnalyzerTest {
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(new Pipeline.CalculateFlowStatistics(10, WINDOWED_FLOWS))
                 .apply(Filter.by(fs -> fs.key.getType() == CompoundKeyType.EXPORTER_INTERFACE))
                 .apply(TO_FLOW_SUMMARY);
 
@@ -221,7 +223,7 @@ public class FlowAnalyzerTest {
 
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(new Pipeline.CalculateFlowStatistics(10, WINDOWED_FLOWS))
                 .apply(Filter.by(fs -> fs.key.getType() == CompoundKeyType.EXPORTER_INTERFACE))
                 .apply(TO_FLOW_SUMMARY);
 
@@ -311,7 +313,7 @@ public class FlowAnalyzerTest {
                 // -> early panes prevent on-time panes if no new data arrives
                 // -> early panes seem to be somewhat indeterministic: aggregation is distributed over different nodes;
                 //    all of them seem to trigger (partial) early panes;
-                .apply(new Pipeline.CalculateFlowStatistics(10, WND.windowSize, Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(new Pipeline.CalculateFlowStatistics(10, new Pipeline.WindowedFlows(WND.windowSize, Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2))))
                 .apply(TO_FLOW_SUMMARY);
 
         final FlowSummary[] summaries = new FlowSummary[]{
@@ -816,7 +818,7 @@ public class FlowAnalyzerTest {
     public void groupsByDscp() {
         final TestStream<FlowDocument> flowStream = testStream(0, 12);
         final PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(new Pipeline.CalculateFlowStatistics(10, Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2)))
+                .apply(new Pipeline.CalculateFlowStatistics(10, WINDOWED_FLOWS))
                 .apply(TO_FLOW_SUMMARY);
 
         // expect 15 flow summaries:

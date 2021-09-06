@@ -78,6 +78,7 @@ import org.joda.time.Instant;
 import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
 import org.opennms.nephron.coders.KafkaInputFlowDeserializer;
 import org.opennms.nephron.cortex.CortexIo;
+import org.opennms.nephron.util.PaneAccumulator;
 import org.opennms.nephron.cortex.TimeSeriesBuilder;
 import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -144,12 +145,38 @@ public class Pipeline {
         // Calculate the flow summary statistics
         PCollection<FlowSummaryData> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
 
+        flowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
+
         // optionally attach different kinds of sinks
         attachWriteToElastic(options, flowSummaries);
         attachWriteToKafka(options, flowSummaries);
         attachWriteToCortex(options, flowSummaries);
 
         return p;
+    }
+
+    public static PCollection<FlowSummaryData> accumulateSummariesIfNecessary(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        if (options.getSummaryAccumulationDelayMs() != 0) {
+            return accumulateFlowSummaries(flowSummaries, Duration.millis(options.getSummaryAccumulationDelayMs()));
+        } else {
+            return flowSummaries;
+        }
+    }
+
+    public static PCollection<FlowSummaryData> accumulateFlowSummaries(
+            PCollection<FlowSummaryData> input,
+            Duration accumulationDelay
+    ) {
+        var paneAccumulator = new PaneAccumulator<>(
+                Pipeline::combineFlowSummaryData,
+                accumulationDelay,
+                new CompoundKey.CompoundKeyCoder(),
+                new FlowSummaryData.FlowSummaryDataCoder()
+        );
+        return input
+                .apply(KEY_SUMMARIES)
+                .apply(paneAccumulator)
+                .apply(Values.create());
     }
 
     private static FlowSummaryData combineFlowSummaryData(
@@ -359,10 +386,6 @@ public class Pipeline {
         public CalculateFlowStatistics(int topK, PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing) {
             this.topK = topK;
             this.windowing = windowing;
-        }
-
-        public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration maxFlowDuration, Duration earlyProcessingDelay, Duration lateProcessingDelay, Duration allowedLateness) {
-            this(topK, new WindowedFlows(fixedWindowSize, maxFlowDuration, earlyProcessingDelay, lateProcessingDelay, allowedLateness));
         }
 
         public CalculateFlowStatistics(NephronOptions options) {

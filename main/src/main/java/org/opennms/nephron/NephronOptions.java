@@ -145,6 +145,11 @@ public interface NephronOptions extends PipelineOptions, CortexOptions {
 
     void setAllowedLatenessMs(long value);
 
+    @Description("Experimental: Accumulation period for flow summaries. Summary accumulation is switched off if set to zero.")
+    @Default.Long(0)
+    long getSummaryAccumulationDelayMs();
+    void setSummaryAccumulationDelayMs(long value);
+
     @Description("Elasticsearch Connection Timeout in milliseconds")
     @Default.Integer(30 * 1000) // 30 seconds
     int getElasticConnectTimeout();
@@ -173,4 +178,5 @@ public interface NephronOptions extends PipelineOptions, CortexOptions {
     String getKafkaClientProperties();
 
     void setKafkaClientProperties(String kafkaClientProperties);
+
 }

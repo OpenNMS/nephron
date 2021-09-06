@@ -33,6 +33,7 @@
         <Logger name="org.opennms.nephron.testing" level="DEBUG"/>
         <Logger name="org.opennms.nephron.cortex" level="WARN"/>
         <Logger name="org.opennms.nephron.cortex.CortexIo" level="WARN"/>
+        <Logger name="org.opennms.nephron.util.PaneAccumulator" level="WARN"/>
 
         <!--
             Set the level of org.opennms.nephron.cortex.CortexIo.write to TRACE in order to also store

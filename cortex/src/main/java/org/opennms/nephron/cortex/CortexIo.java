@@ -108,6 +108,10 @@ import prometheus.PrometheusTypes;
  * additionally uses Beam's timer mechanism to hold back values for accumulation and flushes values after a configured
  * output delay.
  * <p>
+ * Note: The {@code PaneAccumulator} class can be used to achieve the same accumulation effect that the accumulating
+ * Cortex sink has. It makes sense to use the {@code PaneAccumulator} if several sinks can benefit
+ * from accumulated outputs. In case of a single sink the accumulating Cortex sink is preferable.
+ * <p>
  * Sinks are configured by the {@link Write} class and are implemented by subclasses of the {@link WriteFn} class.
  * Sinks provide the following counter metrics in the "cortex" namespace:
  * <dl>

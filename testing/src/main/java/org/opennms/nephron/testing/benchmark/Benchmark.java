@@ -28,6 +28,7 @@
 
 package org.opennms.nephron.testing.benchmark;
 
+import static org.opennms.nephron.Pipeline.accumulateSummariesIfNecessary;
 import static org.opennms.nephron.Pipeline.attachWriteToCortex;
 import static org.opennms.nephron.Pipeline.attachWriteToElastic;
 import static org.opennms.nephron.Pipeline.registerCoders;
@@ -223,6 +224,8 @@ public class Benchmark {
                 .apply(inputSetup.source())
                 .apply(inTestingProbe.getTransform())
                 .apply(new Pipeline.CalculateFlowStatistics(options));
+
+        flowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
 
         flowSummaries = flowSummaries.apply(outTestingProbe.getTransform());
 
