@@ -197,8 +197,8 @@ public class FlowAnalyzerIT {
 
         // Wait for documents to be indexed in Elasticsearch
         await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
-                .ignoreExceptions()
-                .until(() -> getFirstNFlowSummmariesFromES(5, options).get(), hasSize(5));
+               .ignoreExceptions()
+               .until(() -> getFirstNFlowSummmariesFromES(5, options).get(), hasSize(5));
 
         // We know there are document in ES let, let's retrieve one and validate the contents
         List<FlowSummary> flowSummaries = getFirstNFlowSummmariesFromES(5, options).get();
