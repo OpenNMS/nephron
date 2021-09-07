@@ -210,7 +210,7 @@ public class RandomFlowIT {
                 .withStartTime(start)
                 .build();
 
-        runPipeline(options, pipeline, simulation);
+        runSimulation(options, pipeline, simulation);
 
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE");
 
@@ -303,7 +303,7 @@ public class RandomFlowIT {
                 .withStartTime(start)
                 .build();
 
-        runPipeline(options, pipeline, simulation);
+        runSimulation(options, pipeline, simulation);
 
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE");
 
@@ -452,7 +452,7 @@ public class RandomFlowIT {
                 .withStartTime(start)
                 .build();
 
-        runPipeline(options, pipeline, simulation);
+        runSimulation(options, pipeline, simulation);
 
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE_APPLICATION");
 
@@ -494,7 +494,7 @@ public class RandomFlowIT {
         }
     }
 
-    private PipelineResult runPipeline(NephronOptions options, org.apache.beam.sdk.Pipeline pipeline, Simulation simulation) throws InterruptedException {
+    private PipelineResult runSimulation(NephronOptions options, org.apache.beam.sdk.Pipeline pipeline, Simulation simulation) throws InterruptedException {
         return runPipeline(options, pipeline, flowProducer(simulation));
     }
 
