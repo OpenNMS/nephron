@@ -31,11 +31,12 @@ package org.opennms.nephron;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.aMapWithSize;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.opennms.nephron.RandomFlowIT.createPipeline;
+import static org.opennms.nephron.RandomFlowIT.runPipeline;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -73,6 +74,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.awaitility.core.ThrowingRunnable;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
@@ -88,7 +90,6 @@ import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -173,23 +174,7 @@ public class FlowAnalyzerIT {
         });
 
         // Fire up the pipeline
-        final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(options);
-        Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    pipeline.run();
-                } catch (RuntimeException ex) {
-                    if (ex.getCause() instanceof InterruptedException) {
-                        return;
-                    }
-                    ex.printStackTrace();
-                }
-            }
-        });
-        t.start();
-        // Wait until the pipeline's Kafka consumer has started
-        Thread.sleep(10*1000);
+        final org.apache.beam.sdk.Pipeline pipeline = createPipeline(options);
 
         // Now write some flows
         Map<String, Object> producerProps = new HashMap<>();
@@ -198,11 +183,12 @@ public class FlowAnalyzerIT {
         producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
         KafkaProducer<String,byte[]> producer = new KafkaProducer<>(producerProps);
         KafkaFlowGenerator flowGenerator = new KafkaFlowGenerator(producer, options);
-        executor.execute(flowGenerator);
-
-        // Wait until we've sent at least one flow
         final List<FlowDocument> flowsSent = new LinkedList<>();
         flowGenerator.setCallback(flowsSent::add);
+
+        runPipeline(options, pipeline, () -> flowGenerator.run());
+
+        // Wait until we've sent at least one flow
         await().atMost(1, TimeUnit.MINUTES).until(() -> flowsSent, hasSize(greaterThanOrEqualTo(1)));
 
         // Wait for some flow summaries to appear
@@ -223,9 +209,6 @@ public class FlowAnalyzerIT {
         assertThat(firstFlowSummary.getGroupedByKey(), notNullValue());
         assertThat(firstFlowSummary.getRangeEndMs(), greaterThanOrEqualTo(firstFlowSummary.getRangeStartMs()));
         assertThat(firstFlowSummary.getRanking(), greaterThanOrEqualTo(0));
-
-        t.interrupt();
-        t.join();
     }
 
     @Test
@@ -244,26 +227,8 @@ public class FlowAnalyzerIT {
         // Create the topic
         createTopics(options.getFlowSourceTopic(), options.getFlowDestTopic());
 
-        final TestFlinkRunner runner = TestFlinkRunner.fromOptions(options);
-
-        // Fire up the pipeline
-        final org.apache.beam.sdk.Pipeline pipeline = Pipeline.create(runner.getPipelineOptions().as(NephronOptions.class));
-
-        Thread t = new Thread(() -> {
-            try {
-                runner.run(pipeline);
-            } catch (RuntimeException ex) {
-                if (ex.getCause() instanceof InterruptedException) {
-                    return;
-                }
-                ex.printStackTrace();
-            }
-        });
-        t.start();
-
-
-        // Wait until the pipeline's Kafka consumer has started
-        Thread.sleep(10_000);
+        // create the pipeline
+        final org.apache.beam.sdk.Pipeline pipeline = createPipeline(options);
 
         // Shift start to a controlled point in window (3 secs after window start) to avoid flapping test
         final Instant almostNow = Instant.ofEpochMilli(Instant.now().toEpochMilli() / 10_000L * 10_000L + 3_000L);
@@ -272,90 +237,13 @@ public class FlowAnalyzerIT {
         final Instant timestamp2 = almostNow;
         final Instant timestamp3 = almostNow.minus(1, ChronoUnit.HOURS);
 
-        // Now write some flows
-        final Map<String, Object> producerProps = new HashMap<>();
-        producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
-        producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
-        final KafkaProducer<String,byte[]> producer = new KafkaProducer<>(producerProps);
-
-        final SyntheticFlowBuilder builder = new SyntheticFlowBuilder()
-                .withSnmpInterfaceId(98)
-                .withApplication("SomeApplication");
-
-        builder.withExporter("Test", "Router1", 1)
-               .withFlow(timestamp1.plus(5, ChronoUnit.SECONDS), timestamp1.plus(11, ChronoUnit.SECONDS),
-                         "10.0.0.1", 88,
-                         "10.0.0.3", 99,
-                         50);
-
-        builder.withExporter("Test", "Router2", 2)
-               .withFlow(timestamp2.plus(5, ChronoUnit.SECONDS), timestamp2.plus(11, ChronoUnit.SECONDS),
-                         "10.0.0.1", 88,
-                         "10.0.0.3", 99,
-                         50);
-
-        builder.withExporter("Test", "Router3", 3)
-               .withFlow(timestamp3.plus(5, ChronoUnit.SECONDS), timestamp3.plus(11, ChronoUnit.SECONDS),
-                         "10.0.0.1", 88,
-                         "10.0.0.3", 99,
-                         50);
-
-        builder.withExporter("Test", "Router1", 1)
-               .withFlow(timestamp1.plus(7, ChronoUnit.SECONDS), timestamp1.plus(12, ChronoUnit.SECONDS),
-                         "10.0.0.1", 88,
-                         "10.0.0.3", 99,
-                         100);
-
-        builder.withExporter("Test", "Router2", 2)
-               .withFlow(timestamp2.plus(7, ChronoUnit.SECONDS), timestamp2.plus(12, ChronoUnit.SECONDS),
-                         "10.0.0.1", 88,
-                         "10.0.0.3", 99,
-                         100);
-
-        builder.withExporter("Test", "Router3", 3)
-               .withFlow(timestamp3.plus(7, ChronoUnit.SECONDS), timestamp3.plus(12, ChronoUnit.SECONDS),
-                         "10.0.0.1", 88,
-                         "10.0.0.3", 99,
-                         100);
-
-        builder.withExporter("Test", "Router1", 1)
-               .withFlow(timestamp1.plus(9, ChronoUnit.SECONDS), timestamp1.plus(14, ChronoUnit.SECONDS),
-                         "10.0.0.1", 88,
-                         "10.0.0.3", 99,
-                         150);
-
-        builder.withExporter("Test", "Router2", 2)
-               .withFlow(timestamp2.plus(9, ChronoUnit.SECONDS), timestamp2.plus(14, ChronoUnit.SECONDS),
-                         "10.0.0.1", 88,
-                         "10.0.0.3", 99,
-                         150);
-
-        builder.withExporter("Test", "Router3", 3)
-               .withFlow(timestamp3.plus(9, ChronoUnit.SECONDS), timestamp3.plus(14, ChronoUnit.SECONDS),
-                         "10.0.0.1", 88,
-                         "10.0.0.3", 99,
-                         150);
-
-        builder.withExporter("Test", "Buzz", 0)
-               .withFlow(timestamp1.plus(1, ChronoUnit.MINUTES), almostNow.plus(1, ChronoUnit.MINUTES),
-                         "0.0.0.0", 0,
-                         "0.0.0.0", 0,
-                         2000);
-
-        for (final FlowDocument flow : builder.build()) {
-            producer.send(new ProducerRecord<>(options.getFlowSourceTopic(), flow.toByteArray()), (metadata, exception) -> {
-                if (exception != null) {
-                    exception.printStackTrace();
-                }
-            });
-        }
+        runPipeline(options, pipeline, skewedFlowProducer(options, almostNow, timestamp1, timestamp2, timestamp3));
 
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE");
 
         await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
-               .ignoreExceptions()
-               .until(() -> getFirstNFlowSummmariesFromES(20, options, query).get(), hasSize(6));
+                .ignoreExceptions()
+                .until(() -> getFirstNFlowSummmariesFromES(20, options, query).get(), hasSize(6));
 
         Thread.sleep(10_000);
 
@@ -376,10 +264,98 @@ public class FlowAnalyzerIT {
 
         assertThat(summaries.get("Test:Router3-98").getCount(), is(2L));
         assertThat(summaries.get("Test:Router3-98").getSum(), is(300L));
-
-        t.interrupt();
-        t.join();
     }
+
+    private ThrowingRunnable skewedFlowProducer(
+            NephronOptions options,
+            Instant almostNow,
+            Instant timestamp1,
+            Instant timestamp2,
+            Instant timestamp3
+    ) {
+        return () -> {
+
+            // Now write some flows
+            final Map<String, Object> producerProps = new HashMap<>();
+            producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
+            producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+            producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+            final KafkaProducer<String, byte[]> producer = new KafkaProducer<>(producerProps);
+
+            final SyntheticFlowBuilder builder = new SyntheticFlowBuilder()
+                    .withSnmpInterfaceId(98)
+                    .withApplication("SomeApplication");
+
+            builder.withExporter("Test", "Router1", 1)
+                    .withFlow(timestamp1.plus(5, ChronoUnit.SECONDS), timestamp1.plus(11, ChronoUnit.SECONDS),
+                            "10.0.0.1", 88,
+                            "10.0.0.3", 99,
+                            50);
+
+            builder.withExporter("Test", "Router2", 2)
+                    .withFlow(timestamp2.plus(5, ChronoUnit.SECONDS), timestamp2.plus(11, ChronoUnit.SECONDS),
+                            "10.0.0.1", 88,
+                            "10.0.0.3", 99,
+                            50);
+
+            builder.withExporter("Test", "Router3", 3)
+                    .withFlow(timestamp3.plus(5, ChronoUnit.SECONDS), timestamp3.plus(11, ChronoUnit.SECONDS),
+                            "10.0.0.1", 88,
+                            "10.0.0.3", 99,
+                            50);
+
+            builder.withExporter("Test", "Router1", 1)
+                    .withFlow(timestamp1.plus(7, ChronoUnit.SECONDS), timestamp1.plus(12, ChronoUnit.SECONDS),
+                            "10.0.0.1", 88,
+                            "10.0.0.3", 99,
+                            100);
+
+            builder.withExporter("Test", "Router2", 2)
+                    .withFlow(timestamp2.plus(7, ChronoUnit.SECONDS), timestamp2.plus(12, ChronoUnit.SECONDS),
+                            "10.0.0.1", 88,
+                            "10.0.0.3", 99,
+                            100);
+
+            builder.withExporter("Test", "Router3", 3)
+                    .withFlow(timestamp3.plus(7, ChronoUnit.SECONDS), timestamp3.plus(12, ChronoUnit.SECONDS),
+                            "10.0.0.1", 88,
+                            "10.0.0.3", 99,
+                            100);
+
+            builder.withExporter("Test", "Router1", 1)
+                    .withFlow(timestamp1.plus(9, ChronoUnit.SECONDS), timestamp1.plus(14, ChronoUnit.SECONDS),
+                            "10.0.0.1", 88,
+                            "10.0.0.3", 99,
+                            150);
+
+            builder.withExporter("Test", "Router2", 2)
+                    .withFlow(timestamp2.plus(9, ChronoUnit.SECONDS), timestamp2.plus(14, ChronoUnit.SECONDS),
+                            "10.0.0.1", 88,
+                            "10.0.0.3", 99,
+                            150);
+
+            builder.withExporter("Test", "Router3", 3)
+                    .withFlow(timestamp3.plus(9, ChronoUnit.SECONDS), timestamp3.plus(14, ChronoUnit.SECONDS),
+                            "10.0.0.1", 88,
+                            "10.0.0.3", 99,
+                            150);
+
+            builder.withExporter("Test", "Buzz", 0)
+                    .withFlow(timestamp1.plus(1, ChronoUnit.MINUTES), almostNow.plus(1, ChronoUnit.MINUTES),
+                            "0.0.0.0", 0,
+                            "0.0.0.0", 0,
+                            2000);
+
+            for (final FlowDocument flow : builder.build()) {
+                producer.send(new ProducerRecord<>(options.getFlowSourceTopic(), flow.toByteArray()), (metadata, exception) -> {
+                    if (exception != null) {
+                        exception.printStackTrace();
+                    }
+                });
+            }
+        };
+    }
+
 
     public CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options) {
         return getFirstNFlowSummmariesFromES(numDocs, options, QueryBuilders.matchAllQuery());

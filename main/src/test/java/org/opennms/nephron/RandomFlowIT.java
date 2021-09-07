@@ -57,6 +57,7 @@ import java.util.stream.Collectors;
 
 import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.TestFlinkRunner;
+import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
@@ -67,6 +68,7 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.awaitility.core.ThrowingRunnable;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
@@ -208,7 +210,7 @@ public class RandomFlowIT {
                 .withStartTime(start)
                 .build();
 
-        runSimulation(options, pipeline, simulation);
+        runPipeline(options, pipeline, simulation);
 
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE");
 
@@ -301,7 +303,7 @@ public class RandomFlowIT {
                 .withStartTime(start)
                 .build();
 
-        runSimulation(options, pipeline, simulation);
+        runPipeline(options, pipeline, simulation);
 
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE");
 
@@ -450,7 +452,7 @@ public class RandomFlowIT {
                 .withStartTime(start)
                 .build();
 
-        runSimulation(options, pipeline, simulation);
+        runPipeline(options, pipeline, simulation);
 
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE_APPLICATION");
 
@@ -492,11 +494,16 @@ public class RandomFlowIT {
         }
     }
 
-    private void runSimulation(NephronOptions options, org.apache.beam.sdk.Pipeline pipeline, Simulation simulation) throws InterruptedException {
-        var simulationThread = forkSimulation(options, simulation);
+    private PipelineResult runPipeline(NephronOptions options, org.apache.beam.sdk.Pipeline pipeline, Simulation simulation) throws InterruptedException {
+        return runPipeline(options, pipeline, flowProducer(simulation));
+    }
+
+    public static PipelineResult runPipeline(NephronOptions options, org.apache.beam.sdk.Pipeline pipeline, ThrowingRunnable flowProducer) throws InterruptedException {
+        var flowProducerThread = forkFlowProducer(options, flowProducer);
         var pipelineResult = pipeline.run();
         pipelineResult.waitUntilFinish();
-        simulationThread.join();
+        flowProducerThread.join();
+        return pipelineResult;
     }
 
     /**
@@ -528,7 +535,7 @@ public class RandomFlowIT {
      * <p>
      * Uses a special timestamp policy factory that ensures that the pipeline run finishes.
      */
-    private org.apache.beam.sdk.Pipeline createPipeline(NephronOptions options) {
+    public static org.apache.beam.sdk.Pipeline createPipeline(NephronOptions options) {
         // use a timestamp policy that finishes processing when the input is idle for some time
         TimestampPolicyFactory<byte[], FlowDocument> tpf = timestampPolicyFactory(
                 org.joda.time.Duration.millis(options.getDefaultMaxInputDelayMs()),
@@ -579,7 +586,7 @@ public class RandomFlowIT {
      * <p>
      * Blocks execution until the pipeline is ready to read from Kafka.
      */
-    private static void waitForConsumer(NephronOptions options) throws Exception {
+    public static void waitForConsumer(NephronOptions options) throws Exception {
         var start = Instant.now();
         var conf = new HashMap<String, Object>() {{
             put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, options.getBootstrapServers());
@@ -604,20 +611,26 @@ public class RandomFlowIT {
     /**
      * Forks a thread that waits for the pipeline being ready and then writes the simulated flows.
      */
-    private static Thread forkSimulation(NephronOptions options, Simulation simulation) {
+    private static Thread forkFlowProducer(NephronOptions options, ThrowingRunnable flowProducer) {
         var thread = new Thread(() -> {
             try {
                 waitForConsumer(options);
-                simulation.start();
-                Thread.sleep(100_000L);
-                simulation.stop();
-                simulation.join();
-            } catch (Exception e) {
+                flowProducer.run();
+            } catch (Throwable e) {
                 e.printStackTrace();
             }
         });
         thread.start();
         return thread;
+    }
+
+    private static ThrowingRunnable flowProducer(Simulation simulation) {
+        return () -> {
+            simulation.start();
+            Thread.sleep(100_000L);
+            simulation.stop();
+            simulation.join();
+        };
     }
 
 }
