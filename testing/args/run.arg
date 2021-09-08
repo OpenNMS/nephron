@@ -1,0 +1,1 @@
+--runner=FlinkRunner --flinkMaster=localhost:8081 --playbackMode=false --elasticUrl=http://localhost:9200 --parallelism=4 --flowsPerSecond=1000 --fasterCopy=true --objectReuse=true

@@ -1,0 +1,1 @@
+--lastSwitchedSigmaMs=5000 --flowDurationLambda=0.5 --numExporters=2 --numInterfaces=2 --numProtocols=1 --numApplications=2 --numHosts=2 --numEcns=4 --numDscps=15

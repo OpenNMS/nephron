@@ -34,7 +34,7 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.Validation;
 import org.opennms.nephron.elastic.IndexStrategy;
 
-public interface NephronOptions extends PipelineOptions {
+public interface NephronOptions extends PipelineOptions, CortexOptions {
 
     String DEFAULT_NETFLOW_AGG_INDEX_PREFIX = "netflow_agg";
     String DEFAULT_FLOW_SOURCE_TOPIC = "opennms-flows";

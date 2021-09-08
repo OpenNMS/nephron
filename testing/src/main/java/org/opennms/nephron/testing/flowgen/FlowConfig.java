@@ -30,6 +30,7 @@ package org.opennms.nephron.testing.flowgen;
 
 import java.io.Serializable;
 
+import org.apache.beam.sdk.transforms.SerializableBiFunction;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
@@ -43,15 +44,15 @@ public class FlowConfig implements Serializable {
      * Calculates the {@code lastSwitched} timestamp linearly starting at {@code start} and increasing by {@code step}
      * for each index.
      */
-    public static SerializableFunction<Long, Instant> linearIncreasingLastSwitchedPolicy(Instant start, Duration step) {
-        return idx -> start.plus(step.multipliedBy(idx));
+    public static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> linearIncreasingLastSwitchedPolicy(Instant start, Duration step) {
+        return (idx, fd) -> start.plus(step.multipliedBy(idx));
     }
 
     /**
      * Calculates the {@code lastSwitched} timestamp uniformly distributed according to the configured
      * start, window size, and number of flows per window.
      */
-    public static SerializableFunction<Long, Instant> uniformInWindowLastSwitchedPolicy(FlowGenOptions opts) {
+    public static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> uniformInWindowLastSwitchedPolicy(FlowGenOptions opts) {
         Instant start = Instant.ofEpochMilli(opts.getStartMs());
         Duration step = Duration.millis((long)((double)opts.getFixedWindowSizeMs() / opts.getFlowsPerWindow()));
         return linearIncreasingLastSwitchedPolicy(start, step);
@@ -63,8 +64,11 @@ public class FlowConfig implements Serializable {
      * the {@link FlowGenOptions#getClockSkewMs()}.
      */
     public static SerializableFunction<Integer, Duration> groupClockSkewPolicy(FlowGenOptions options) {
-        int minExporter = options.getMinExporter();
         int numClockSkewGroups = options.getNumClockSkewGroups();
+        if (numClockSkewGroups == 1) {
+            return nodeId -> Duration.ZERO;
+        }
+        int minExporter = options.getMinExporter();
         long clockSkewMs;
         long clockSkewShiftMs;
         switch (options.getClockSkewDirection()) {
@@ -78,7 +82,7 @@ public class FlowConfig implements Serializable {
                 break;
             default:
                 clockSkewMs = Math.abs(options.getClockSkewMs());
-                clockSkewShiftMs = clockSkewMs * options.getNumClockSkewGroups() / 2;
+                clockSkewShiftMs = clockSkewMs * (options.getNumClockSkewGroups() - 1) / 2;
                 break;
         }
         return nodeId -> Duration.millis(((nodeId - minExporter) % numClockSkewGroups) * clockSkewMs - clockSkewShiftMs);
@@ -87,7 +91,7 @@ public class FlowConfig implements Serializable {
     /**
      * Returns a function that always return the current time instant.
      */
-    public static SerializableFunction<Long, Instant> CURRENT_TIME_LAST_SWITCHED_POLICY = idx -> Instant.now();
+    public static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> CURRENT_TIME_LAST_SWITCHED_POLICY = (idx, fd) -> Instant.now();
 
     /**
      * Exporter numbers are generated uniformly starting at minExporter.
@@ -115,7 +119,7 @@ public class FlowConfig implements Serializable {
      * Note: Function implementations must not be referentially transparent. Function implementations may ignore
      * the function parameter and simply return the current time instant.
      */
-    public final SerializableFunction<Long, Instant> lastSwitched;
+    public final SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> lastSwitched;
 
     /**
      * A function that given a nodeId returns the clockSkew for that node.
@@ -133,7 +137,7 @@ public class FlowConfig implements Serializable {
      */
     public final double flowDurationLambda;
 
-    public FlowConfig(int minExporter, int numExporters, int minInterface, int numInterfaces, int numProtocols, int numApplications, int numHosts, int numEcns, int numDscps, SerializableFunction<Long, Instant> lastSwitched, SerializableFunction<Integer, Duration> clockSkew, Duration lastSwitchedSigma, double flowDurationLambda) {
+    public FlowConfig(int minExporter, int numExporters, int minInterface, int numInterfaces, int numProtocols, int numApplications, int numHosts, int numEcns, int numDscps, SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> lastSwitched, SerializableFunction<Integer, Duration> clockSkew, Duration lastSwitchedSigma, double flowDurationLambda) {
         this.minExporter = minExporter;
         this.numExporters = numExporters;
         this.minInterface = minInterface;
@@ -151,7 +155,7 @@ public class FlowConfig implements Serializable {
 
     public FlowConfig(
             FlowGenOptions opts,
-            SerializableFunction<Long, Instant> lastSwitched,
+            SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> lastSwitched,
             SerializableFunction<Integer, Duration> clockSkew
     ) {
         this(

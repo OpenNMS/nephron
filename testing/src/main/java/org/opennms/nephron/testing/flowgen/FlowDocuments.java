@@ -67,7 +67,7 @@ public class FlowDocuments {
     // exponential distribution
     private static Arbitrary<Double> EXPONENTIAL = UNIFORM.map(d -> -Math.log(d));
 
-    private static Arbitrary<Long> BYTES = Arbitraries.longs().between(0, 1024 * 1024 * 1024);
+    private static Arbitrary<Long> BYTES = Arbitraries.longs().between(0, 1024 * 1024);
 
     /**
      * Creates a length limited stream of flows.
@@ -141,7 +141,7 @@ public class FlowDocuments {
     }
 
     public static FlowDocument getFlowDocument(FlowConfig cfg, long idx, FlowData fd) {
-        Instant lastSwitchedWithoutClockSkew = cfg.lastSwitched.apply(idx).plus(fd.fd2.lastSwitchedOffset);
+        Instant lastSwitchedWithoutClockSkew = cfg.lastSwitched.apply(idx, fd).plus(fd.fd2.lastSwitchedOffset);
         Duration clockSkew = cfg.clockSkew.apply(fd.fd1.nodeId);
         Instant lastSwitched = lastSwitchedWithoutClockSkew.plus(clockSkew);
         Instant deltaSwitched = lastSwitched.minus(fd.fd2.flowDuration);
@@ -180,6 +180,11 @@ public class FlowDocuments {
                 .append(']')
                 .toString();
 
+        // scale the number of bytes of a flow depending on the application, srcAddr, and dstAddr
+        // -> use an exponential model for the scale factor
+        // -> the bigger the numbers for application, srcAddr, dstAdr are the smaller the scale factor is
+        var numBytesScaleFactor = 0.5 * Math.exp(-0.5 * (fd.fd1.application + fd.fd1.srcAddr + fd.fd1.dstAddr));
+
         FlowDocument f = FlowDocument
                 .newBuilder()
                 .setExporterNode(
@@ -202,7 +207,7 @@ public class FlowDocuments {
                 .setDirection(fd.fd2.ingressNotEgress ? Direction.INGRESS : Direction.EGRESS)
                 .setLastSwitched(UInt64Value.of(lastSwitched.getMillis()))
                 .setDeltaSwitched(UInt64Value.of(deltaSwitched.getMillis()))
-                .setNumBytes(UInt64Value.of(fd.fd2.bytes))
+                .setNumBytes(UInt64Value.of((long)(fd.fd2.bytes * numBytesScaleFactor)))
                 .setTos(UInt32Value.of(fd.fd2.ecn + 4 * fd.fd2.dscp))
                 .setEcn(UInt32Value.of(fd.fd2.ecn))
                 .setDscp(UInt32Value.of(fd.fd2.dscp))

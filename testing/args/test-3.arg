@@ -1,0 +1,3 @@
+# tests if separate pane accumulation has an effect on the Cortex result
+# cross check if number of flow documents in ES is smaller if accumulateSummaries is switched on
+--include=testing/args/run.arg --include=testing/args/flow-gen.arg --include=testing/args/cortex.arg --accumulateSummaries=(true|false) --numWindows=20 --fixedWindowSizeMs=10000 --defaultMaxInputDelayMs=60000 --earlyProcessingDelayMs=5000 --lateProcessingDelayMs=10000

@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 
+import org.apache.beam.repackaged.core.org.apache.commons.lang3.StringUtils;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
 import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
@@ -49,6 +50,7 @@ import org.apache.beam.sdk.metrics.Gauge;
 import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
@@ -75,9 +77,14 @@ import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
 import org.opennms.nephron.coders.KafkaInputFlowDeserializer;
+import org.opennms.nephron.cortex.CortexIo;
+import org.opennms.nephron.cortex.TimeSeriesBuilder;
 import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.nephron.elastic.IndexStrategy;
+import org.opennms.nephron.network.IPAddress;
+import org.opennms.nephron.network.IpValue;
+import org.opennms.nephron.network.StringValue;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
@@ -87,6 +94,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
+import com.google.common.net.InetAddresses;
 import com.swrve.ratelimitedlogger.RateLimitedLog;
 
 public class Pipeline {
@@ -124,22 +132,7 @@ public class Pipeline {
         org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
-        Map<String, Object> kafkaConsumerConfig = new HashMap<>();
-        Map<String, Object> kafkaProducerConfig = new HashMap<>();
-
-        if (!Strings.isNullOrEmpty(options.getKafkaClientProperties())) {
-            final Properties properties = new Properties();
-            try {
-                properties.load(new FileReader(options.getKafkaClientProperties()));
-            } catch (IOException e) {
-                LOG.error("Error loading properties file", e);
-                throw new RuntimeException("Error reading properties file", e);
-            }
-            for(Map.Entry<Object,Object> entry : properties.entrySet()) {
-                kafkaConsumerConfig.put(entry.getKey().toString(), entry.getValue());
-                kafkaProducerConfig.put(entry.getKey().toString(), entry.getValue());
-            }
-        }
+        Map<String, Object> kafkaConsumerConfig = loadKafkaClientProperties(options);
 
         kafkaConsumerConfig.put(ConsumerConfig.GROUP_ID_CONFIG, options.getGroupId());
         // Auto-commit should be disabled when checkpointing is on:
@@ -151,15 +144,204 @@ public class Pipeline {
         // Calculate the flow summary statistics
         PCollection<FlowSummaryData> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
 
-        // Write the results out to Elasticsearch
-        flowSummaries.apply(new WriteToElasticsearch(options));
-
-        // Optionally write out to Kafka as well
-        if (options.getFlowDestTopic() != null) {
-            flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic(), kafkaProducerConfig));
-        }
+        // optionally attach different kinds of sinks
+        attachWriteToElastic(options, flowSummaries);
+        attachWriteToKafka(options, flowSummaries);
+        attachWriteToCortex(options, flowSummaries);
 
         return p;
+    }
+
+    private static FlowSummaryData combineFlowSummaryData(
+            FlowSummaryData d1,
+            FlowSummaryData d2
+    ) {
+        return new FlowSummaryData(
+                d1.aggregationType,
+                d1.key,
+                Aggregate.merge(d1.aggregate, d2.aggregate),
+                d1.windowStart,
+                d1.windowEnd,
+                // when flow summaries of different panes are combined then the ranking may become invalid
+                // -> fortunately the ranking is not used when querying for data
+                d1.ranking
+        );
+    }
+
+    private static ParDo.SingleOutput<FlowSummaryData, KV<CompoundKey, FlowSummaryData>> KEY_SUMMARIES =
+            ParDo.of(new DoFn<FlowSummaryData, KV<CompoundKey, FlowSummaryData>>() {
+                @ProcessElement
+                public void process(ProcessContext ctx) {
+                    ctx.output(KV.of(ctx.element().key, ctx.element()));
+                }
+            });
+
+    private static Map<String, Object> loadKafkaClientProperties(NephronOptions options) {
+        Map<String, Object> kafkaClientProperties = new HashMap<>();
+
+        if (!Strings.isNullOrEmpty(options.getKafkaClientProperties())) {
+            final Properties properties = new Properties();
+            try {
+                properties.load(new FileReader(options.getKafkaClientProperties()));
+            } catch (IOException e) {
+                LOG.error("Error loading properties file", e);
+                throw new RuntimeException("Error reading properties file", e);
+            }
+            for(Map.Entry<Object,Object> entry : properties.entrySet()) {
+                kafkaClientProperties.put(entry.getKey().toString(), entry.getValue());
+            }
+        }
+        return kafkaClientProperties;
+    }
+
+    public static void attachWriteToElastic(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        if (!Strings.isNullOrEmpty(options.getElasticUrl())) {
+            flowSummaries.apply(new WriteToElasticsearch(options));
+        }
+    }
+
+    public static void attachWriteToKafka(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        if (!Strings.isNullOrEmpty(options.getFlowDestTopic())) {
+            var kafkaProducerConfig = loadKafkaClientProperties(options);
+            flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic(), kafkaProducerConfig));
+        }
+    }
+
+    public static void attachWriteToCortex(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        if (cortexOutputEnabled(options)) {
+            CortexIo.Write<CompoundKey, FlowSummaryData> cortexWrite;
+            if (options.getCortexAccumulationDelayMs() != 0) {
+                cortexWrite = CortexIo.of(options.getCortexWriteUrl(), Pipeline::cortexOutput,
+                        new CompoundKey.CompoundKeyCoder(),
+                        new FlowSummaryData.FlowSummaryDataCoder(),
+                        Pipeline::combineFlowSummaryData,
+                        Duration.millis(options.getCortexAccumulationDelayMs())
+                );
+            } else {
+                cortexWrite = CortexIo.of(options.getCortexWriteUrl(), Pipeline::cortexOutput);
+            }
+            cortexWrite
+                    .withMaxBatchSize(options.getCortexMaxBatchSize())
+                    .withMaxBatchBytes(options.getCortexMaxBatchBytes())
+            ;
+            if (!Strings.isNullOrEmpty(options.getCortexOrgId())) {
+                cortexWrite.withOrgId(options.getCortexOrgId());
+            }
+            flowSummaries
+                    .apply(Filter.by(includeInCortexOutput(options)))
+                    .apply(KEY_SUMMARIES)
+                    .apply(cortexWrite);
+        }
+    }
+
+    // copied and slightly adapted from org.opennms.netmgt.flows.classification.internal.validation.RuleValidator
+    private static IpValue validateIpAddress(String ipAddressValue) throws IllegalArgumentException {
+        final StringValue inputValue = new StringValue(ipAddressValue);
+        var errorPrefix = "invalid cortexConsideredHosts argument - value: " + ipAddressValue;
+        final List<StringValue> actualValues = inputValue.splitBy(",");
+        for (StringValue eachValue : actualValues) {
+            // In case it is ranged, verify the range
+            if (eachValue.isRanged()) {
+                final List<StringValue> rangedValues = eachValue.splitBy("-");
+                // either a-, or a-b-c, etc.
+                if (rangedValues.size() != 2) {
+                    throw new IllegalArgumentException(errorPrefix + "; at range: " + eachValue.getValue());
+                }
+                // Ensure each range is an ip address
+                for (StringValue rangedValue : rangedValues) {
+                    if (rangedValue.contains("/")) {
+                        throw new IllegalArgumentException(errorPrefix + "; CIDR notation not supported in address ranges: " + rangedValue.getValue());
+                    }
+                    if (!InetAddresses.isInetAddress(rangedValue.getValue())) {
+                        throw new IllegalArgumentException(errorPrefix + "; not an ip address: " + rangedValue.getValue());
+                    }
+                }
+                // Now verify the range itself
+                final IPAddress begin = new IPAddress(rangedValues.get(0).getValue());
+                final IPAddress end = new IPAddress(rangedValues.get(1).getValue());
+                if (begin.isGreaterThan(end)) {
+                    throw new IllegalArgumentException(errorPrefix + "; invalid address range: begin must not be after end - begin: " + begin + "; end: " + end);
+                }
+            } else {
+                if (eachValue.contains("/")) {
+                    try {
+                        IpValue.parseCIDR(eachValue.getValue());
+                    } catch (Exception e) {
+                        throw new IllegalArgumentException(errorPrefix + "; not a valid CIDR value: " + eachValue.getValue());
+                    }
+                } else {
+                    if (!InetAddresses.isInetAddress(eachValue.getValue())) {
+                        throw new IllegalArgumentException(errorPrefix + "; not an ip address: " + eachValue.getValue());
+                    }
+                }
+            }
+        }
+        return IpValue.of(inputValue);
+    }
+
+
+    private static SerializableFunction<FlowSummaryData, Boolean> includeInCortexOutput(NephronOptions options) {
+        if (StringUtils.isNoneBlank(options.getCortexConsideredHosts())) {
+            var ipValue = validateIpAddress(options.getCortexConsideredHosts());
+            return fsd -> {
+                switch (fsd.key.type) {
+                    case EXPORTER_INTERFACE_HOST:
+                    case EXPORTER_INTERFACE_TOS_HOST:
+                        return ipValue.isInRange(fsd.key.data.address);
+                    case EXPORTER_INTERFACE_CONVERSATION:
+                    case EXPORTER_INTERFACE_TOS_CONVERSATION:
+                        return false;
+                    default:
+                        return true;
+                }
+            };
+        } else {
+            return fsd -> {
+                switch (fsd.key.type) {
+                    case EXPORTER_INTERFACE_HOST:
+                    case EXPORTER_INTERFACE_TOS_HOST:
+                    case EXPORTER_INTERFACE_CONVERSATION:
+                    case EXPORTER_INTERFACE_TOS_CONVERSATION:
+                        return false;
+                    default:
+                        return true;
+                }
+            };
+        }
+    }
+
+    private static boolean cortexOutputEnabled(NephronOptions options) {
+        return !Strings.isNullOrEmpty(options.getCortexWriteUrl());
+    }
+
+    private static void cortexOutput(
+            CompoundKey key,
+            FlowSummaryData fsd,
+            Instant eventTimestamp,
+            int index,
+            TimeSeriesBuilder builder
+    ) {
+        final var agg = fsd.aggregate;
+        LOG.trace("cortex output - eventTimestamp: {}; keyType: {}; key: {}; index: {}; in: {}; out: {}; total: {}",
+                eventTimestamp, fsd.key.type, fsd.key, index, agg.getBytesIn(), agg.getBytesOut(), agg.getBytesIn() + agg.getBytesOut());
+        String pane = "pane-" + index;
+        doCortexOutput(fsd, eventTimestamp, pane, "in", agg.getBytesIn(), builder);
+        builder.nextSeries();
+        doCortexOutput(fsd, eventTimestamp, pane, "out", agg.getBytesOut(), builder);
+    }
+
+    private static void doCortexOutput(
+            FlowSummaryData fsd,
+            Instant eventTimestamp,
+            String paneId,
+            String direction,
+            long bytes,
+            TimeSeriesBuilder builder
+    ) {
+        builder.addLabel("pane", paneId);
+        builder.addLabel("direction", direction);
+        builder.addSample(eventTimestamp.getMillis(), bytes);
+        fsd.key.populate(builder);
     }
 
     public static void registerCoders(org.apache.beam.sdk.Pipeline p) {
@@ -221,6 +403,7 @@ public class Pipeline {
             // exporter/interface and exporter/interface/tos aggregations are used as "parents" when the
             // "include other" option is selected for topK-queries
             // -> they must not be limited to topK but contain all cases
+            // -> all other persisted aggregations are topK aggregations
 
             TotalAndSummary tos = aggregateParentTotal("tos_", app.withTos.sum);
             TotalAndSummary itf = aggregateParentTotal("itf_", tos.total);
@@ -701,6 +884,13 @@ public class Pipeline {
 
     }
 
+    /**
+     * Aggregates over parent keys.
+     * <p>
+     * The result collection is "total" collection, i.e. it is not capped by a topK transform.
+     *
+     * @param child A total collection that is keyed by subkeys.
+     */
     public static TotalAndSummary aggregateParentTotal(
             String transformPrefix,
             PCollection<KV<CompoundKey, Aggregate>> child
@@ -724,6 +914,17 @@ public class Pipeline {
         return new TotalAndSummary(parentTotal, summary);
     }
 
+    /**
+     * Aggregates the sums and topKs for the input collection and a projection of the input collection where the tos
+     * (i.e. dscp) key dimension is ignored.
+     *
+     * @param groupedByKeyWithTos a total collection that is a multimap (i.e. the collection may contain several
+     *                           entries with the same CompoundKey but different values)
+     * @param typeWithoutTos a type that considers the same dimension as the entries in the input collection but ignores
+     *                       the dscp field
+     * @param k count for the topK calculation
+     * @param includeKeyInTopK filters the entries that are considered in topK calculations
+     */
     public static SumsAndTopKs aggregateSumsAndTopKs(
             String transformPrefix,
             PCollection<KV<CompoundKey, Aggregate>> groupedByKeyWithTos,
@@ -733,6 +934,7 @@ public class Pipeline {
     ) {
         SumAndTopK withTos = aggregateSumAndTopK(transformPrefix + "with_tos_", groupedByKeyWithTos, k, includeKeyInTopK);
 
+        // multimap
         PCollection<KV<CompoundKey, Aggregate>> groupedByKeyWithoutTos =
                 withTos.sum.apply(
                         transformPrefix + "group_without_tos_",
@@ -748,6 +950,14 @@ public class Pipeline {
         return new SumsAndTopKs(withTos, withoutTos);
     }
 
+    /**
+     * Reduces the input multimap collection into a collection with unique keys and the summed aggregates and
+     * calculates the topK entries of these sums when selected over their parent keys.
+     *
+     * @param groupedByKey a multimap that may contain several entries with the same key but different values
+     * @param k count for the topK calculation
+     * @param includeKeyInTopK filters the entries that are considered in topK calculations
+     */
     public static SumAndTopK aggregateSumAndTopK(
             String transformPrefix,
             PCollection<KV<CompoundKey, Aggregate>> groupedByKey,
@@ -775,7 +985,7 @@ public class Pipeline {
                     public void processElement(ProcessContext c, IntervalWindow window) {
                         int ranking = 1;
                         for (KV<CompoundKey, Aggregate> el : c.element()) {
-                            FlowSummaryData flowSummary = toFlowSummaryData(AggregationType.TOPK, window, el, ranking++);
+                            FlowSummaryData flowSummary = toFlowSummaryData(AggregationType.TOPK, window,  el, ranking++);
                             c.output(flowSummary);
                         }
                     }
@@ -793,6 +1003,8 @@ public class Pipeline {
     }
 
     public static class SumAndTopK {
+        // - all keys in the sum collection are unique (i.e. this is not a multimap)
+        // - the sum collection is a total collection (i.e. it is not capped by a topK transform)
         public final PCollection<KV<CompoundKey, Aggregate>> sum;
         public final PCollection<FlowSummaryData> topK;
 

@@ -28,4 +28,5 @@ java/bin/
 *.swp
 *.iml
 .jqwik-database
+*.log
 

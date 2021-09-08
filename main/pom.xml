@@ -52,6 +52,11 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>org.opennms.nephron</groupId>
+            <artifactId>nephron-cortex</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
         </dependency>
@@ -131,12 +136,6 @@
             <groupId>org.testcontainers</groupId>
             <artifactId>elasticsearch</artifactId>
             <version>${testcontainers.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-test-utils_2.12</artifactId>
-            <version>1.12.3</version>
             <scope>test</scope>
         </dependency>
         <dependency>

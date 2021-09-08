@@ -33,9 +33,9 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <beam.version>2.29.0</beam.version>
+        <beam.version>2.31.0</beam.version>
         <elasticsearch.client.version>7.7.1</elasticsearch.client.version>
-        <flink.artifact.name>beam-runners-flink-1.12</flink.artifact.name>
+        <flink.artifact.name>beam-runners-flink-1.13</flink.artifact.name>
         <java.version>11</java.version>
         <junit.version>4.13</junit.version>
         <kafka.version>2.6.0</kafka.version>
@@ -44,11 +44,14 @@
         <protobuf.version>3.11.4</protobuf.version>
         <slf4j.version>1.7.30</slf4j.version>
         <testcontainers.version>1.15.3</testcontainers.version>
-        <jqwik.version>1.5.1</jqwik.version>
+        <jqwik.version>1.3.10</jqwik.version>
+        <okhttp.version>3.10.0</okhttp.version>
+        <okhttp.bundle.version>3.10.0_2</okhttp.bundle.version>
     </properties>
 
     <modules>
         <module>assemblies</module>
+        <module>cortex</module>
         <module>main</module>
         <module>proto</module>
         <module>catheter</module>
@@ -136,7 +139,33 @@
             <dependency>
                 <groupId>com.fasterxml.jackson.datatype</groupId>
                 <artifactId>jackson-datatype-joda</artifactId>
-                <version>2.12.1</version>
+                <version>2.12.3</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.servicemix.bundles</groupId>
+                <artifactId>org.apache.servicemix.bundles.okhttp</artifactId>
+                <version>${okhttp.bundle.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>com.squareup.okio</groupId>
+                        <artifactId>okio</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>logging-interceptor</artifactId>
+                <version>${okhttp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.12.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jparsec</groupId>
+                <artifactId>jparsec</artifactId>
+                <version>3.1</version>
             </dependency>
 
             <!-- Test dependencies -->
@@ -211,6 +240,18 @@
                 <version>5.6.2</version>
                 <scope>test</scope>
             </dependency>
+            <dependency>
+                <groupId>org.mock-server</groupId>
+                <artifactId>mockserver-junit-rule</artifactId>
+                <version>5.11.1</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.rest-assured</groupId>
+                <artifactId>rest-assured</artifactId>
+                <version>4.4.0</version>
+                <scope>test</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -257,6 +298,21 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>2.22.2</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>1.3.2</version>
+                    <!--
+                        execution is skipped by default and can be switched on for a specific submodules by profiles
+                        -> allows to execute main classes of submodules from compiled sources without the need for
+                           installing submodule artifacts locally first. (The submodule dependencies are resolved
+                           by Mavens project classpath.)
+                    -->
+                    <configuration>
+                        <skip>true</skip>
+                        <executable>java</executable>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>

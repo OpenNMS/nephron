@@ -11,7 +11,7 @@
     <name>Nephron :: Testing</name>
 
     <properties>
-        <skipITs>true</skipITs>
+        <skipITs>false</skipITs>
     </properties>
 
     <build>
@@ -81,16 +81,22 @@
             <version>${log4j.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.beam</groupId>
-            <artifactId>${flink.artifact.name}</artifactId>
-            <version>${beam.version}</version>
+            <groupId>org.jparsec</groupId>
+            <artifactId>jparsec</artifactId>
         </dependency>
+        <!-- include runners (direct, flink) -->
         <dependency>
             <groupId>org.apache.beam</groupId>
             <artifactId>beam-runners-direct-java</artifactId>
             <version>${beam.version}</version>
             <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>${flink.artifact.name}</artifactId>
+            <version>${beam.version}</version>
+        </dependency>
+
 
         <!-- Test dependencies -->
         <dependency>
@@ -103,6 +109,11 @@
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -134,15 +145,30 @@
             <artifactId>catheter</artifactId>
             <scope>test</scope>
         </dependency>
-<!--        <dependency>-->
-<!--            <groupId>org.opennms.nephron</groupId>-->
-<!--            <artifactId>nephron-main</artifactId>-->
-<!--            <version>${project.version}</version>-->
-<!--            <classifier>tests</classifier>-->
-<!--            <type>test-jar</type>-->
-<!--        </dependency>-->
-
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>testing</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <configuration>
+                            <skip>false</skip>
+                            <cleanupDaemonThreads>false</cleanupDaemonThreads>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
     <repositories>
         <repository>

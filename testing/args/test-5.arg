@@ -1,0 +1,2 @@
+# many applications; topK experiments
+--topK=20 --numApplications=20 --cortexMaxBatchSize=(100|1000|10000) --include=testing/args/clock-skew-behind.arg --include=testing/args/run.arg --include=testing/args/flow-gen.arg --include=testing/args/time.arg --include=testing/args/cortex.arg

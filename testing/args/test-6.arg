@@ -1,0 +1,2 @@
+# test the influence of accumulation
+--topK=20 --numApplications=20 --accumulateSummaries=(true|false) --cortexAccumulate=(true|false) --include=testing/args/run.arg --include=testing/args/flow-gen.arg --include=testing/args/time.arg --include=testing/args/cortex.arg

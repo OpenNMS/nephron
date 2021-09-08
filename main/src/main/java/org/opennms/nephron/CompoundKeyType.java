@@ -40,6 +40,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 import org.apache.beam.repackaged.core.org.apache.commons.lang3.ArrayUtils;
+import org.opennms.nephron.cortex.TimeSeriesBuilder;
 import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
@@ -109,6 +110,49 @@ public enum CompoundKeyType {
         flow.setGroupedByKey(groupedByKey(data));
         for (RefType refType: parts) {
             refType.populate(data, flow);
+        }
+    }
+
+    void populate(CompoundKeyData data, TimeSeriesBuilder builder) {
+        String metricName;
+        boolean exporterAndInterfaceAsLables;
+        switch (this) {
+            case EXPORTER:
+            case EXPORTER_INTERFACE:
+            case EXPORTER_INTERFACE_TOS:
+                metricName = name();
+                exporterAndInterfaceAsLables = true;
+                break;
+            case EXPORTER_INTERFACE_APPLICATION:
+                metricName = "BY_APP_" + data.nodeId + "_" + data.ifIndex;
+                exporterAndInterfaceAsLables = false;
+                break;
+            case EXPORTER_INTERFACE_TOS_APPLICATION:
+                metricName = "BY_TOS_AND_APP_" + data.nodeId + "_" + data.ifIndex;
+                exporterAndInterfaceAsLables = false;
+                break;
+            case EXPORTER_INTERFACE_HOST:
+                metricName = "BY_HOST_" + data.nodeId + "_" + data.ifIndex;
+                exporterAndInterfaceAsLables = false;
+                break;
+            case EXPORTER_INTERFACE_TOS_HOST:
+                metricName = "BY_TOS_AND_HOST_" + data.nodeId + "_" + data.ifIndex;
+                exporterAndInterfaceAsLables = false;
+                break;
+            case EXPORTER_INTERFACE_CONVERSATION:
+                metricName = "BY_CONV_" + data.nodeId + "_" + data.ifIndex;
+                exporterAndInterfaceAsLables = false;
+                break;
+            case EXPORTER_INTERFACE_TOS_CONVERSATION:
+                metricName = "BY_TOS_AND_CONV_" + data.nodeId + "_" + data.ifIndex;
+                exporterAndInterfaceAsLables = false;
+                break;
+            default:
+                throw new RuntimeException("unexpected compound key type: " + this);
+        }
+        builder.setMetricName(metricName);
+        for (RefType refType: parts) {
+            refType.populate(data, exporterAndInterfaceAsLables, builder);
         }
     }
 

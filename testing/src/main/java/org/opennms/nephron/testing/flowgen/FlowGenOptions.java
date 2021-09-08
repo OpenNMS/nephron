@@ -150,12 +150,38 @@ public interface FlowGenOptions extends NephronOptions {
     Integer getNumDscps();
     void setNumDscps(Integer num);
 
+    /**
+     * The standard derivation of a normal distribution that determines the shift of the end of a flow
+     * with regard to an end that would be calculated by a linear time progression.
+     * <p>
+     * The values less than one standard deviation away from the mean account for 68.27% of the set;
+     * while two standard deviations from the mean account for 95.45%; and three standard deviations account for 99.73%.
+     */
     @Description("Standard deviation of lastSwitched from its calculated value.")
     @Default.Long(0)
     Long getLastSwitchedSigmaMs();
     void setLastSwitchedSigmaMs(Long millis);
 
-    @Description("The lambda (decay) factor for the exponential distribution of flow durations (in seconds; bigger lambdas yield shorter flow durations).")
+    /**
+     * The lambda (decay) factor of an exponential distribution that determines flow durations.
+     * <p>
+     * The following table shows some probability values for specific flow durations.
+     * <table>
+     *     <caption>Probabilty of some flow durations</caption>
+     *     <tr><th>duration</th><th>l=0.25</th><th>l=0.5</th><th>l=1.0</th></tr>
+     *     <tr><td>1</td><td>0.22</td><td>0.39</td><td>0.63</td></tr>
+     *     <tr><td>2</td><td>0.39</td><td>0.63</td><td>0.86</td></tr>
+     *     <tr><td>3</td><td>0.53</td><td>0.78</td><td>0.95</td></tr>
+     *     <tr><td>4</td><td>0.63</td><td>0.86</td><td>0.98</td></tr>
+     *     <tr><td>5</td><td>0.71</td><td>0.92</td><td>0.99</td></tr>
+     *     <tr><td>6</td><td>0.78</td><td>0.95</td><td>0.997</td></tr>
+     *     <tr><td>10</td><td>0.92</td><td>0.99</td><td>0.99999</td></tr>
+     *     <tr><td>20</td><td>0.99</td><td>0.99999</td><td>1</td></tr>
+     * </table>
+     * For example if lambda is 0.5 then 39% of flows have a length shorter than 1 second and 99% of flows have a length
+     * that is shorter than 10 seconds..
+     */
+    @Description("The lambda (decay) factor for the exponential distribution of flow durations (in seconds; larger lambdas yield shorter flow durations).")
     @Default.Double(0.5)
     Double getFlowDurationLambda();
     void setFlowDurationLambda(Double lambda);

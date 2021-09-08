@@ -1,0 +1,1 @@
+--numWindows=20 --fixedWindowSizeMs=10000 --defaultMaxInputDelayMs=60000 --earlyProcessingDelayMs=5000 --lateProcessingDelayMs=5000

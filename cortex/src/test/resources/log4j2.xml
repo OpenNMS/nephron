@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d %-5p [%t] %c{1.}: %m%n"/>
+        </Console>
+    </Appenders>
+    <Loggers>
+        <!--
+        <Logger name="org.apache.beam.sdk.util.WindowTracing" level="DEBUG"/>
+        -->
+        <Logger name="org.apache.beam.sdk.io.kafka" level="WARN"/>
+        <Logger name="org.apache.kafka.clients" level="WARN"/>
+        <Logger name="org.apache.kafka.common" level="WARN"/>
+        <!-- Keep this one at INFO for metrics -->
+        <Logger name="org.opennms.nephron.flows" level="INFO"/>
+        <Logger name="org.opennms.nephron.testing" level="DEBUG"/>
+        <Logger name="org.opennms.nephron.cortex" level="DEBUG"/>
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+        </Root>
+    </Loggers>
+</Configuration>
