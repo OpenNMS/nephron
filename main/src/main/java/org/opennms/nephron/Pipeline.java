@@ -362,18 +362,19 @@ public class Pipeline {
             TimeSeriesBuilder builder
     ) {
         final var agg = fsd.aggregate;
-        LOG.trace("cortex output - eventTimestamp: {}; keyType: {}; key: {}; index: {}; in: {}; out: {}; total: {}",
-                eventTimestamp, fsd.key.type, fsd.key, index, agg.getBytesIn(), agg.getBytesOut(), agg.getBytesIn() + agg.getBytesOut());
-        String pane = "pane-" + index;
-        doCortexOutput(fsd, eventTimestamp, pane, "in", agg.getBytesIn(), builder);
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("cortex output - eventTimestamp: {}; keyType: {}; key: {}; index: {}; in: {}; out: {}; total: {}",
+                    eventTimestamp, fsd.key.type, fsd.key, index, agg.getBytesIn(), agg.getBytesOut(), agg.getBytesIn() + agg.getBytesOut());
+        }
+        doCortexOutput(fsd, eventTimestamp, index, "in", agg.getBytesIn(), builder);
         builder.nextSeries();
-        doCortexOutput(fsd, eventTimestamp, pane, "out", agg.getBytesOut(), builder);
+        doCortexOutput(fsd, eventTimestamp, index, "out", agg.getBytesOut(), builder);
     }
 
     private static void doCortexOutput(
             FlowSummaryData fsd,
             Instant eventTimestamp,
-            String paneId,
+            int paneId,
             String direction,
             long bytes,
             TimeSeriesBuilder builder
