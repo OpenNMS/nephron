@@ -140,6 +140,11 @@ public class CortexIo {
 
     private static final Logger LOG_WRITE = LoggerFactory.getLogger(CortexIo.class.getName() + ".write");
 
+    public static final RateLimitedLog LOG_DETAILED_RESPONSE_FAILURE_METRICS = RateLimitedLog
+            .withRateLimit(LoggerFactory.getLogger(CortexIo.class.getName() + ".detailedResponseFailureMetrics"))
+            .maxRate(5).every(java.time.Duration.ofSeconds(10))
+            .build();
+
     private static final MediaType PROTOBUF_MEDIA_TYPE = MediaType.parse("application/x-protobuf");
 
     private static final String X_SCOPE_ORG_ID_HEADER = "X-Scope-OrgID";
@@ -325,6 +330,7 @@ public class CortexIo {
         private transient AtomicLong writes;
         private transient AtomicLong writeFailures;
         private transient AtomicLong responseFailures;
+        private transient Map<String, Map.Entry<AtomicLong, Counter>> detailedResponseFailures;
 
         // synchronizes on-going http requests and bundle finalization
         private transient Phaser phaser;
@@ -361,6 +367,7 @@ public class CortexIo {
             writes = new AtomicLong();
             writeFailures = new AtomicLong();
             responseFailures = new AtomicLong();
+            detailedResponseFailures = new HashMap<>();
         }
 
         /**
@@ -396,6 +403,13 @@ public class CortexIo {
             incrementCounter(writes, WRITE);
             incrementCounter(writeFailures, WRITE_FAILURE);
             incrementCounter(responseFailures, RESPONSE_FAILURE);
+            if (LOG_DETAILED_RESPONSE_FAILURE_METRICS.isTraceEnabled()) {
+                synchronized (detailedResponseFailures) {
+                    for (var e : detailedResponseFailures.values()) {
+                        incrementCounter(e.getKey(), e.getValue());
+                    }
+                }
+            }
         }
 
         @Teardown
@@ -495,27 +509,67 @@ public class CortexIo {
                         @Override
                         public void onResponse(Call call, Response response) {
                             try {
-                                LOG.trace("got response - code: {}, writeRequest: {}", response.code(), writeRequest);
-                                try (ResponseBody body = response.body()) {
-                                    if (!response.isSuccessful()) {
-                                        responseFailures.incrementAndGet();
-                                        String bodyAsString;
-                                        if (body != null) {
-                                            try {
-                                                bodyAsString = body.string();
-                                            } catch (IOException e) {
-                                                bodyAsString = "(error reading body)";
-                                            }
-                                        } else {
-                                            bodyAsString = "(null)";
-                                        }
-                                        RATE_LIMITED_LOG.error("Write to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString.trim() + "; request: " + writeRequest);
-                                    }
+                                if (LOG.isTraceEnabled()) {
+                                    LOG.trace("got response - code: {}, writeRequest: {}", response.code(), writeRequest);
+                                }
+                                if (!response.isSuccessful()) {
+                                    responseFailures.incrementAndGet();
+                                    handleUnsuccessfulResponse(response);
                                 }
                             } finally {
                                 phaser.arriveAndDeregister();
                             }
                             spec.responseHandlers.forEach(handler -> handler.accept(call, response));
+                        }
+
+                        private void handleUnsuccessfulResponse(Response response) {
+                            try (ResponseBody body = response.body()) {
+                                String bodyAsString;
+                                if (body != null) {
+                                    try {
+                                        bodyAsString = body.string();
+                                        if (LOG_DETAILED_RESPONSE_FAILURE_METRICS.isTraceEnabled()) {
+                                            incrementDetailedResponseFailure(response.code(), determineErrorKind(bodyAsString));
+                                        }
+                                    } catch (IOException e) {
+                                        bodyAsString = "(error reading body)";
+                                        if (LOG_DETAILED_RESPONSE_FAILURE_METRICS.isTraceEnabled()) {
+                                            incrementDetailedResponseFailure(response.code(), "body_read_error");
+                                        }
+                                    }
+                                } else {
+                                    bodyAsString = "(null)";
+                                    if (LOG_DETAILED_RESPONSE_FAILURE_METRICS.isTraceEnabled()) {
+                                        incrementDetailedResponseFailure(response.code(), "body_empty");
+                                    }
+                                }
+                                RATE_LIMITED_LOG.error("Write to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString.trim() + "; request: " + writeRequest);
+                            }
+                        }
+
+                        private String determineErrorKind(String body) {
+                            var idx1 = body.indexOf("err: ");
+                            if (idx1 >= 0) {
+                                var idx2 = body.indexOf('.', idx1 + 5);
+                                if (idx2 > 0) {
+                                    return body.substring(idx1 + 5, idx2);
+                                }
+                            }
+                            LOG_DETAILED_RESPONSE_FAILURE_METRICS.trace("could not extract error kind - body: {}", body);
+                            return "body_unknown";
+                        }
+
+                        private void incrementDetailedResponseFailure(int responseCode, String errorKind) {
+                            var suffix = String.valueOf(responseCode) + ' ' + errorKind;
+                            Map.Entry<AtomicLong, Counter> entry;
+                            synchronized (detailedResponseFailures) {
+                                entry = detailedResponseFailures.get(suffix);
+                                if (entry == null) {
+                                    entry = Map.entry(new AtomicLong(), Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_RESPONSE_FAILURE_METRIC_NAME + '_' + suffix));
+                                    detailedResponseFailures.put(suffix, entry);
+                                }
+                            }
+                            entry.getKey().incrementAndGet();
                         }
                     }
             );
