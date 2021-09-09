@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.function.Consumer;
 
 import org.apache.beam.repackaged.core.org.apache.commons.lang3.StringUtils;
 import org.apache.beam.sdk.coders.CoderRegistry;
@@ -235,6 +236,18 @@ public class Pipeline {
     }
 
     public static void attachWriteToCortex(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        attachWriteToCortex(options, flowSummaries, cw -> {});
+    }
+
+    /**
+     * @param additionalConfig Allows for additional configuration of the Cortex writer; used by the benchmark
+     *                         application for adding a label that differentiates benchmark runs.
+     */
+    public static void attachWriteToCortex(
+            NephronOptions options,
+            PCollection<FlowSummaryData> flowSummaries,
+            Consumer<CortexIo.Write<CompoundKey, FlowSummaryData>> additionalConfig
+    ) {
         if (cortexOutputEnabled(options)) {
             CortexIo.Write<CompoundKey, FlowSummaryData> cortexWrite;
             if (options.getCortexAccumulationDelayMs() != 0) {
@@ -249,8 +262,8 @@ public class Pipeline {
             }
             cortexWrite
                     .withMaxBatchSize(options.getCortexMaxBatchSize())
-                    .withMaxBatchBytes(options.getCortexMaxBatchBytes())
-            ;
+                    .withMaxBatchBytes(options.getCortexMaxBatchBytes());
+            additionalConfig.accept(cortexWrite);
             if (!Strings.isNullOrEmpty(options.getCortexOrgId())) {
                 cortexWrite.withOrgId(options.getCortexOrgId());
             }

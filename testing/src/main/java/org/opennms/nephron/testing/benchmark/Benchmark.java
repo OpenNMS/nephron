@@ -51,6 +51,7 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PCollection;
+import org.joda.time.DateTimeFieldType;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.nephron.FlowSummaryData;
@@ -230,7 +231,11 @@ public class Benchmark {
         flowSummaries = flowSummaries.apply(outTestingProbe.getTransform());
 
         attachWriteToElastic(options, flowSummaries);
-        attachWriteToCortex(options, flowSummaries);
+        // add an additional label that differentiates benchmark runs
+        // -> ensures that samples of different runs do not conflict
+        //    (Cortex's sample time ordering constraint could be violated because the EventTimestampIndexer logic is started anew for each run)
+        // -> use the current minute as a distinguishing value
+        attachWriteToCortex(options, flowSummaries, cw -> cw.withFixedLabel("bmr", String.valueOf(Instant.now().get(DateTimeFieldType.minuteOfHour()))));
 
         flowSummaries.apply(devNull("summaries"));
 
