@@ -222,7 +222,7 @@ public class CortexIo {
         }
 
         public Write<K, V> withOrgId(String value) {
-            this.orgId = orgId;
+            this.orgId = value;
             return this;
         }
 
