@@ -555,6 +555,9 @@ public class CortexIo {
                                     return body.substring(idx1 + 5, idx2);
                                 }
                             }
+                            if (body.contains("per-user series limit")) {
+                                return "per_user_series_limit";
+                            }
                             LOG_DETAILED_RESPONSE_FAILURE_METRICS.trace("could not extract error kind - body: {}", body);
                             return "body_unknown";
                         }
@@ -696,11 +699,7 @@ public class CortexIo {
 
         private static final String OUTPUT_TIMER_NAME = "output";
         private static final String GC_TIMER_NAME = "gc";
-        private static final String KEY_STATE_NAME = "key";
         private static final String HEAP_STATE_NAME = "heap";
-
-        @StateId(KEY_STATE_NAME)
-        private final StateSpec<ValueState<K>> keyStateSpec;
 
         @StateId(HEAP_STATE_NAME)
         private final StateSpec<ValueState<Heap.HeapImpl<V>>> heapStateSpec;
@@ -713,14 +712,12 @@ public class CortexIo {
 
         public WriteFnWithAccumulation(WriteWithAccumulation<K, V> spec, Duration allowedLateness) {
             super(spec, allowedLateness);
-            keyStateSpec = StateSpecs.value(spec.keyCoder);
             heapStateSpec = StateSpecs.value(new Heap.HeapImpl.HeapImplCoder<>(spec.valueCoder));
         }
 
         @ProcessElement
         public void processElement(
                 ProcessContext ctx,
-                @StateId(KEY_STATE_NAME) ValueState<K> keyState,
                 @AlwaysFetched @StateId(HEAP_STATE_NAME) ValueState<Heap.HeapImpl<V>> heapState,
                 @TimerId(OUTPUT_TIMER_NAME) Timer outputTimer,
                 @TimerId(GC_TIMER_NAME) Timer gcTimer
@@ -729,8 +726,6 @@ public class CortexIo {
             if (heap == null) {
                 LOG.debug("create heap - key: {}", ctx.element().getKey());
                 heap = new Heap.HeapImpl<>(new EventTimestampIndexer(), new HashMap<>());
-                // also set the keyState for remembering the key
-                keyState.write(ctx.element().getKey());
             }
             if (heap.isEmpty()) {
                 // the first value is added to the heap
@@ -748,7 +743,7 @@ public class CortexIo {
         @OnTimer(OUTPUT_TIMER_NAME)
         public void onOutput(
                 OnTimerContext ctx,
-                @StateId(KEY_STATE_NAME) ValueState<K> keyState,
+                @Key K key,
                 @AlwaysFetched @StateId(HEAP_STATE_NAME) ValueState<Heap.HeapImpl<V>> heapState,
                 @TimerId(OUTPUT_TIMER_NAME) Timer timer
         ) throws IOException {
@@ -756,7 +751,7 @@ public class CortexIo {
             // check if the heap was garbage collected in the meantime
             if (heap != null) {
                 Instant now = Instant.now();
-                var changed = flushHeap(heap, keyState, now, spec.accumulationDelay, "after accumulation");
+                var changed = flushHeap(heap, key, now, spec.accumulationDelay, "after accumulation");
                 if (changed) {
                     // some values where flushed from the heap
                     // -> the heap has changed and must be written back
@@ -774,25 +769,23 @@ public class CortexIo {
 
         @OnTimer(GC_TIMER_NAME)
         public void onGc(
-                @StateId(KEY_STATE_NAME) ValueState<K> keyState,
+                @Key K key,
                 @AlwaysFetched @StateId(HEAP_STATE_NAME) ValueState<Heap.HeapImpl<V>> heapState
         ) throws IOException {
             var heap = heapState.read();
             if (heap != null) {
-                flushHeap(heap, keyState, Instant.now(), Duration.ZERO, "on garbage collection");
-                keyState.clear();
+                flushHeap(heap, key, Instant.now(), Duration.ZERO, "on garbage collection");
                 heapState.clear();
             }
         }
 
-        private boolean flushHeap(Heap<V> heap, ValueState<K> keyState, Instant now, Duration outputDelay, String when) throws IOException {
+        private boolean flushHeap(Heap<V> heap, K key, Instant now, Duration outputDelay, String when) throws IOException {
             // flush all values (that are older than 'now - outputDelay')
             var fs = heap.flush(now, outputDelay);
             if (LOG.isTraceEnabled()) {
-                LOG.trace("flush values from heap {} - key: {}; size: {}", when, keyState.read(), fs.size());
+                LOG.trace("flush values from heap {} - key: {}; size: {}", when, key, fs.size());
             }
             if (!fs.isEmpty()) {
-                var key = keyState.read();
                 for (var f : fs) {
                     outputTimeSeries(builder -> spec.build.accept(key, f.value, f.eventTimestamp, f.index, builder));
                 }
