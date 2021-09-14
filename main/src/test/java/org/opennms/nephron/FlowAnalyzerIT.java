@@ -242,8 +242,8 @@ public class FlowAnalyzerIT {
         final QueryBuilder query = QueryBuilders.termQuery("grouped_by", "EXPORTER_INTERFACE");
 
         await().atMost(2, TimeUnit.MINUTES).pollInterval(1, TimeUnit.SECONDS)
-                .ignoreExceptions()
-                .until(() -> getFirstNFlowSummmariesFromES(20, options, query).get(), hasSize(6));
+               .ignoreExceptions()
+               .until(() -> getFirstNFlowSummmariesFromES(20, options, query).get(), hasSize(6));
 
         Thread.sleep(10_000);
 
