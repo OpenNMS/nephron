@@ -371,24 +371,28 @@ public class RandomFlowIT {
                     })
                     .collect(Collectors.toList());
 
-            // determine the minimum and maximum timestamps for each exporter
-            // -> the results of windows with these timestamps may be incomplete
+            // determine the minimum and maximum timestamps for each exporter / interface
+            // -> the results with these timestamps may be incomplete because the simulation is not aligned to windows
             // -> remove flows with these timestamps
             var minColl = Collectors.mapping(FlowSummary::getTimestamp, Collectors.minBy(Comparator.naturalOrder()));
             var maxColl = Collectors.mapping(FlowSummary::getTimestamp, Collectors.maxBy(Comparator.naturalOrder()));
-            var mins = summaries.stream().collect(Collectors.groupingBy(FlowSummary::getExporter, minColl));
-            var maxs = summaries.stream().collect(Collectors.groupingBy(FlowSummary::getExporter, maxColl));
+            var mins = summaries.stream().collect(Collectors.groupingBy(RandomFlowIT::exporterAndIfIdx, minColl));
+            var maxs = summaries.stream().collect(Collectors.groupingBy(RandomFlowIT::exporterAndIfIdx, maxColl));
 
             LOG.info("retrieved flows - size: " + summaries.size());
 
             var filtered = summaries.stream()
-                    .filter(fs -> mins.get(fs.getExporter()).map(m -> m != fs.getTimestamp()).orElse(true))
-                    .filter(fs -> maxs.get(fs.getExporter()).map(m -> m != fs.getTimestamp()).orElse(true))
+                    .filter(fs -> mins.get(exporterAndIfIdx(fs)).map(m -> m != fs.getTimestamp()).orElse(true))
+                    .filter(fs -> maxs.get(exporterAndIfIdx(fs)).map(m -> m != fs.getTimestamp()).orElse(true))
                     .collect(Collectors.toList());
 
-            LOG.info("filtered flows - size: " + summaries.size());
+            LOG.info("filtered flows - size: " + filtered.size());
             return filtered;
         });
+    }
+
+    private static Map.Entry exporterAndIfIdx(FlowSummary fs) {
+        return Map.entry(fs.getExporter(), fs.getIfIndex());
     }
 
     @Test
