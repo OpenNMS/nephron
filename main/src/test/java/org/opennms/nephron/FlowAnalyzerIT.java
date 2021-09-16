@@ -206,9 +206,7 @@ public class FlowAnalyzerIT {
 
         // Basic sanity check on the flow summary
         FlowSummary firstFlowSummary = flowSummaries.get(0);
-        assertThat(firstFlowSummary.getGroupedByKey(), notNullValue());
         assertThat(firstFlowSummary.getRangeEndMs(), greaterThanOrEqualTo(firstFlowSummary.getRangeStartMs()));
-        assertThat(firstFlowSummary.getRanking(), greaterThanOrEqualTo(0));
     }
 
     @Test
@@ -251,8 +249,8 @@ public class FlowAnalyzerIT {
         assertThat(flowSummaries, hasSize(6));
 
         final Map<String, LongSummaryStatistics> summaries = flowSummaries.stream()
-                                                                          .collect(Collectors.groupingBy(FlowSummary::getGroupedByKey,
-                                                                                                         Collectors.summarizingLong(FlowSummary::getBytesTotal)));
+                .collect(Collectors.groupingBy(FlowAnalyzerIT::exporterAndInterface,
+                        Collectors.summarizingLong(FlowSummary::getBytesTotal)));
 
         assertThat(summaries, is(aMapWithSize(3)));
 
@@ -356,6 +354,9 @@ public class FlowAnalyzerIT {
         };
     }
 
+    public static String exporterAndInterface(FlowSummary fs) {
+        return fs.getExporter().getForeignSource() + ':' + fs.getExporter().getForeignId() + '-' + fs.getIfIndex();
+    }
 
     public CompletableFuture<List<FlowSummary>> getFirstNFlowSummmariesFromES(int numDocs, NephronOptions options) {
         return getFirstNFlowSummmariesFromES(numDocs, options, QueryBuilders.matchAllQuery());

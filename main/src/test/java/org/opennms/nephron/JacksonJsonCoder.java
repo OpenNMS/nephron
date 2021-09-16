@@ -61,8 +61,8 @@ public class JacksonJsonCoder<T> extends Coder<T> {
     public static ParDo.SingleOutput<FlowSummaryData, FlowSummary> TO_FLOW_SUMMARY =
             ParDo.of(new DoFn<FlowSummaryData, FlowSummary>() {
                 @ProcessElement
-                public void processElement(ProcessContext c) {
-                    c.output(toFlowSummary(c.element()));
+                public void processElement(ProcessContext c, IntervalWindow window) {
+                    c.output(toFlowSummary(c.element(), window));
                 }
             });
 

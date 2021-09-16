@@ -54,25 +54,31 @@ import org.opennms.netmgt.flows.persistence.model.FlowDocument;
  */
 public enum CompoundKeyType {
 
-    EXPORTER(null, EXPORTER_PART),
-    EXPORTER_INTERFACE(EXPORTER, INTERFACE_PART),
+    EXPORTER(true, null, EXPORTER_PART),
+    EXPORTER_INTERFACE(true, EXPORTER, INTERFACE_PART),
 
-    EXPORTER_INTERFACE_APPLICATION(EXPORTER_INTERFACE, APPLICATION_PART),
-    EXPORTER_INTERFACE_CONVERSATION(EXPORTER_INTERFACE, CONVERSATION_PART),
-    EXPORTER_INTERFACE_HOST(EXPORTER_INTERFACE, HOST_PART),
+    EXPORTER_INTERFACE_APPLICATION(false, EXPORTER_INTERFACE, APPLICATION_PART),
+    EXPORTER_INTERFACE_CONVERSATION(false, EXPORTER_INTERFACE, CONVERSATION_PART),
+    EXPORTER_INTERFACE_HOST(false, EXPORTER_INTERFACE, HOST_PART),
 
-    EXPORTER_INTERFACE_TOS(EXPORTER_INTERFACE, DSCP_PART),
+    EXPORTER_INTERFACE_TOS(true, EXPORTER_INTERFACE, DSCP_PART),
 
-    EXPORTER_INTERFACE_TOS_APPLICATION(EXPORTER_INTERFACE_TOS, APPLICATION_PART),
-    EXPORTER_INTERFACE_TOS_CONVERSATION(EXPORTER_INTERFACE_TOS, CONVERSATION_PART),
-    EXPORTER_INTERFACE_TOS_HOST(EXPORTER_INTERFACE_TOS, HOST_PART);
+    EXPORTER_INTERFACE_TOS_APPLICATION(false, EXPORTER_INTERFACE_TOS, APPLICATION_PART),
+    EXPORTER_INTERFACE_TOS_CONVERSATION(false, EXPORTER_INTERFACE_TOS, CONVERSATION_PART),
+    EXPORTER_INTERFACE_TOS_HOST(false, EXPORTER_INTERFACE_TOS, HOST_PART);
 
-    private CompoundKeyType parent;
-    private RefType[] parts;
+    private final boolean totalNotTopK;
+    private final CompoundKeyType parent;
+    private final RefType[] parts;
 
-    CompoundKeyType(CompoundKeyType parent, RefType... parts) {
+    CompoundKeyType(boolean totalNotTopK, CompoundKeyType parent, RefType... parts) {
+        this.totalNotTopK = totalNotTopK;
         this.parent = parent;
         this.parts = parent == null ? parts : ArrayUtils.addAll(parent.parts, parts);
+    }
+
+    public boolean isTotalNotTopK() {
+        return totalNotTopK;
     }
 
     public CompoundKeyType getParent() {
@@ -107,7 +113,6 @@ public enum CompoundKeyType {
 
     void populate(CompoundKeyData data, FlowSummary flow) {
         flow.setGroupedBy(this);
-        flow.setGroupedByKey(groupedByKey(data));
         for (RefType refType: parts) {
             refType.populate(data, flow);
         }

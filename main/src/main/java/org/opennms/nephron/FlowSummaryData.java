@@ -47,30 +47,19 @@ import org.opennms.nephron.elastic.AggregationType;
  */
 @DefaultCoder(FlowSummaryData.FlowSummaryDataCoder.class)
 public class FlowSummaryData {
-    public final AggregationType aggregationType;
     public final CompoundKey key;
     public final Aggregate aggregate;
-    public final long windowStart, windowEnd;
-    public final int ranking;
 
-    public FlowSummaryData(AggregationType aggregationType, CompoundKey key, Aggregate aggregate, long windowStart, long windowEnd, int ranking) {
-        this.aggregationType = aggregationType;
-        this.key = key;
-        this.aggregate = aggregate;
-        this.windowStart = windowStart;
-        this.windowEnd = windowEnd;
-        this.ranking = ranking;
+    public FlowSummaryData(CompoundKey key, Aggregate aggregate) {
+        this.key = Objects.requireNonNull(key);
+        this.aggregate = Objects.requireNonNull(aggregate);
     }
 
     @Override
     public String toString() {
         return "FlowSummaryData{" +
-               "aggregationType=" + aggregationType +
-               ", key=" + key +
+               "key=" + key +
                ", aggregate=" + aggregate +
-               ", windowStart=" + windowStart +
-               ", windowEnd=" + windowEnd +
-               ", ranking=" + ranking +
                '}';
     }
 
@@ -83,40 +72,30 @@ public class FlowSummaryData {
             return false;
         }
         FlowSummaryData that = (FlowSummaryData) o;
-        return windowStart == that.windowStart && windowEnd == that.windowEnd && ranking == that.ranking && aggregationType == that.aggregationType && Objects.equals(this.key, that.key) && Objects.equals(this.aggregate, that.aggregate);
+        return key.equals(that.key) && aggregate.equals(that.aggregate);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(aggregationType, key, aggregate, windowStart, windowEnd, ranking);
+        return Objects.hash(key, aggregate);
     }
 
     public static class FlowSummaryDataCoder extends AtomicCoder<FlowSummaryData> {
 
-        private static Coder<Integer> INT_CODER = VarIntCoder.of();
-        private static Coder<Long> LONG_CODER = VarLongCoder.of();
         private static Coder<CompoundKey> KEY_CODER = new CompoundKey.CompoundKeyCoder();
         private static Coder<Aggregate> AGG_CODER = new Aggregate.AggregateCoder();
 
         @Override
         public void encode(FlowSummaryData value, OutputStream outStream) throws IOException {
-            INT_CODER.encode(value.aggregationType.ordinal(), outStream);
             KEY_CODER.encode(value.key, outStream);
             AGG_CODER.encode(value.aggregate, outStream);
-            LONG_CODER.encode(value.windowStart, outStream);
-            LONG_CODER.encode(value.windowEnd, outStream);
-            INT_CODER.encode(value.ranking, outStream);
         }
 
         @Override
         public FlowSummaryData decode(InputStream inStream) throws IOException {
             return new FlowSummaryData(
-                    AggregationType.values()[INT_CODER.decode(inStream)],
                     KEY_CODER.decode(inStream),
-                    AGG_CODER.decode(inStream),
-                    LONG_CODER.decode(inStream),
-                    LONG_CODER.decode(inStream),
-                    INT_CODER.decode(inStream)
+                    AGG_CODER.decode(inStream)
             );
         }
 

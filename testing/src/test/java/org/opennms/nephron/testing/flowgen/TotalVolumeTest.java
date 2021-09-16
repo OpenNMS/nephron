@@ -354,7 +354,7 @@ public class TotalVolumeTest {
                     @ProcessElement
                     public void processElement(ProcessContext c) {
                         FlowSummaryData fsd = c.element();
-                        if (fsd.aggregationType == AggregationType.TOPK) return;
+                        if (!fsd.key.type.isTotalNotTopK()) return;
                         ResKey resKey = new ResKey(c.timestamp().getMillis(), fsd.key);
                         String strKey = resKey.asString();
                         Metrics.counter(strKey, "in").inc(fsd.aggregate.getBytesIn());
