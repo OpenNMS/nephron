@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.function.Consumer;
 
 import org.apache.beam.repackaged.core.org.apache.commons.lang3.StringUtils;
 import org.apache.beam.sdk.coders.CoderRegistry;
@@ -78,6 +79,7 @@ import org.joda.time.Instant;
 import org.opennms.nephron.coders.FlowDocumentProtobufCoder;
 import org.opennms.nephron.coders.KafkaInputFlowDeserializer;
 import org.opennms.nephron.cortex.CortexIo;
+import org.opennms.nephron.util.PaneAccumulator;
 import org.opennms.nephron.cortex.TimeSeriesBuilder;
 import org.opennms.nephron.elastic.AggregationType;
 import org.opennms.nephron.elastic.FlowSummary;
@@ -144,12 +146,38 @@ public class Pipeline {
         // Calculate the flow summary statistics
         PCollection<FlowSummaryData> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
 
+        flowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
+
         // optionally attach different kinds of sinks
         attachWriteToElastic(options, flowSummaries);
         attachWriteToKafka(options, flowSummaries);
         attachWriteToCortex(options, flowSummaries);
 
         return p;
+    }
+
+    public static PCollection<FlowSummaryData> accumulateSummariesIfNecessary(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        if (options.getSummaryAccumulationDelayMs() != 0) {
+            return accumulateFlowSummaries(flowSummaries, Duration.millis(options.getSummaryAccumulationDelayMs()));
+        } else {
+            return flowSummaries;
+        }
+    }
+
+    public static PCollection<FlowSummaryData> accumulateFlowSummaries(
+            PCollection<FlowSummaryData> input,
+            Duration accumulationDelay
+    ) {
+        var paneAccumulator = new PaneAccumulator<>(
+                Pipeline::combineFlowSummaryData,
+                accumulationDelay,
+                new CompoundKey.CompoundKeyCoder(),
+                new FlowSummaryData.FlowSummaryDataCoder()
+        );
+        return input
+                .apply(KEY_SUMMARIES)
+                .apply(paneAccumulator)
+                .apply(Values.create());
     }
 
     private static FlowSummaryData combineFlowSummaryData(
@@ -202,6 +230,18 @@ public class Pipeline {
     }
 
     public static void attachWriteToCortex(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+        attachWriteToCortex(options, flowSummaries, cw -> {});
+    }
+
+    /**
+     * @param additionalConfig Allows for additional configuration of the Cortex writer; used by the benchmark
+     *                         application for adding a label that differentiates benchmark runs.
+     */
+    public static void attachWriteToCortex(
+            NephronOptions options,
+            PCollection<FlowSummaryData> flowSummaries,
+            Consumer<CortexIo.Write<CompoundKey, FlowSummaryData>> additionalConfig
+    ) {
         if (cortexOutputEnabled(options)) {
             CortexIo.Write<CompoundKey, FlowSummaryData> cortexWrite;
             if (options.getCortexAccumulationDelayMs() != 0) {
@@ -216,8 +256,8 @@ public class Pipeline {
             }
             cortexWrite
                     .withMaxBatchSize(options.getCortexMaxBatchSize())
-                    .withMaxBatchBytes(options.getCortexMaxBatchBytes())
-            ;
+                    .withMaxBatchBytes(options.getCortexMaxBatchBytes());
+            additionalConfig.accept(cortexWrite);
             if (!Strings.isNullOrEmpty(options.getCortexOrgId())) {
                 cortexWrite.withOrgId(options.getCortexOrgId());
             }
@@ -316,18 +356,19 @@ public class Pipeline {
             TimeSeriesBuilder builder
     ) {
         final var agg = fsd.aggregate;
-        LOG.trace("cortex output - eventTimestamp: {}; keyType: {}; key: {}; index: {}; in: {}; out: {}; total: {}",
-                eventTimestamp, fsd.key.type, fsd.key, index, agg.getBytesIn(), agg.getBytesOut(), agg.getBytesIn() + agg.getBytesOut());
-        String pane = "pane-" + index;
-        doCortexOutput(fsd, eventTimestamp, pane, "in", agg.getBytesIn(), builder);
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("cortex output - eventTimestamp: {}; keyType: {}; key: {}; index: {}; in: {}; out: {}; total: {}",
+                    eventTimestamp, fsd.key.type, fsd.key, index, agg.getBytesIn(), agg.getBytesOut(), agg.getBytesIn() + agg.getBytesOut());
+        }
+        doCortexOutput(fsd, eventTimestamp, index, "in", agg.getBytesIn(), builder);
         builder.nextSeries();
-        doCortexOutput(fsd, eventTimestamp, pane, "out", agg.getBytesOut(), builder);
+        doCortexOutput(fsd, eventTimestamp, index, "out", agg.getBytesOut(), builder);
     }
 
     private static void doCortexOutput(
             FlowSummaryData fsd,
             Instant eventTimestamp,
-            String paneId,
+            int paneId,
             String direction,
             long bytes,
             TimeSeriesBuilder builder
@@ -353,10 +394,6 @@ public class Pipeline {
         public CalculateFlowStatistics(int topK, PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing) {
             this.topK = topK;
             this.windowing = windowing;
-        }
-
-        public CalculateFlowStatistics(int topK, Duration fixedWindowSize, Duration maxFlowDuration, Duration earlyProcessingDelay, Duration lateProcessingDelay, Duration allowedLateness) {
-            this(topK, new WindowedFlows(fixedWindowSize, maxFlowDuration, earlyProcessingDelay, lateProcessingDelay, allowedLateness));
         }
 
         public CalculateFlowStatistics(NephronOptions options) {

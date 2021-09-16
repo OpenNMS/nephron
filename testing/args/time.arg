@@ -1,1 +1,1 @@
---numWindows=20 --fixedWindowSizeMs=10000 --defaultMaxInputDelayMs=60000 --earlyProcessingDelayMs=5000 --lateProcessingDelayMs=5000
+--numWindows=20 --fixedWindowSizeMs=10000 --earlyProcessingDelayMs=10000 --lateProcessingDelayMs=10000 --defaultMaxInputDelayMs=60000 --allowedLatenessMs=120000 --sleepBetweenRunsMs=60000

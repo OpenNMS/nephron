@@ -28,6 +28,7 @@
 
 package org.opennms.nephron.testing.benchmark;
 
+import static org.opennms.nephron.Pipeline.accumulateSummariesIfNecessary;
 import static org.opennms.nephron.Pipeline.attachWriteToCortex;
 import static org.opennms.nephron.Pipeline.attachWriteToElastic;
 import static org.opennms.nephron.Pipeline.registerCoders;
@@ -50,6 +51,7 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PCollection;
+import org.joda.time.DateTimeFieldType;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.opennms.nephron.FlowSummaryData;
@@ -117,44 +119,46 @@ public class Benchmark {
 
         var executor = Executors.newSingleThreadExecutor();
 
-        for (var paramList: paramLists) {
-            executeCommand(cmdLineArgs.before);
-            var as = paramList.toArray(new String[0]);
-            as = ensureArg("--blockOnRun=false", as);
-            // the benchmark may write to ES; disabled by default (override default from NephronOptions)
-            as = ensureArg("--elasticUrl=", as);
-            var options = PipelineOptionsFactory.fromArgs(as).withValidation().as(BenchmarkOptions.class);
-            var pl = new ArrayList(paramList);
-            pl.removeAll(commonParameters);
-            resultConsumer.accept("=".repeat(30));
-            resultConsumer.accept(String.format("start pipeline run [%d/%d] at : %s", counter, paramLists.size(), Instant.now()));
-            resultConsumer.accept(String.format("varying pipeline arguments : %s", pl.stream().sorted().collect(Collectors.joining(" "))));
-            // The Apache beam flink runner automatically determines the jars / resources necessary for running the pipeline
-            // (cf. org.apache.beam.runners.flink.FlinkPipelineExecutionEnvironment#prepareFilesToStageForRemoteClusterExecution)
-            // -> this is done by considering involved class loaders
-            // -> in particular, the call stack is traversed to consider the class loaders of all classes on the call stack
-            //    (cf. nonapi.io.github.classgraph.classpath.ClassLoaderFinder)
-            // -> when the benchmark is run by maven then the maven exec plugin is on the call stack
-            // -> this would result in all maven classes being added as dependencies to the Flink job
-            // -> run the pipeline in a separate thread (thereby removing maven from the call stack)
-            var f = executor.submit(() -> {
-                try {
-                    new Benchmark(options, resultConsumer).run();
-                } catch (Exception e) {
-                    LOG.error("benchmark failed", e);
-                    throw new RuntimeException(e);
+        try {
+            for (var paramList : paramLists) {
+                executeCommand(cmdLineArgs.before);
+                var as = paramList.toArray(new String[0]);
+                as = ensureArg("--blockOnRun=false", as);
+                as = ensureArg("--runner=FlinkRunner", as);
+                // the benchmark may write to ES; disabled by default (override default from NephronOptions)
+                as = ensureArg("--elasticUrl=", as);
+                var options = PipelineOptionsFactory.fromArgs(as).withValidation().as(BenchmarkOptions.class);
+                var pl = new ArrayList(paramList);
+                pl.removeAll(commonParameters);
+                resultConsumer.accept("=".repeat(30));
+                resultConsumer.accept(String.format("start pipeline run [%d/%d] at : %s", counter, paramLists.size(), Instant.now()));
+                resultConsumer.accept(String.format("varying pipeline arguments : %s", pl.stream().sorted().collect(Collectors.joining(" "))));
+                // The Apache beam flink runner automatically determines the jars / resources necessary for running the pipeline
+                // (cf. org.apache.beam.runners.flink.FlinkPipelineExecutionEnvironment#prepareFilesToStageForRemoteClusterExecution)
+                // -> this is done by considering involved class loaders
+                // -> in particular, the call stack is traversed to consider the class loaders of all classes on the call stack
+                //    (cf. nonapi.io.github.classgraph.classpath.ClassLoaderFinder)
+                // -> when the benchmark is run by maven then the maven exec plugin is on the call stack
+                // -> this would result in all maven classes being added as dependencies to the Flink job
+                // -> run the pipeline in a separate thread (thereby removing maven from the call stack)
+                var f = executor.submit(() -> {
+                    try {
+                        new Benchmark(options, resultConsumer).run();
+                    } catch (Exception e) {
+                        LOG.error("benchmark failed", e);
+                        throw new RuntimeException(e);
+                    }
+                });
+                f.get();
+                executeCommand(cmdLineArgs.after);
+                if (counter < paramLists.size() && options.getSleepBetweenRunsMs() > 0) {
+                    Thread.sleep(options.getSleepBetweenRunsMs());
                 }
-            });
-            f.get();
-            executeCommand(cmdLineArgs.after);
-            if (counter < paramLists.size() && options.getSleepBetweenRunsMs() > 0) {
-                Thread.sleep(options.getSleepBetweenRunsMs());
+                counter++;
             }
-            counter++;
+        } finally {
+            executor.shutdown();
         }
-
-        executor.shutdown();
-
     }
 
     public static Set<String> commonParameters(List<List<String>> paramLists) {
@@ -178,6 +182,9 @@ public class Benchmark {
         }
     }
 
+    /**
+     * Adds an argument assignment to the given args array if that argument is not yet set.
+     */
     private static String[] ensureArg(String argAssignment, String[] args) {
         if (argValue(argAssignment, args) != null) {
             return args;
@@ -193,7 +200,7 @@ public class Benchmark {
         String leftHandSide = arg.substring(0, arg.indexOf('=') + 1);
         for (String a: args) {
             if (a.startsWith(leftHandSide)) {
-                return a.substring(leftHandSide.length() + 1);
+                return a.substring(leftHandSide.length());
             }
         }
         return null;
@@ -224,10 +231,16 @@ public class Benchmark {
                 .apply(inTestingProbe.getTransform())
                 .apply(new Pipeline.CalculateFlowStatistics(options));
 
+        flowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
+
         flowSummaries = flowSummaries.apply(outTestingProbe.getTransform());
 
         attachWriteToElastic(options, flowSummaries);
-        attachWriteToCortex(options, flowSummaries);
+        // add an additional label that differentiates benchmark runs
+        // -> ensures that samples of different runs do not conflict
+        //    (Cortex's sample time ordering constraint could be violated because the EventTimestampIndexer logic is started anew for each run)
+        // -> use the current time as a distinguishing value
+        attachWriteToCortex(options, flowSummaries, cw -> cw.withFixedLabel("bmr", Instant.now().toString()));
 
         flowSummaries.apply(devNull("summaries"));
 

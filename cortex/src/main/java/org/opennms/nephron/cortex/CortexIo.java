@@ -64,6 +64,7 @@ import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
+import org.apache.commons.lang3.tuple.Pair;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
@@ -107,6 +108,10 @@ import prometheus.PrometheusTypes;
  * derived that allow to disambiguate samples for the same event timestamps. The accumulating sink
  * additionally uses Beam's timer mechanism to hold back values for accumulation and flushes values after a configured
  * output delay.
+ * <p>
+ * Note: The {@code PaneAccumulator} class can be used to achieve the same accumulation effect that the accumulating
+ * Cortex sink has. It makes sense to use the {@code PaneAccumulator} if several sinks can benefit
+ * from accumulated outputs. In case of a single sink the accumulating Cortex sink is preferable.
  * <p>
  * Sinks are configured by the {@link Write} class and are implemented by subclasses of the {@link WriteFn} class.
  * Sinks provide the following counter metrics in the "cortex" namespace:
@@ -213,7 +218,7 @@ public class CortexIo {
         }
 
         public Write<K, V> withOrgId(String value) {
-            this.orgId = orgId;
+            this.orgId = value;
             return this;
         }
 
@@ -321,6 +326,7 @@ public class CortexIo {
         private transient AtomicLong writes;
         private transient AtomicLong writeFailures;
         private transient AtomicLong responseFailures;
+        private transient Map<String, Pair<AtomicLong, Counter>> detailedResponseFailures;
 
         // synchronizes on-going http requests and bundle finalization
         private transient Phaser phaser;
@@ -357,6 +363,7 @@ public class CortexIo {
             writes = new AtomicLong();
             writeFailures = new AtomicLong();
             responseFailures = new AtomicLong();
+            detailedResponseFailures = new HashMap<>();
         }
 
         /**
@@ -392,6 +399,11 @@ public class CortexIo {
             incrementCounter(writes, WRITE);
             incrementCounter(writeFailures, WRITE_FAILURE);
             incrementCounter(responseFailures, RESPONSE_FAILURE);
+            synchronized (detailedResponseFailures) {
+                for (var e : detailedResponseFailures.values()) {
+                    incrementCounter(e.getLeft(), e.getRight());
+                }
+            }
         }
 
         @Teardown
@@ -491,27 +503,49 @@ public class CortexIo {
                         @Override
                         public void onResponse(Call call, Response response) {
                             try {
-                                LOG.trace("got response - code: {}, writeRequest: {}", response.code(), writeRequest);
-                                try (ResponseBody body = response.body()) {
-                                    if (!response.isSuccessful()) {
-                                        responseFailures.incrementAndGet();
-                                        String bodyAsString;
-                                        if (body != null) {
-                                            try {
-                                                bodyAsString = body.string();
-                                            } catch (IOException e) {
-                                                bodyAsString = "(error reading body)";
-                                            }
-                                        } else {
-                                            bodyAsString = "(null)";
-                                        }
-                                        RATE_LIMITED_LOG.error("Write to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString.trim() + "; request: " + writeRequest);
-                                    }
+                                if (LOG.isTraceEnabled()) {
+                                    LOG.trace("got response - code: {}, writeRequest: {}", response.code(), writeRequest);
+                                }
+                                if (!response.isSuccessful()) {
+                                    responseFailures.incrementAndGet();
+                                    handleUnsuccessfulResponse(response);
                                 }
                             } finally {
                                 phaser.arriveAndDeregister();
                             }
                             spec.responseHandlers.forEach(handler -> handler.accept(call, response));
+                        }
+
+                        private void handleUnsuccessfulResponse(Response response) {
+                            try (ResponseBody body = response.body()) {
+                                String bodyAsString;
+                                if (body != null) {
+                                    try {
+                                        bodyAsString = body.string();
+                                        incrementDetailedResponseFailure(response.code(), determineErrorKind(bodyAsString));
+                                    } catch (IOException e) {
+                                        bodyAsString = "(error reading body)";
+                                        incrementDetailedResponseFailure(response.code(), "body read error");
+                                    }
+                                } else {
+                                    bodyAsString = "(null)";
+                                    incrementDetailedResponseFailure(response.code(), "body empty");
+                                }
+                                RATE_LIMITED_LOG.error("Write to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString.trim() + "; request: " + writeRequest);
+                            }
+                        }
+
+                        private void incrementDetailedResponseFailure(int responseCode, String errorKind) {
+                            var suffix = String.valueOf(responseCode) + ' ' + errorKind;
+                            Pair<AtomicLong, Counter> entry;
+                            synchronized (detailedResponseFailures) {
+                                entry = detailedResponseFailures.get(suffix);
+                                if (entry == null) {
+                                    entry = Pair.of(new AtomicLong(), Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_RESPONSE_FAILURE_METRIC_NAME + '_' + suffix));
+                                    detailedResponseFailures.put(suffix, entry);
+                                }
+                            }
+                            entry.getKey().incrementAndGet();
                         }
                     }
             );
@@ -519,6 +553,24 @@ public class CortexIo {
         }
 
     }
+
+    private static String determineErrorKind(String body) {
+        for (var msg: KNOWN_CORTEX_ERRORS) {
+            if (body.contains(msg)) return msg;
+        }
+        RATE_LIMITED_LOG.warn("could not extract error kind - body: {}", body);
+        return "body unknown";
+    }
+
+    // well known error messages as of Cortex 1.9.0
+    private static String[] KNOWN_CORTEX_ERRORS = new String[] {
+            "out of order sample",
+            "duplicate sample for timestamp",
+            "per-metric series limit",
+            "per-metric metadata limit",
+            "per-user series limit",
+            "per-user metric metadata limit",
+    };
 
     private static class TimeSeriesBuilderImpl implements TimeSeriesBuilder {
 
@@ -616,7 +668,9 @@ public class CortexIo {
             }
             var index = flushedEventTimestamps.findIndex(ctx.timestamp());
             flushedState.write(flushedEventTimestamps);
-            LOG.trace("add value to heap - ctx.timestamp: {}; key: {}; value: {}", ctx.timestamp(), ctx.element().getKey(), ctx.element().getValue());
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("add value to heap - ctx.timestamp: {}; key: {}; value: {}", ctx.timestamp(), ctx.element().getKey(), ctx.element().getValue());
+            }
             outputTimeSeries(builder -> spec.build.accept(ctx.element().getKey(), ctx.element().getValue(), ctx.timestamp(), index, builder));
             var newestEventTimestamp = flushedEventTimestamps.newestEventTimestamp();
             setGcTimer(gcTimer, newestEventTimestamp);
@@ -638,11 +692,7 @@ public class CortexIo {
 
         private static final String OUTPUT_TIMER_NAME = "output";
         private static final String GC_TIMER_NAME = "gc";
-        private static final String KEY_STATE_NAME = "key";
         private static final String HEAP_STATE_NAME = "heap";
-
-        @StateId(KEY_STATE_NAME)
-        private final StateSpec<ValueState<K>> keyStateSpec;
 
         @StateId(HEAP_STATE_NAME)
         private final StateSpec<ValueState<Heap.HeapImpl<V>>> heapStateSpec;
@@ -655,14 +705,12 @@ public class CortexIo {
 
         public WriteFnWithAccumulation(WriteWithAccumulation<K, V> spec, Duration allowedLateness) {
             super(spec, allowedLateness);
-            keyStateSpec = StateSpecs.value(spec.keyCoder);
             heapStateSpec = StateSpecs.value(new Heap.HeapImpl.HeapImplCoder<>(spec.valueCoder));
         }
 
         @ProcessElement
         public void processElement(
                 ProcessContext ctx,
-                @StateId(KEY_STATE_NAME) ValueState<K> keyState,
                 @AlwaysFetched @StateId(HEAP_STATE_NAME) ValueState<Heap.HeapImpl<V>> heapState,
                 @TimerId(OUTPUT_TIMER_NAME) Timer outputTimer,
                 @TimerId(GC_TIMER_NAME) Timer gcTimer
@@ -671,15 +719,15 @@ public class CortexIo {
             if (heap == null) {
                 LOG.debug("create heap - key: {}", ctx.element().getKey());
                 heap = new Heap.HeapImpl<>(new EventTimestampIndexer(), new HashMap<>());
-                // also set the keyState for remembering the key
-                keyState.write(ctx.element().getKey());
             }
             if (heap.isEmpty()) {
                 // the first value is added to the heap
                 // -> that value has to be flushed after the given output delay
                 outputTimer.offset(spec.accumulationDelay).setRelative();
             }
-            LOG.trace("add value to heap - ctx.timestamp: {}; key: {}; value: {}", ctx.timestamp(), ctx.element().getKey(), ctx.element().getValue());
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("add value to heap - ctx.timestamp: {}; key: {}; value: {}", ctx.timestamp(), ctx.element().getKey(), ctx.element().getValue());
+            }
             heap.add(ctx.element().getValue(), ctx.timestamp(), Instant.now(), spec.combiner);
             heapState.write(heap);
             // a value was just added to the heap -> a newest event timestamp is available
@@ -690,7 +738,7 @@ public class CortexIo {
         @OnTimer(OUTPUT_TIMER_NAME)
         public void onOutput(
                 OnTimerContext ctx,
-                @StateId(KEY_STATE_NAME) ValueState<K> keyState,
+                @Key K key,
                 @AlwaysFetched @StateId(HEAP_STATE_NAME) ValueState<Heap.HeapImpl<V>> heapState,
                 @TimerId(OUTPUT_TIMER_NAME) Timer timer
         ) throws IOException {
@@ -698,7 +746,7 @@ public class CortexIo {
             // check if the heap was garbage collected in the meantime
             if (heap != null) {
                 Instant now = Instant.now();
-                var changed = flushHeap(heap, keyState, now, spec.accumulationDelay, "after accumulation");
+                var changed = flushHeap(heap, key, now, spec.accumulationDelay, "after accumulation");
                 if (changed) {
                     // some values where flushed from the heap
                     // -> the heap has changed and must be written back
@@ -716,25 +764,23 @@ public class CortexIo {
 
         @OnTimer(GC_TIMER_NAME)
         public void onGc(
-                @StateId(KEY_STATE_NAME) ValueState<K> keyState,
+                @Key K key,
                 @AlwaysFetched @StateId(HEAP_STATE_NAME) ValueState<Heap.HeapImpl<V>> heapState
         ) throws IOException {
             var heap = heapState.read();
             if (heap != null) {
-                flushHeap(heap, keyState, Instant.now(), Duration.ZERO, "on garbage collection");
-                keyState.clear();
+                flushHeap(heap, key, Instant.now(), Duration.ZERO, "on garbage collection");
                 heapState.clear();
             }
         }
 
-        private boolean flushHeap(Heap<V> heap, ValueState<K> keyState, Instant now, Duration outputDelay, String when) throws IOException {
+        private boolean flushHeap(Heap<V> heap, K key, Instant now, Duration outputDelay, String when) throws IOException {
             // flush all values (that are older than 'now - outputDelay')
             var fs = heap.flush(now, outputDelay);
             if (LOG.isTraceEnabled()) {
-                LOG.trace("flush values from heap {} - key: {}; size: {}", when, keyState.read(), fs.size());
+                LOG.trace("flush values from heap {} - key: {}; size: {}", when, key, fs.size());
             }
             if (!fs.isEmpty()) {
-                var key = keyState.read();
                 for (var f : fs) {
                     outputTimeSeries(builder -> spec.build.accept(key, f.value, f.eventTimestamp, f.index, builder));
                 }
