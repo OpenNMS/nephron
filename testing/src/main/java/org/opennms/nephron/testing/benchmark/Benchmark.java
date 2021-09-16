@@ -239,8 +239,8 @@ public class Benchmark {
         // add an additional label that differentiates benchmark runs
         // -> ensures that samples of different runs do not conflict
         //    (Cortex's sample time ordering constraint could be violated because the EventTimestampIndexer logic is started anew for each run)
-        // -> use the current minute as a distinguishing value
-        attachWriteToCortex(options, flowSummaries, cw -> cw.withFixedLabel("bmr", String.valueOf(Instant.now().get(DateTimeFieldType.minuteOfHour()))));
+        // -> use the current time as a distinguishing value
+        attachWriteToCortex(options, flowSummaries, cw -> cw.withFixedLabel("bmr", Instant.now().toString()));
 
         flowSummaries.apply(devNull("summaries"));
 

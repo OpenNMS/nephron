@@ -64,6 +64,7 @@ import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
+import org.apache.commons.lang3.tuple.Pair;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
@@ -139,11 +140,6 @@ public class CortexIo {
             .build();
 
     private static final Logger LOG_WRITE = LoggerFactory.getLogger(CortexIo.class.getName() + ".write");
-
-    public static final RateLimitedLog LOG_DETAILED_RESPONSE_FAILURE_METRICS = RateLimitedLog
-            .withRateLimit(LoggerFactory.getLogger(CortexIo.class.getName() + ".detailedResponseFailureMetrics"))
-            .maxRate(5).every(java.time.Duration.ofSeconds(10))
-            .build();
 
     private static final MediaType PROTOBUF_MEDIA_TYPE = MediaType.parse("application/x-protobuf");
 
@@ -330,7 +326,7 @@ public class CortexIo {
         private transient AtomicLong writes;
         private transient AtomicLong writeFailures;
         private transient AtomicLong responseFailures;
-        private transient Map<String, Map.Entry<AtomicLong, Counter>> detailedResponseFailures;
+        private transient Map<String, Pair<AtomicLong, Counter>> detailedResponseFailures;
 
         // synchronizes on-going http requests and bundle finalization
         private transient Phaser phaser;
@@ -403,11 +399,9 @@ public class CortexIo {
             incrementCounter(writes, WRITE);
             incrementCounter(writeFailures, WRITE_FAILURE);
             incrementCounter(responseFailures, RESPONSE_FAILURE);
-            if (LOG_DETAILED_RESPONSE_FAILURE_METRICS.isTraceEnabled()) {
-                synchronized (detailedResponseFailures) {
-                    for (var e : detailedResponseFailures.values()) {
-                        incrementCounter(e.getKey(), e.getValue());
-                    }
+            synchronized (detailedResponseFailures) {
+                for (var e : detailedResponseFailures.values()) {
+                    incrementCounter(e.getLeft(), e.getRight());
                 }
             }
         }
@@ -528,47 +522,26 @@ public class CortexIo {
                                 if (body != null) {
                                     try {
                                         bodyAsString = body.string();
-                                        if (LOG_DETAILED_RESPONSE_FAILURE_METRICS.isTraceEnabled()) {
-                                            incrementDetailedResponseFailure(response.code(), determineErrorKind(bodyAsString));
-                                        }
+                                        incrementDetailedResponseFailure(response.code(), determineErrorKind(bodyAsString));
                                     } catch (IOException e) {
                                         bodyAsString = "(error reading body)";
-                                        if (LOG_DETAILED_RESPONSE_FAILURE_METRICS.isTraceEnabled()) {
-                                            incrementDetailedResponseFailure(response.code(), "body_read_error");
-                                        }
+                                        incrementDetailedResponseFailure(response.code(), "body read error");
                                     }
                                 } else {
                                     bodyAsString = "(null)";
-                                    if (LOG_DETAILED_RESPONSE_FAILURE_METRICS.isTraceEnabled()) {
-                                        incrementDetailedResponseFailure(response.code(), "body_empty");
-                                    }
+                                    incrementDetailedResponseFailure(response.code(), "body empty");
                                 }
                                 RATE_LIMITED_LOG.error("Write to Cortex failed - code: " + response.code() + "; message: " + response.message() + "; body: " + bodyAsString.trim() + "; request: " + writeRequest);
                             }
                         }
 
-                        private String determineErrorKind(String body) {
-                            var idx1 = body.indexOf("err: ");
-                            if (idx1 >= 0) {
-                                var idx2 = body.indexOf('.', idx1 + 5);
-                                if (idx2 > 0) {
-                                    return body.substring(idx1 + 5, idx2);
-                                }
-                            }
-                            if (body.contains("per-user series limit")) {
-                                return "per_user_series_limit";
-                            }
-                            LOG_DETAILED_RESPONSE_FAILURE_METRICS.trace("could not extract error kind - body: {}", body);
-                            return "body_unknown";
-                        }
-
                         private void incrementDetailedResponseFailure(int responseCode, String errorKind) {
                             var suffix = String.valueOf(responseCode) + ' ' + errorKind;
-                            Map.Entry<AtomicLong, Counter> entry;
+                            Pair<AtomicLong, Counter> entry;
                             synchronized (detailedResponseFailures) {
                                 entry = detailedResponseFailures.get(suffix);
                                 if (entry == null) {
-                                    entry = Map.entry(new AtomicLong(), Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_RESPONSE_FAILURE_METRIC_NAME + '_' + suffix));
+                                    entry = Pair.of(new AtomicLong(), Metrics.counter(CORTEX_METRIC_NAMESPACE, CORTEX_RESPONSE_FAILURE_METRIC_NAME + '_' + suffix));
                                     detailedResponseFailures.put(suffix, entry);
                                 }
                             }
@@ -580,6 +553,24 @@ public class CortexIo {
         }
 
     }
+
+    private static String determineErrorKind(String body) {
+        for (var msg: KNOWN_CORTEX_ERRORS) {
+            if (body.contains(msg)) return msg;
+        }
+        RATE_LIMITED_LOG.warn("could not extract error kind - body: {}", body);
+        return "body unknown";
+    }
+
+    // well known error messages as of Cortex 1.9.0
+    private static String[] KNOWN_CORTEX_ERRORS = new String[] {
+            "out of order sample",
+            "duplicate sample for timestamp",
+            "per-metric series limit",
+            "per-metric metadata limit",
+            "per-user series limit",
+            "per-user metric metadata limit",
+    };
 
     private static class TimeSeriesBuilderImpl implements TimeSeriesBuilder {
 
@@ -677,7 +668,9 @@ public class CortexIo {
             }
             var index = flushedEventTimestamps.findIndex(ctx.timestamp());
             flushedState.write(flushedEventTimestamps);
-            LOG.trace("add value to heap - ctx.timestamp: {}; key: {}; value: {}", ctx.timestamp(), ctx.element().getKey(), ctx.element().getValue());
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("add value to heap - ctx.timestamp: {}; key: {}; value: {}", ctx.timestamp(), ctx.element().getKey(), ctx.element().getValue());
+            }
             outputTimeSeries(builder -> spec.build.accept(ctx.element().getKey(), ctx.element().getValue(), ctx.timestamp(), index, builder));
             var newestEventTimestamp = flushedEventTimestamps.newestEventTimestamp();
             setGcTimer(gcTimer, newestEventTimestamp);
@@ -732,7 +725,9 @@ public class CortexIo {
                 // -> that value has to be flushed after the given output delay
                 outputTimer.offset(spec.accumulationDelay).setRelative();
             }
-            LOG.trace("add value to heap - ctx.timestamp: {}; key: {}; value: {}", ctx.timestamp(), ctx.element().getKey(), ctx.element().getValue());
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("add value to heap - ctx.timestamp: {}; key: {}; value: {}", ctx.timestamp(), ctx.element().getKey(), ctx.element().getValue());
+            }
             heap.add(ctx.element().getValue(), ctx.timestamp(), Instant.now(), spec.combiner);
             heapState.write(heap);
             // a value was just added to the heap -> a newest event timestamp is available
