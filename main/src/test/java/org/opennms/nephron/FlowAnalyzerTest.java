@@ -141,7 +141,7 @@ public class FlowAnalyzerTest {
 
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(new Pipeline.CalculateFlowStatistics(10, WINDOWED_FLOWS))
-                .apply(Filter.by(fs -> fs.key.getType() == CompoundKeyType.EXPORTER_INTERFACE))
+                .apply(Filter.by(fs -> fs.getKey().getType() == CompoundKeyType.EXPORTER_INTERFACE))
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summary = new FlowSummary();
@@ -222,7 +222,7 @@ public class FlowAnalyzerTest {
         // Build the pipeline
         PCollection<FlowSummary> output = p.apply(flowStream)
                 .apply(new Pipeline.CalculateFlowStatistics(10, WINDOWED_FLOWS))
-                .apply(Filter.by(fs -> fs.key.getType() == CompoundKeyType.EXPORTER_INTERFACE))
+                .apply(Filter.by(fs -> fs.getKey().getType() == CompoundKeyType.EXPORTER_INTERFACE))
                 .apply(TO_FLOW_SUMMARY);
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();

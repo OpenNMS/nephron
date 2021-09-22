@@ -49,6 +49,7 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
@@ -56,7 +57,6 @@ import org.junit.Test;
 import org.opennms.nephron.Aggregate;
 import org.opennms.nephron.CompoundKey;
 import org.opennms.nephron.CompoundKeyType;
-import org.opennms.nephron.FlowSummaryData;
 import org.opennms.nephron.MissingFieldsException;
 import org.opennms.nephron.NephronOptions;
 import org.opennms.nephron.Pipeline;
@@ -107,7 +107,7 @@ public class TotalVolumeTest {
         org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
-        PCollection<FlowSummaryData> flowSummaries = p
+        PCollection<KV<CompoundKey,Aggregate>> flowSummaries = p
                 .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
                 .apply(new Pipeline.CalculateFlowStatistics(options));
 
@@ -158,7 +158,7 @@ public class TotalVolumeTest {
         org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
-        PCollection<FlowSummaryData> flowSummaries = p
+        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = p
                 .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
                 .apply(new Pipeline.CalculateFlowStatistics(options));
 
@@ -225,7 +225,7 @@ public class TotalVolumeTest {
         org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
-        PCollection<FlowSummaryData> flowSummaries = p
+        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = p
                 .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
                 .apply(new Pipeline.CalculateFlowStatistics(options));
 
@@ -348,17 +348,17 @@ public class TotalVolumeTest {
     /**
      * A transform the increments counters that are named by the window start and aggregation key.
      */
-    public static ParDo.SingleOutput<FlowSummaryData, Void> countVolumes() {
+    public static ParDo.SingleOutput<KV<CompoundKey, Aggregate>, Void> countVolumes() {
         return ParDo.of(
-                new DoFn<FlowSummaryData, Void>() {
+                new DoFn<KV<CompoundKey, Aggregate>, Void>() {
                     @ProcessElement
                     public void processElement(ProcessContext c) {
-                        FlowSummaryData fsd = c.element();
-                        if (!fsd.key.type.isTotalNotTopK()) return;
-                        ResKey resKey = new ResKey(c.timestamp().getMillis(), fsd.key);
+                        KV<CompoundKey, Aggregate> fsd = c.element();
+                        if (!fsd.getKey().type.isTotalNotTopK()) return;
+                        ResKey resKey = new ResKey(c.timestamp().getMillis(), fsd.getKey());
                         String strKey = resKey.asString();
-                        Metrics.counter(strKey, "in").inc(fsd.aggregate.getBytesIn());
-                        Metrics.counter(strKey, "out").inc(fsd.aggregate.getBytesOut());
+                        Metrics.counter(strKey, "in").inc(fsd.getValue().getBytesIn());
+                        Metrics.counter(strKey, "out").inc(fsd.getValue().getBytesOut());
                     }
                 });
     }

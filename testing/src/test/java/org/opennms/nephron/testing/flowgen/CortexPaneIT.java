@@ -30,39 +30,21 @@ package org.opennms.nephron.testing.flowgen;
 
 import static io.restassured.RestAssured.with;
 import static org.hamcrest.Matchers.equalTo;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.opennms.nephron.Pipeline.registerCoders;
 import static org.opennms.nephron.testing.flowgen.TotalVolumeTest.countVolumes;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.Objects;
-
 import org.apache.beam.sdk.PipelineResult;
-import org.apache.beam.sdk.coders.AtomicCoder;
-import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.coders.CoderException;
-import org.apache.beam.sdk.coders.InstantCoder;
-import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.beam.sdk.testing.PAssert;
-import org.apache.beam.sdk.transforms.Combine;
-import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.sdk.transforms.Filter;
-import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.SerializableBiFunction;
-import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
-import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.junit.Rule;
 import org.junit.Test;
+import org.opennms.nephron.Aggregate;
 import org.opennms.nephron.CompoundKey;
-import org.opennms.nephron.FlowSummaryData;
 import org.opennms.nephron.Pipeline;
 import org.opennms.nephron.RefType;
 import org.slf4j.Logger;
@@ -126,7 +108,7 @@ public class CortexPaneIT {
         org.apache.beam.sdk.Pipeline pipeline = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(pipeline);
 
-        PCollection<FlowSummaryData> rawFlowSummaries = pipeline
+        PCollection<KV<CompoundKey, Aggregate>> rawFlowSummaries = pipeline
                 .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
                 .apply(new Pipeline.CalculateFlowStatistics(options));
 
