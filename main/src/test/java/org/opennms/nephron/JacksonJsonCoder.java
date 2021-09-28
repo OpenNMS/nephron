@@ -42,6 +42,7 @@ import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
+import org.apache.beam.sdk.values.KV;
 import org.opennms.nephron.elastic.FlowSummary;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -58,8 +59,8 @@ public class JacksonJsonCoder<T> extends Coder<T> {
      * Transformation that can be applied to pipeline to transform FLowSummaryData instances into FlowSummary
      * instances.
      */
-    public static ParDo.SingleOutput<FlowSummaryData, FlowSummary> TO_FLOW_SUMMARY =
-            ParDo.of(new DoFn<FlowSummaryData, FlowSummary>() {
+    public static ParDo.SingleOutput<KV<CompoundKey, Aggregate>, FlowSummary> TO_FLOW_SUMMARY =
+            ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, FlowSummary>() {
                 @ProcessElement
                 public void processElement(ProcessContext c, IntervalWindow window) {
                     c.output(toFlowSummary(c.element(), window));

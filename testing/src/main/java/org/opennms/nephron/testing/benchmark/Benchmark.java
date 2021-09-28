@@ -50,11 +50,13 @@ import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.joda.time.DateTimeFieldType;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
-import org.opennms.nephron.FlowSummaryData;
+import org.opennms.nephron.Aggregate;
+import org.opennms.nephron.CompoundKey;
 import org.opennms.nephron.Pipeline;
 import org.opennms.nephron.cortex.CortexIo;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
@@ -209,7 +211,7 @@ public class Benchmark {
     private final BenchmarkOptions options;
     private final Consumer<String> resultConsumer;
     private final TestingProbe<FlowDocument> inTestingProbe = new TestingProbe<>("benchmark", "in");
-    private final TestingProbe<FlowSummaryData> outTestingProbe = new TestingProbe<>("benchmark", "out");
+    private final TestingProbe<KV<CompoundKey, Aggregate>> outTestingProbe = new TestingProbe<>("benchmark", "out");
     private final Instant start = Instant.now();
 
     private PipelineResult pipelineResult;
@@ -226,7 +228,7 @@ public class Benchmark {
 
         var inputSetup = options.getInput().createInputSetup(options);
 
-        PCollection<FlowSummaryData> flowSummaries = pipeline
+        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = pipeline
                 .apply(inputSetup.source())
                 .apply(inTestingProbe.getTransform())
                 .apply(new Pipeline.CalculateFlowStatistics(options));

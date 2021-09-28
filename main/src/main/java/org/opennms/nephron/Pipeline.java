@@ -144,7 +144,7 @@ public class Pipeline {
                 options.getFlowSourceTopic(), kafkaConsumerConfig, timestampPolicyFactory));
 
         // Calculate the flow summary statistics
-        PCollection<FlowSummaryData> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
+        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
 
         flowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
 
@@ -156,7 +156,7 @@ public class Pipeline {
         return p;
     }
 
-    public static PCollection<FlowSummaryData> accumulateSummariesIfNecessary(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+    public static PCollection<KV<CompoundKey, Aggregate>> accumulateSummariesIfNecessary(NephronOptions options, PCollection<KV<CompoundKey, Aggregate>> flowSummaries) {
         if (options.getSummaryAccumulationDelayMs() != 0) {
             return accumulateFlowSummaries(flowSummaries, Duration.millis(options.getSummaryAccumulationDelayMs()));
         } else {
@@ -164,39 +164,18 @@ public class Pipeline {
         }
     }
 
-    public static PCollection<FlowSummaryData> accumulateFlowSummaries(
-            PCollection<FlowSummaryData> input,
+    public static PCollection<KV<CompoundKey, Aggregate>> accumulateFlowSummaries(
+            PCollection<KV<CompoundKey, Aggregate>> input,
             Duration accumulationDelay
     ) {
         var paneAccumulator = new PaneAccumulator<>(
-                Pipeline::combineFlowSummaryData,
+                Aggregate::merge,
                 accumulationDelay,
                 new CompoundKey.CompoundKeyCoder(),
-                new FlowSummaryData.FlowSummaryDataCoder()
+                new Aggregate.AggregateCoder()
         );
-        return input
-                .apply(KEY_SUMMARIES)
-                .apply(paneAccumulator)
-                .apply(Values.create());
+        return input.apply(paneAccumulator);
     }
-
-    private static FlowSummaryData combineFlowSummaryData(
-            FlowSummaryData d1,
-            FlowSummaryData d2
-    ) {
-        return new FlowSummaryData(
-                d1.key,
-                Aggregate.merge(d1.aggregate, d2.aggregate)
-        );
-    }
-
-    private static ParDo.SingleOutput<FlowSummaryData, KV<CompoundKey, FlowSummaryData>> KEY_SUMMARIES =
-            ParDo.of(new DoFn<FlowSummaryData, KV<CompoundKey, FlowSummaryData>>() {
-                @ProcessElement
-                public void process(ProcessContext ctx) {
-                    ctx.output(KV.of(ctx.element().key, ctx.element()));
-                }
-            });
 
     private static Map<String, Object> loadKafkaClientProperties(NephronOptions options) {
         Map<String, Object> kafkaClientProperties = new HashMap<>();
@@ -216,20 +195,20 @@ public class Pipeline {
         return kafkaClientProperties;
     }
 
-    public static void attachWriteToElastic(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+    public static void attachWriteToElastic(NephronOptions options, PCollection<KV<CompoundKey, Aggregate>> flowSummaries) {
         if (!Strings.isNullOrEmpty(options.getElasticUrl())) {
             flowSummaries.apply(new WriteToElasticsearch(options));
         }
     }
 
-    public static void attachWriteToKafka(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+    public static void attachWriteToKafka(NephronOptions options, PCollection<KV<CompoundKey, Aggregate>> flowSummaries) {
         if (!Strings.isNullOrEmpty(options.getFlowDestTopic())) {
             var kafkaProducerConfig = loadKafkaClientProperties(options);
             flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic(), kafkaProducerConfig));
         }
     }
 
-    public static void attachWriteToCortex(NephronOptions options, PCollection<FlowSummaryData> flowSummaries) {
+    public static void attachWriteToCortex(NephronOptions options, PCollection<KV<CompoundKey, Aggregate>> flowSummaries) {
         attachWriteToCortex(options, flowSummaries, cw -> {});
     }
 
@@ -239,16 +218,18 @@ public class Pipeline {
      */
     public static void attachWriteToCortex(
             NephronOptions options,
-            PCollection<FlowSummaryData> flowSummaries,
-            Consumer<CortexIo.Write<CompoundKey, FlowSummaryData>> additionalConfig
+            PCollection<KV<CompoundKey, Aggregate>> flowSummaries,
+            Consumer<CortexIo.Write<CompoundKey, Aggregate>> additionalConfig
     ) {
         if (cortexOutputEnabled(options)) {
-            CortexIo.Write<CompoundKey, FlowSummaryData> cortexWrite;
+            CortexIo.Write<CompoundKey, Aggregate> cortexWrite;
             if (options.getCortexAccumulationDelayMs() != 0) {
-                cortexWrite = CortexIo.of(options.getCortexWriteUrl(), Pipeline::cortexOutput,
+                cortexWrite = CortexIo.of(
+                        options.getCortexWriteUrl(),
+                        Pipeline::cortexOutput,
                         new CompoundKey.CompoundKeyCoder(),
-                        new FlowSummaryData.FlowSummaryDataCoder(),
-                        Pipeline::combineFlowSummaryData,
+                        new Aggregate.AggregateCoder(),
+                        Aggregate::merge,
                         Duration.millis(options.getCortexAccumulationDelayMs())
                 );
             } else {
@@ -263,7 +244,6 @@ public class Pipeline {
             }
             flowSummaries
                     .apply(Filter.by(includeInCortexOutput(options)))
-                    .apply(KEY_SUMMARIES)
                     .apply(cortexWrite);
         }
     }
@@ -314,14 +294,14 @@ public class Pipeline {
     }
 
 
-    private static SerializableFunction<FlowSummaryData, Boolean> includeInCortexOutput(NephronOptions options) {
+    private static SerializableFunction<KV<CompoundKey, Aggregate>, Boolean> includeInCortexOutput(NephronOptions options) {
         if (StringUtils.isNoneBlank(options.getCortexConsideredHosts())) {
             var ipValue = validateIpAddress(options.getCortexConsideredHosts());
             return fsd -> {
-                switch (fsd.key.type) {
+                switch (fsd.getKey().type) {
                     case EXPORTER_INTERFACE_HOST:
                     case EXPORTER_INTERFACE_TOS_HOST:
-                        return ipValue.isInRange(fsd.key.data.address);
+                        return ipValue.isInRange(fsd.getKey().data.address);
                     case EXPORTER_INTERFACE_CONVERSATION:
                     case EXPORTER_INTERFACE_TOS_CONVERSATION:
                         return false;
@@ -331,7 +311,7 @@ public class Pipeline {
             };
         } else {
             return fsd -> {
-                switch (fsd.key.type) {
+                switch (fsd.getKey().type) {
                     case EXPORTER_INTERFACE_HOST:
                     case EXPORTER_INTERFACE_TOS_HOST:
                     case EXPORTER_INTERFACE_CONVERSATION:
@@ -350,23 +330,22 @@ public class Pipeline {
 
     private static void cortexOutput(
             CompoundKey key,
-            FlowSummaryData fsd,
+            Aggregate agg,
             Instant eventTimestamp,
             int index,
             TimeSeriesBuilder builder
     ) {
-        final var agg = fsd.aggregate;
         if (LOG.isTraceEnabled()) {
             LOG.trace("cortex output - eventTimestamp: {}; keyType: {}; key: {}; index: {}; in: {}; out: {}; total: {}",
-                    eventTimestamp, fsd.key.type, fsd.key, index, agg.getBytesIn(), agg.getBytesOut(), agg.getBytesIn() + agg.getBytesOut());
+                    eventTimestamp, key.type, key, index, agg.getBytesIn(), agg.getBytesOut(), agg.getBytesIn() + agg.getBytesOut());
         }
-        doCortexOutput(fsd, eventTimestamp, index, "in", agg.getBytesIn(), builder);
+        doCortexOutput(key, eventTimestamp, index, "in", agg.getBytesIn(), builder);
         builder.nextSeries();
-        doCortexOutput(fsd, eventTimestamp, index, "out", agg.getBytesOut(), builder);
+        doCortexOutput(key, eventTimestamp, index, "out", agg.getBytesOut(), builder);
     }
 
     private static void doCortexOutput(
-            FlowSummaryData fsd,
+            CompoundKey key,
             Instant eventTimestamp,
             int paneId,
             String direction,
@@ -376,18 +355,17 @@ public class Pipeline {
         builder.addLabel("pane", paneId);
         builder.addLabel("direction", direction);
         builder.addSample(eventTimestamp.getMillis(), bytes);
-        fsd.key.populate(builder);
+        key.populate(builder);
     }
 
     public static void registerCoders(org.apache.beam.sdk.Pipeline p) {
         final CoderRegistry coderRegistry = p.getCoderRegistry();
         coderRegistry.registerCoderForClass(FlowDocument.class, new FlowDocumentProtobufCoder());
-        coderRegistry.registerCoderForClass(FlowSummaryData.class, new FlowSummaryData.FlowSummaryDataCoder());
         coderRegistry.registerCoderForClass(CompoundKey.class, new CompoundKey.CompoundKeyCoder());
         coderRegistry.registerCoderForClass(Aggregate.class, new Aggregate.AggregateCoder());
     }
 
-    public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<FlowSummaryData>> {
+    public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<KV<CompoundKey, Aggregate>>> {
         private final int topK;
         private final PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing;
 
@@ -401,7 +379,7 @@ public class Pipeline {
         }
 
         @Override
-        public PCollection<FlowSummaryData> expand(PCollection<FlowDocument> input) {
+        public PCollection<KV<CompoundKey, Aggregate>> expand(PCollection<FlowDocument> input) {
             PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows", windowing);
 
             PCollection<KV<CompoundKey, Aggregate>> keyedByConvWithTos =
@@ -440,7 +418,7 @@ public class Pipeline {
             TotalAndSummary itf = aggregateParentTotal("itf_", tos.total);
 
             // Merge all the summary collections
-            PCollectionList<FlowSummaryData> flowSummaries = PCollectionList.of(itf.summary)
+            PCollectionList<KV<CompoundKey, Aggregate>> flowSummaries = PCollectionList.of(itf.summary)
                     .and(tos.summary)
                     .and(app.withTos.topK)
                     .and(app.withoutTos.topK)
@@ -487,7 +465,7 @@ public class Pipeline {
         }
     }
 
-    public static class WriteToElasticsearch extends PTransform<PCollection<FlowSummaryData>, PDone> {
+    public static class WriteToElasticsearch extends PTransform<PCollection<KV<CompoundKey, Aggregate>>, PDone> {
         private final String elasticIndex;
         private final IndexStrategy indexStrategy;
         private final ElasticsearchIO.ConnectionConfiguration esConfig;
@@ -529,7 +507,7 @@ public class Pipeline {
         }
 
         @Override
-        public PDone expand(PCollection<FlowSummaryData> input) {
+        public PDone expand(PCollection<KV<CompoundKey, Aggregate>> input) {
             return input.apply("SerializeToJson", FLOW_SUMMARY_DATA_TO_JSON)
                     .apply("WriteToElasticsearch", ElasticsearchIO.write().withConnectionConfiguration(esConfig)
                             .withRetryConfiguration(
@@ -630,7 +608,7 @@ public class Pipeline {
         }
     }
 
-    public static class WriteToKafka extends PTransform<PCollection<FlowSummaryData>, PDone> {
+    public static class WriteToKafka extends PTransform<PCollection<KV<CompoundKey, Aggregate>>, PDone> {
         private final String bootstrapServers;
         private final String topic;
         private final Map<String, Object> kafkaProducerConfig;
@@ -642,7 +620,7 @@ public class Pipeline {
         }
 
         @Override
-        public PDone expand(PCollection<FlowSummaryData> input) {
+        public PDone expand(PCollection<KV<CompoundKey, Aggregate>> input) {
             return input.apply(FLOW_SUMMARY_DATA_TO_JSON)
                     .apply(KafkaIO.<Void, String>write()
                             .withProducerConfigUpdates(kafkaProducerConfig)
@@ -654,8 +632,8 @@ public class Pipeline {
         }
     }
 
-    private static ParDo.SingleOutput<FlowSummaryData, String> FLOW_SUMMARY_DATA_TO_JSON =
-        ParDo.of(new DoFn<FlowSummaryData, String>() {
+    private static ParDo.SingleOutput<KV<CompoundKey, Aggregate>, String> FLOW_SUMMARY_DATA_TO_JSON =
+        ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, String>() {
             @ProcessElement
             public void processElement(ProcessContext c, IntervalWindow window) throws JsonProcessingException {
                 FlowSummary flowSummary = toFlowSummary(c.element(), window);
@@ -749,28 +727,24 @@ public class Pipeline {
         });
     }
 
-    public static FlowSummaryData toFlowSummaryData(KV<CompoundKey, Aggregate> el) {
-        return new FlowSummaryData(el.getKey(), el.getValue());
-    }
-
-    public static FlowSummary toFlowSummary(FlowSummaryData fsd, IntervalWindow window) {
+    public static FlowSummary toFlowSummary(KV<CompoundKey, Aggregate> fsd, IntervalWindow window) {
         FlowSummary flowSummary = new FlowSummary();
-        fsd.key.populate(flowSummary);
-        flowSummary.setAggregationType(fsd.key.type.isTotalNotTopK() ? AggregationType.TOTAL : AggregationType.TOPK);
+        fsd.getKey().populate(flowSummary);
+        flowSummary.setAggregationType(fsd.getKey().type.isTotalNotTopK() ? AggregationType.TOTAL : AggregationType.TOPK);
 
         flowSummary.setRangeStartMs(window.start().getMillis());
         flowSummary.setRangeEndMs(window.end().getMillis());
         // Use the range end as the timestamp
         flowSummary.setTimestamp(flowSummary.getRangeEndMs());
 
-        flowSummary.setBytesEgress(fsd.aggregate.getBytesOut());
-        flowSummary.setBytesIngress(fsd.aggregate.getBytesIn());
+        flowSummary.setBytesEgress(fsd.getValue().getBytesOut());
+        flowSummary.setBytesIngress(fsd.getValue().getBytesIn());
         flowSummary.setBytesTotal(flowSummary.getBytesIngress() + flowSummary.getBytesEgress());
-        flowSummary.setCongestionEncountered(fsd.aggregate.isCongestionEncountered());
-        flowSummary.setNonEcnCapableTransport(fsd.aggregate.isNonEcnCapableTransport());
+        flowSummary.setCongestionEncountered(fsd.getValue().isCongestionEncountered());
+        flowSummary.setNonEcnCapableTransport(fsd.getValue().isNonEcnCapableTransport());
 
-        if (fsd.key.getType() == CompoundKeyType.EXPORTER_INTERFACE_HOST || fsd.key.getType() == CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST) {
-            flowSummary.setHostName(Strings.emptyToNull(fsd.aggregate.getHostname()));
+        if (fsd.getKey().getType() == CompoundKeyType.EXPORTER_INTERFACE_HOST || fsd.getKey().getType() == CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST) {
+            flowSummary.setHostName(Strings.emptyToNull(fsd.getValue().getHostname()));
         }
 
         return flowSummary;
@@ -934,13 +908,7 @@ public class Pipeline {
                 }))
                 .apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()));
 
-        PCollection<FlowSummaryData> summary = parentTotal.apply(transformPrefix + "total_summary", ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, FlowSummaryData>() {
-            @ProcessElement
-            public void processElement(ProcessContext c) {
-                c.output(toFlowSummaryData(c.element()));
-            }
-        }));
-        return new TotalAndSummary(parentTotal, summary);
+        return new TotalAndSummary(parentTotal, parentTotal);
     }
 
     /**
@@ -996,7 +964,7 @@ public class Pipeline {
         PCollection<KV<CompoundKey, Aggregate>> sum =
                 groupedByKey.apply(transformPrefix + "sum_bytes_by_key", Combine.perKey(new SumBytes()));
 
-        PCollection<FlowSummaryData> topK = sum
+        PCollection<KV<CompoundKey, Aggregate>> topK = sum
                 .apply(transformPrefix + "group_by_outer_key",
                         ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, KV<CompoundKey, Aggregate>>>() {
                             @ProcessElement
@@ -1009,12 +977,11 @@ public class Pipeline {
                         }))
                 .apply(transformPrefix + "top_k_per_key", Top.perKey(k, new FlowBytesValueComparator()))
                 .apply(transformPrefix + "flatten", Values.create())
-                .apply(transformPrefix + "top_k_summary", ParDo.of(new DoFn<List<KV<CompoundKey, Aggregate>>, FlowSummaryData>() {
+                .apply(transformPrefix + "top_k_summary", ParDo.of(new DoFn<List<KV<CompoundKey, Aggregate>>, KV<CompoundKey, Aggregate>>() {
                     @ProcessElement
                     public void processElement(ProcessContext c) {
                         for (KV<CompoundKey, Aggregate> el : c.element()) {
-                            FlowSummaryData flowSummary = toFlowSummaryData(el);
-                            c.output(flowSummary);
+                            c.output(el);
                         }
                     }
                 }));
@@ -1023,8 +990,8 @@ public class Pipeline {
 
     public static class TotalAndSummary {
         public final PCollection<KV<CompoundKey, Aggregate>> total;
-        public final PCollection<FlowSummaryData> summary;
-        public TotalAndSummary(PCollection<KV<CompoundKey, Aggregate>> total, PCollection<FlowSummaryData> summary) {
+        public final PCollection<KV<CompoundKey, Aggregate>> summary;
+        public TotalAndSummary(PCollection<KV<CompoundKey, Aggregate>> total, PCollection<KV<CompoundKey, Aggregate>> summary) {
             this.total = total;
             this.summary = summary;
         }
@@ -1034,9 +1001,9 @@ public class Pipeline {
         // - all keys in the sum collection are unique (i.e. this is not a multimap)
         // - the sum collection is a total collection (i.e. it is not capped by a topK transform)
         public final PCollection<KV<CompoundKey, Aggregate>> sum;
-        public final PCollection<FlowSummaryData> topK;
+        public final PCollection<KV<CompoundKey, Aggregate>> topK;
 
-        public SumAndTopK(PCollection<KV<CompoundKey, Aggregate>> sum, PCollection<FlowSummaryData> topK) {
+        public SumAndTopK(PCollection<KV<CompoundKey, Aggregate>> sum, PCollection<KV<CompoundKey, Aggregate>> topK) {
             this.sum = sum;
             this.topK = topK;
         }
