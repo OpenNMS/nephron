@@ -33,7 +33,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <beam.version>2.31.0</beam.version>
+        <beam.version>2.32.0</beam.version>
         <elasticsearch.client.version>7.7.1</elasticsearch.client.version>
         <flink.artifact.name>beam-runners-flink-1.13</flink.artifact.name>
         <java.version>11</java.version>

@@ -47,7 +47,9 @@ import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.metrics.MetricsFilter;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
@@ -62,6 +64,7 @@ import org.opennms.nephron.NephronOptions;
 import org.opennms.nephron.Pipeline;
 import org.opennms.nephron.UnalignedFixedWindows;
 import org.opennms.nephron.elastic.AggregationType;
+import org.opennms.nephron.elastic.FlowSummary;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +72,16 @@ import org.slf4j.LoggerFactory;
 public class TotalVolumeTest {
 
     private static Logger LOG = LoggerFactory.getLogger(TotalVolumeTest.class);
+
+    public static PCollection<KV<CompoundKey, Aggregate>> flowSummaries(
+            org.apache.beam.sdk.Pipeline p,
+            SourceConfig sourceConfig,
+            NephronOptions options
+    ) {
+        var input = p.apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig));
+        var flowSummariesAndHostnames = Pipeline.calculateFlowStatistics(input, options);
+        return flowSummariesAndHostnames.getLeft();
+    }
 
     @Test
     public void testTotalVolume() {
@@ -107,9 +120,7 @@ public class TotalVolumeTest {
         org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
-        PCollection<KV<CompoundKey,Aggregate>> flowSummaries = p
-                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
-                .apply(new Pipeline.CalculateFlowStatistics(options));
+        PCollection<KV<CompoundKey,Aggregate>> flowSummaries = flowSummaries(p, sourceConfig, options);
 
         flowSummaries.apply(countVolumes());
 
@@ -158,9 +169,7 @@ public class TotalVolumeTest {
         org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
-        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = p
-                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
-                .apply(new Pipeline.CalculateFlowStatistics(options));
+        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = flowSummaries(p, sourceConfig, options);
 
         flowSummaries.apply(countVolumes());
 
@@ -225,9 +234,7 @@ public class TotalVolumeTest {
         org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(p);
 
-        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = p
-                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
-                .apply(new Pipeline.CalculateFlowStatistics(options));
+        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = flowSummaries(p, sourceConfig, options);
 
         flowSummaries.apply(countVolumes());
 
@@ -300,7 +307,7 @@ public class TotalVolumeTest {
                         try {
                             CompoundKey key = compoundKeyType.create(flow);
                             ResKey resKey = new ResKey(windowEnd - 1, key);
-                            Aggregate aggregate = Pipeline.aggregatize(window, flow, "", "");
+                            Aggregate aggregate = Pipeline.aggregatize(window, flow);
                             Aggregate previous = expected.get(resKey);
                             Aggregate next = previous != null ? Aggregate.merge(previous, aggregate) : aggregate;
                             expected.put(resKey, next);

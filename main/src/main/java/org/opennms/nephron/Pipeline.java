@@ -55,9 +55,11 @@ import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.SerializableBiFunction;
 import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.Top;
 import org.apache.beam.sdk.transforms.Values;
+import org.apache.beam.sdk.transforms.View;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.AfterWatermark;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
@@ -68,9 +70,11 @@ import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.PCollectionTuple;
+import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -143,14 +147,16 @@ public class Pipeline {
         PCollection<FlowDocument> streamOfFlows = p.apply(new ReadFromKafka(options.getBootstrapServers(),
                 options.getFlowSourceTopic(), kafkaConsumerConfig, timestampPolicyFactory));
 
+        var aggregatedAndHostnames = calculateFlowStatistics(streamOfFlows, options);
+
         // Calculate the flow summary statistics
-        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
+        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = aggregatedAndHostnames.getLeft();
 
         flowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
 
         // optionally attach different kinds of sinks
-        attachWriteToElastic(options, flowSummaries);
-        attachWriteToKafka(options, flowSummaries);
+        attachWriteToElastic(options, flowSummaries, aggregatedAndHostnames.getRight());
+        attachWriteToKafka(options, flowSummaries, aggregatedAndHostnames.getRight());
         attachWriteToCortex(options, flowSummaries);
 
         return p;
@@ -195,16 +201,24 @@ public class Pipeline {
         return kafkaClientProperties;
     }
 
-    public static void attachWriteToElastic(NephronOptions options, PCollection<KV<CompoundKey, Aggregate>> flowSummaries) {
+    public static void attachWriteToElastic(
+            NephronOptions options,
+            PCollection<KV<CompoundKey, Aggregate>> flowSummaries,
+            PCollectionView<Map<String, String>> hostnamesView
+    ) {
         if (!Strings.isNullOrEmpty(options.getElasticUrl())) {
-            flowSummaries.apply(new WriteToElasticsearch(options));
+            flowSummaries.apply(new WriteToElasticsearch(options, hostnamesView));
         }
     }
 
-    public static void attachWriteToKafka(NephronOptions options, PCollection<KV<CompoundKey, Aggregate>> flowSummaries) {
+    public static void attachWriteToKafka(
+            NephronOptions options,
+            PCollection<KV<CompoundKey, Aggregate>> flowSummaries,
+            PCollectionView<Map<String, String>> hostnamesView
+    ) {
         if (!Strings.isNullOrEmpty(options.getFlowDestTopic())) {
             var kafkaProducerConfig = loadKafkaClientProperties(options);
-            flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic(), kafkaProducerConfig));
+            flowSummaries.apply(new WriteToKafka(options.getBootstrapServers(), options.getFlowDestTopic(), kafkaProducerConfig, hostnamesView));
         }
     }
 
@@ -365,73 +379,75 @@ public class Pipeline {
         coderRegistry.registerCoderForClass(Aggregate.class, new Aggregate.AggregateCoder());
     }
 
-    public static class CalculateFlowStatistics extends PTransform<PCollection<FlowDocument>, PCollection<KV<CompoundKey, Aggregate>>> {
-        private final int topK;
-        private final PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing;
-
-        public CalculateFlowStatistics(int topK, PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing) {
-            this.topK = topK;
-            this.windowing = windowing;
-        }
-
-        public CalculateFlowStatistics(NephronOptions options) {
-            this(options.getTopK(), new WindowedFlows(options));
-        }
-
-        @Override
-        public PCollection<KV<CompoundKey, Aggregate>> expand(PCollection<FlowDocument> input) {
-            PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows", windowing);
-
-            PCollection<KV<CompoundKey, Aggregate>> keyedByConvWithTos =
-                    windowedStreamOfFlows.apply("key_by_conv", ParDo.of(new KeyByConvWithTos()));
-
-            SumsAndTopKs conv = aggregateSumsAndTopKs("conv_", keyedByConvWithTos,
-                    CompoundKeyType.EXPORTER_INTERFACE_CONVERSATION,
-                    topK,
-                    k -> k.isCompleteConversationKey()
-            );
-
-            PCollectionTuple projected =
-                    conv.withTos.sum.apply("proj_conv", ParDo.of(new ProjConvWithTos()).withOutputTags(BY_APP, TupleTagList.of(BY_HOST)));
-
-            PCollection<KV<CompoundKey, Aggregate>> keyedByAppWithTos = projected.get(BY_APP);
-            PCollection<KV<CompoundKey, Aggregate>> keyedByHostWithTos = projected.get(BY_HOST);
-
-            SumsAndTopKs app = aggregateSumsAndTopKs("app_", keyedByAppWithTos,
-                    CompoundKeyType.EXPORTER_INTERFACE_APPLICATION,
-                    topK,
-                    k -> true
-            );
-
-            SumsAndTopKs host = aggregateSumsAndTopKs("host_", keyedByHostWithTos,
-                    CompoundKeyType.EXPORTER_INTERFACE_HOST,
-                    topK,
-                    k -> true
-            );
-
-            // exporter/interface and exporter/interface/tos aggregations are used as "parents" when the
-            // "include other" option is selected for topK-queries
-            // -> they must not be limited to topK but contain all cases
-            // -> all other persisted aggregations are topK aggregations
-
-            TotalAndSummary tos = aggregateParentTotal("tos_", app.withTos.sum);
-            TotalAndSummary itf = aggregateParentTotal("itf_", tos.total);
-
-            // Merge all the summary collections
-            PCollectionList<KV<CompoundKey, Aggregate>> flowSummaries = PCollectionList.of(itf.summary)
-                    .and(tos.summary)
-                    .and(app.withTos.topK)
-                    .and(app.withoutTos.topK)
-                    .and(host.withTos.topK)
-                    .and(host.withoutTos.topK)
-                    .and(conv.withTos.topK)
-                    .and(conv.withoutTos.topK);
-            return flowSummaries.apply(Flatten.pCollections());
-        }
+    public static Pair<PCollection<KV<CompoundKey, Aggregate>>, PCollectionView<Map<String, String>>> calculateFlowStatistics(
+            PCollection<FlowDocument> input,
+            NephronOptions options
+    ) {
+        return calculateFlowStatistics(input, options.getTopK(), new WindowedFlows(options));
     }
 
-    private static TupleTag<KV<CompoundKey, Aggregate>> BY_HOST = new TupleTag<KV<CompoundKey, Aggregate>>(){};
-    private static TupleTag<KV<CompoundKey, Aggregate>> BY_APP = new TupleTag<KV<CompoundKey, Aggregate>>(){};
+    public static Pair<PCollection<KV<CompoundKey, Aggregate>>, PCollectionView<Map<String, String>>> calculateFlowStatistics(
+            PCollection<FlowDocument> input,
+            int topK,
+            PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> windowing
+    ) {
+        PCollection<FlowDocument> windowedStreamOfFlows = input.apply("WindowedFlows", windowing);
+
+        var byConvAndHostnamesView = keyByConfWithTos(windowedStreamOfFlows);
+
+        PCollectionView<Map<String, String>> hostnamesView = byConvAndHostnamesView.getRight();
+
+        PCollection<KV<CompoundKey, Aggregate>> keyedByConvWithTos = byConvAndHostnamesView.getLeft();
+
+        SumsAndTopKs conv = aggregateSumsAndTopKs("conv_", keyedByConvWithTos,
+                CompoundKeyType.EXPORTER_INTERFACE_CONVERSATION,
+                topK,
+                k -> k.isCompleteConversationKey()
+        );
+
+        PCollectionTuple projected =
+                conv.withTos.sum.apply("proj_conv", ParDo.of(new ProjConvWithTos()).withOutputTags(BY_APP, TupleTagList.of(BY_HOST)));
+
+        PCollection<KV<CompoundKey, Aggregate>> keyedByAppWithTos = projected.get(BY_APP);
+        PCollection<KV<CompoundKey, Aggregate>> keyedByHostWithTos = projected.get(BY_HOST);
+
+        SumsAndTopKs app = aggregateSumsAndTopKs("app_", keyedByAppWithTos,
+                CompoundKeyType.EXPORTER_INTERFACE_APPLICATION,
+                topK,
+                k -> true
+        );
+
+        SumsAndTopKs host = aggregateSumsAndTopKs("host_", keyedByHostWithTos,
+                CompoundKeyType.EXPORTER_INTERFACE_HOST,
+                topK,
+                k -> true
+        );
+
+        // exporter/interface and exporter/interface/tos aggregations are used as "parents" when the
+        // "include other" option is selected for topK-queries
+        // -> they must not be limited to topK but contain all cases
+        // -> all other persisted aggregations are topK aggregations
+
+        TotalAndSummary tos = aggregateParentTotal("tos_", app.withTos.sum);
+        TotalAndSummary itf = aggregateParentTotal("itf_", tos.total);
+
+        // Merge all the summary collections
+        PCollectionList<KV<CompoundKey, Aggregate>> flowSummaries = PCollectionList.of(itf.summary)
+                .and(tos.summary)
+                .and(app.withTos.topK)
+                .and(app.withoutTos.topK)
+                .and(host.withTos.topK)
+                .and(host.withoutTos.topK)
+                .and(conv.withTos.topK)
+                .and(conv.withoutTos.topK);
+
+        return Pair.of(flowSummaries.apply(Flatten.pCollections()), hostnamesView);
+    }
+
+    private static TupleTag<KV<String, String>> HOSTNAME = new TupleTag<>(){};
+    private static TupleTag<KV<CompoundKey, Aggregate>> BY_CONV = new TupleTag<>(){};
+    private static TupleTag<KV<CompoundKey, Aggregate>> BY_HOST = new TupleTag<>(){};
+    private static TupleTag<KV<CompoundKey, Aggregate>> BY_APP = new TupleTag<>(){};
 
     public static class WindowedFlows extends PTransform<PCollection<FlowDocument>, PCollection<FlowDocument>> {
         private final Duration fixedWindowSize;
@@ -477,15 +493,20 @@ public class Pipeline {
         // -> use a gauge instead
         private final Gauge flowsToEsDrift = Metrics.gauge("flows", "to_es_drift");
 
+        private final PCollectionView<Map<String, String>> hostnamesView;
+
         private int elasticRetryCount;
         private long elasticRetryDuration;
 
         public WriteToElasticsearch(String elasticUrl, String elasticUser, String elasticPassword, String elasticIndex,
                                     IndexStrategy indexStrategy, int elasticConnectTimeout, int elasticSocketTimeout,
-                                    int elasticRetryCount, long elasticRetryDuration) {
+                                    int elasticRetryCount, long elasticRetryDuration,
+                                    PCollectionView<Map<String, String>> hostnamesView
+                                    ) {
             Objects.requireNonNull(elasticUrl);
             this.elasticIndex = Objects.requireNonNull(elasticIndex);
             this.indexStrategy = Objects.requireNonNull(indexStrategy);
+            this.hostnamesView = Objects.requireNonNull(hostnamesView);
 
             ElasticsearchIO.ConnectionConfiguration thisEsConfig = ElasticsearchIO.ConnectionConfiguration.create(
                     new String[]{elasticUrl}, elasticIndex, "_doc");
@@ -499,16 +520,17 @@ public class Pipeline {
             this.elasticRetryDuration = elasticRetryDuration;
         }
 
-        public WriteToElasticsearch(NephronOptions options) {
+        public WriteToElasticsearch(NephronOptions options, PCollectionView<Map<String, String>> hostnamesView) {
             this(options.getElasticUrl(), options.getElasticUser(), options.getElasticPassword(),
                     options.getElasticFlowIndex(), options.getElasticIndexStrategy(),
                     options.getElasticConnectTimeout(), options.getElasticSocketTimeout(),
-                    options.getElasticRetryCount(), options.getElasticRetryDuration());
+                    options.getElasticRetryCount(), options.getElasticRetryDuration(),
+                    hostnamesView);
         }
 
         @Override
         public PDone expand(PCollection<KV<CompoundKey, Aggregate>> input) {
-            return input.apply("SerializeToJson", FLOW_SUMMARY_DATA_TO_JSON)
+            return input.apply("SerializeToJson", keyAndAggregateToJson(hostnamesView))
                     .apply("WriteToElasticsearch", ElasticsearchIO.write().withConnectionConfiguration(esConfig)
                             .withRetryConfiguration(
                                     ElasticsearchIO.RetryConfiguration.create(this.elasticRetryCount,
@@ -612,16 +634,23 @@ public class Pipeline {
         private final String bootstrapServers;
         private final String topic;
         private final Map<String, Object> kafkaProducerConfig;
+        private final PCollectionView<Map<String, String>> hostnamesView;
 
-        public WriteToKafka(String bootstrapServers, String topic, Map<String, Object> kafkaProducerConfig) {
+        public WriteToKafka(
+                String bootstrapServers,
+                String topic,
+                Map<String, Object> kafkaProducerConfig,
+                PCollectionView<Map<String, String>> hostnamesView
+        ) {
             this.bootstrapServers = Objects.requireNonNull(bootstrapServers);
             this.topic = Objects.requireNonNull(topic);
             this.kafkaProducerConfig = kafkaProducerConfig;
+            this.hostnamesView = hostnamesView;
         }
 
         @Override
         public PDone expand(PCollection<KV<CompoundKey, Aggregate>> input) {
-            return input.apply(FLOW_SUMMARY_DATA_TO_JSON)
+            return input.apply(keyAndAggregateToJson(hostnamesView))
                     .apply(KafkaIO.<Void, String>write()
                             .withProducerConfigUpdates(kafkaProducerConfig)
                             .withBootstrapServers(bootstrapServers) // Order matters: bootstrap server overwrite producer properties
@@ -632,14 +661,16 @@ public class Pipeline {
         }
     }
 
-    private static ParDo.SingleOutput<KV<CompoundKey, Aggregate>, String> FLOW_SUMMARY_DATA_TO_JSON =
-        ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, String>() {
+    private static ParDo.SingleOutput<KV<CompoundKey, Aggregate>, String> keyAndAggregateToJson(PCollectionView<Map<String, String>> hostnamesView) {
+        return ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, String>() {
             @ProcessElement
             public void processElement(ProcessContext c, IntervalWindow window) throws JsonProcessingException {
-                FlowSummary flowSummary = toFlowSummary(c.element(), window);
+                var hostnames = c.sideInput(hostnamesView);
+                FlowSummary flowSummary = toFlowSummary(c.element(), window, hostnames);
                 c.output(MAPPER.writeValueAsString(flowSummary));
             }
-        });
+        }).withSideInputs(hostnamesView);
+    }
 
     static class SumBytes extends Combine.BinaryCombineFn<Aggregate> {
         @Override
@@ -727,7 +758,7 @@ public class Pipeline {
         });
     }
 
-    public static FlowSummary toFlowSummary(KV<CompoundKey, Aggregate> fsd, IntervalWindow window) {
+    public static FlowSummary toFlowSummary(KV<CompoundKey, Aggregate> fsd, IntervalWindow window, Map<String, String> hostnames) {
         FlowSummary flowSummary = new FlowSummary();
         fsd.getKey().populate(flowSummary);
         flowSummary.setAggregationType(fsd.getKey().type.isTotalNotTopK() ? AggregationType.TOTAL : AggregationType.TOPK);
@@ -744,7 +775,7 @@ public class Pipeline {
         flowSummary.setNonEcnCapableTransport(fsd.getValue().isNonEcnCapableTransport());
 
         if (fsd.getKey().getType() == CompoundKeyType.EXPORTER_INTERFACE_HOST || fsd.getKey().getType() == CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST) {
-            flowSummary.setHostName(Strings.emptyToNull(fsd.getValue().getHostname()));
+            flowSummary.setHostName(Strings.emptyToNull(hostnames.get(fsd.getKey().data.address)));
         }
 
         return flowSummary;
@@ -778,34 +809,42 @@ public class Pipeline {
                 .discardingFiredPanes();
     }
 
+    private static final Counter flowsWithMissingFields = Metrics.counter(Pipeline.class, "flowsWithMissingFields");
+    private static final Counter flowsInWindow = Metrics.counter("flows", "in_window");
+
+    public static Pair<PCollection<KV<CompoundKey, Aggregate>>, PCollectionView<Map<String, String>>> keyByConfWithTos(
+        PCollection<FlowDocument> input
+    ) {
+        var tuple = input
+                .apply("key_by_conv", ParDo.of(new KeyByConvWithTos()).withOutputTags(BY_CONV, TupleTagList.of(HOSTNAME)));
+
+        PCollectionView<Map<String, String>> hostnamesView = tuple.get(HOSTNAME)
+                .apply(Combine.perKey((s1, s2) -> s1))
+                .apply(View.asMap());
+
+        return Pair.of(tuple.get(BY_CONV), hostnamesView);
+    }
+
     /**
      * Maps flow documents into pairs of compound keys (of type EXPORTER_INTERFACE_TOS_CONVERSATION) and aggregates.
      * <p>
      * {@link Aggregate} values are determined for window based on the intersection of flows with their windows.
      */
-    public static class KeyByConvWithTos extends DoFn<FlowDocument, KV<CompoundKey, Aggregate>> {
-
-        private final Counter flowsWithMissingFields = Metrics.counter(Pipeline.class, "flowsWithMissingFields");
-        private final Counter flowsInWindow = Metrics.counter("flows", "in_window");
+    private static class KeyByConvWithTos extends DoFn<FlowDocument, KV<CompoundKey, Aggregate>> {
 
         @ProcessElement
-        public void processElement(ProcessContext c, IntervalWindow window) {
-            final FlowDocument flow = c.element();
+        public void processElement(@Element FlowDocument flow, IntervalWindow window, MultiOutputReceiver out) {
             try {
                 CompoundKey key = CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERSATION.create(flow);
-                String src = Strings.nullToEmpty(flow.getSrcAddress());
-                String dst = Strings.nullToEmpty(flow.getDstAddress());
-                String hostname, hostname2;
-                if (src.compareTo(dst) < 0) {
-                    hostname = flow.getSrcHostname();
-                    hostname2 = flow.getDstHostname();
-                } else {
-                    hostname2 = flow.getSrcHostname();
-                    hostname = flow.getDstHostname();
-                }
-                Aggregate aggregate = aggregatize(window, flow, hostname, hostname2);
+                Aggregate aggregate = aggregatize(window, flow);
                 flowsInWindow.inc();
-                c.output(KV.of(key, aggregate));
+                out.get(BY_CONV).output(KV.of(key, aggregate));
+                if (!Strings.isNullOrEmpty(flow.getSrcHostname())) {
+                    out.get(HOSTNAME).output(KV.of(flow.getSrcAddress(), flow.getSrcHostname()));
+                }
+                if (!Strings.isNullOrEmpty(flow.getDstHostname())) {
+                    out.get(HOSTNAME).output(KV.of(flow.getDstAddress(), flow.getDstHostname()));
+                }
             } catch (MissingFieldsException mfe) {
                 flowsWithMissingFields.inc();
             }
@@ -837,7 +876,7 @@ public class Pipeline {
         return bytesAtEnd - bytesAtPreviousEnd;
     }
 
-    public static Aggregate aggregatize(final IntervalWindow window, final FlowDocument flow, final String hostname, String hostname2) {
+    public static Aggregate aggregatize(final IntervalWindow window, final FlowDocument flow) {
         double multiplier = 1;
         if (flow.hasSamplingInterval()) {
             double samplingInterval = flow.getSamplingInterval().getValue();
@@ -854,8 +893,8 @@ public class Pipeline {
         );
         // Track
         return Direction.INGRESS.equals(flow.getDirection()) ?
-               new Aggregate(bytes, 0, hostname, hostname2, flow.hasEcn() ? flow.getEcn().getValue() : null) :
-               new Aggregate(0, bytes, hostname, hostname2, flow.hasEcn() ? flow.getEcn().getValue() : null);
+               new Aggregate(bytes, 0, flow.hasEcn() ? flow.getEcn().getValue() : null) :
+               new Aggregate(0, bytes, flow.hasEcn() ? flow.getEcn().getValue() : null);
     }
 
     public static class ProjConvWithTos extends DoFn<KV<CompoundKey, Aggregate>, KV<CompoundKey, Aggregate>> {
@@ -868,21 +907,21 @@ public class Pipeline {
             // contains all fields that are required for a key of type EXPORTER_INTERFACE_TOS_APPLICATION
             // -> the key can be cast
             CompoundKey appKey = convKey.cast(CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION);
-            out.get(BY_APP).output(KV.of(appKey, a.withHostname(null)));
+            out.get(BY_APP).output(KV.of(appKey, a));
             // the CompoundKeyData of a conversation key of type EXPORTER_INTERFACE_TOS_CONVERSATION
             // contains all fields that are required for a key of type EXPORTER_INTERFACE_TOS_HOST
             // -> the key can be cast
             CompoundKey hostKey1 = convKey.cast(CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST);
-            out.get(BY_HOST).output(KV.of(hostKey1, a.withHostname(a.getHostname())));
+            out.get(BY_HOST).output(KV.of(hostKey1, a));
             // the CompoundKeyData of a conversation key of type EXPORTER_INTERFACE_TOS_CONVERSATION
             // contains all fields that are required for a key of type EXPORTER_INTERFACE_TOS_HOST
             // and a second host address, namely the larger address of the conversation
-            // -> use the larget address and construct a corresponding key
+            // -> use the larger address and construct a corresponding key
             CompoundKey hostKey2 = new CompoundKey(
                     CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST,
                     new CompoundKeyData.Builder(convKey.data).withAddress(convKey.data.largerAddress).build()
             );
-            out.get(BY_HOST).output(KV.of(hostKey2, a.withHostname(a.getHostname2())));
+            out.get(BY_HOST).output(KV.of(hostKey2, a));
         }
 
     }

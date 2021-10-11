@@ -35,6 +35,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import org.apache.beam.sdk.coders.Coder;
@@ -43,6 +44,7 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.PCollectionView;
 import org.opennms.nephron.elastic.FlowSummary;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -59,13 +61,15 @@ public class JacksonJsonCoder<T> extends Coder<T> {
      * Transformation that can be applied to pipeline to transform FLowSummaryData instances into FlowSummary
      * instances.
      */
-    public static ParDo.SingleOutput<KV<CompoundKey, Aggregate>, FlowSummary> TO_FLOW_SUMMARY =
-            ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, FlowSummary>() {
-                @ProcessElement
-                public void processElement(ProcessContext c, IntervalWindow window) {
-                    c.output(toFlowSummary(c.element(), window));
-                }
-            });
+    public static ParDo.SingleOutput<KV<CompoundKey, Aggregate>, FlowSummary> keyAndAggregateToFlowSummary(PCollectionView<Map<String, String>> hostnamesView) {
+        return ParDo.of(new DoFn<KV<CompoundKey, Aggregate>, FlowSummary>() {
+            @ProcessElement
+            public void processElement(ProcessContext c, IntervalWindow window) {
+                var hostnames = c.sideInput(hostnamesView);
+                c.output(toFlowSummary(c.element(), window, hostnames));
+            }
+        }).withSideInputs(hostnamesView);
+    }
 
 
     private static final ObjectMapper mapper = new ObjectMapper();

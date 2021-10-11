@@ -228,16 +228,19 @@ public class Benchmark {
 
         var inputSetup = options.getInput().createInputSetup(options);
 
-        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = pipeline
+        var input = pipeline
                 .apply(inputSetup.source())
-                .apply(inTestingProbe.getTransform())
-                .apply(new Pipeline.CalculateFlowStatistics(options));
+                .apply(inTestingProbe.getTransform());
+
+        var flowSummariesAndHostnames = Pipeline.calculateFlowStatistics(input, options);
+
+        var flowSummaries = flowSummariesAndHostnames.getLeft();
 
         flowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
 
         flowSummaries = flowSummaries.apply(outTestingProbe.getTransform());
 
-        attachWriteToElastic(options, flowSummaries);
+        attachWriteToElastic(options, flowSummaries, flowSummariesAndHostnames.getRight());
         // add an additional label that differentiates benchmark runs
         // -> ensures that samples of different runs do not conflict
         //    (Cortex's sample time ordering constraint could be violated because the EventTimestampIndexer logic is started anew for each run)

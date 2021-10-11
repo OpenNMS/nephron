@@ -33,8 +33,10 @@ import java.util.Collections;
 import java.util.Objects;
 
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.transforms.windowing.NonMergingWindowFn;
+import org.apache.beam.sdk.transforms.windowing.PartitioningWindowFn;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.transforms.windowing.WindowMappingFn;
 import org.joda.time.Duration;
@@ -115,7 +117,12 @@ public class UnalignedFixedWindows extends NonMergingWindowFn<FlowDocument, Inte
 
     @Override
     public WindowMappingFn<IntervalWindow> getDefaultWindowMappingFn() {
-        return null;
+        return new WindowMappingFn<>() {
+            @Override
+            public IntervalWindow getSideInputWindow(BoundedWindow mainWindow) {
+                return (IntervalWindow)mainWindow;
+            }
+        };
     }
 
     @Override

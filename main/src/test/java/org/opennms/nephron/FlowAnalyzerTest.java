@@ -37,7 +37,7 @@ import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_APPLICATION;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_CONVERSATION;
 import static org.opennms.nephron.CompoundKeyType.EXPORTER_INTERFACE_TOS_HOST;
-import static org.opennms.nephron.JacksonJsonCoder.TO_FLOW_SUMMARY;
+import static org.opennms.nephron.JacksonJsonCoder.keyAndAggregateToFlowSummary;
 import static org.opennms.nephron.Pipeline.ReadFromKafka.getTimestamp;
 import static org.opennms.nephron.flowgen.FlowGenerator.GIGABYTE;
 
@@ -56,6 +56,7 @@ import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.KV;
@@ -91,6 +92,10 @@ public class FlowAnalyzerTest {
     static WindowingDef WINDOW_DEF = new WindowingDef(Duration.standardMinutes(1), EXPORTER_NODE.getNodeId());
     static Wnd WND = WINDOW_DEF.at(1_500_000_000_000l);
 
+    // disable early firings
+    // -> early panes prevent on-time panes if no new data arrives
+    // -> early panes seem to be somewhat indeterministic: aggregation is distributed over different nodes;
+    //    all of them seem to trigger (partial) early panes;
     static Pipeline.WindowedFlows WINDOWED_FLOWS = new Pipeline.WindowedFlows(Duration.standardMinutes(1), Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2));
 
 //    private PipelineOptions flinkOptions = TestFlinkRunner
@@ -111,6 +116,15 @@ public class FlowAnalyzerTest {
         return TimestampedValue.of(fd, getTimestamp(fd));
     }
 
+    private static PCollection<FlowSummary> flowSummaries(
+        PCollection<FlowDocument> input,
+        SerializableFunction<KV<CompoundKey, Aggregate>, Boolean> filter
+    ) {
+        var flowSummariesAndHostnames = Pipeline.calculateFlowStatistics(input, 10, WINDOWED_FLOWS);
+        return flowSummariesAndHostnames.getLeft()
+                .apply(Filter.by(filter))
+                .apply(keyAndAggregateToFlowSummary(flowSummariesAndHostnames.getRight()));
+    }
 
     @Test
     public void canComputeTotalBytesInWindow() {
@@ -139,10 +153,8 @@ public class FlowAnalyzerTest {
         }
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
-        PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(new Pipeline.CalculateFlowStatistics(10, WINDOWED_FLOWS))
-                .apply(Filter.by(fs -> fs.getKey().getType() == CompoundKeyType.EXPORTER_INTERFACE))
-                .apply(TO_FLOW_SUMMARY);
+        PCollection<FlowSummary> output =
+                flowSummaries(p.apply(flowStream), fs -> fs.getKey().getType() == CompoundKeyType.EXPORTER_INTERFACE);
 
         FlowSummary summary = new FlowSummary();
         summary.setTimestamp(WND.startPlusWindowSizeMs);
@@ -220,10 +232,8 @@ public class FlowAnalyzerTest {
         TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
 
         // Build the pipeline
-        PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(new Pipeline.CalculateFlowStatistics(10, WINDOWED_FLOWS))
-                .apply(Filter.by(fs -> fs.getKey().getType() == CompoundKeyType.EXPORTER_INTERFACE))
-                .apply(TO_FLOW_SUMMARY);
+        PCollection<FlowSummary> output =
+                flowSummaries(p.apply(flowStream), fs -> fs.getKey().getType() == CompoundKeyType.EXPORTER_INTERFACE);
 
         FlowSummary summaryFromOnTimePane = new FlowSummary();
         summaryFromOnTimePane.setTimestamp(startMs + 60_000L);
@@ -304,13 +314,7 @@ public class FlowAnalyzerTest {
                 .build().get(0)));
 
         final TestStream<FlowDocument> flowStream = flowStreamBuilder.advanceWatermarkToInfinity();
-        final PCollection<FlowSummary> output = p.apply(flowStream)
-                // disable early firings
-                // -> early panes prevent on-time panes if no new data arrives
-                // -> early panes seem to be somewhat indeterministic: aggregation is distributed over different nodes;
-                //    all of them seem to trigger (partial) early panes;
-                .apply(new Pipeline.CalculateFlowStatistics(10, new Pipeline.WindowedFlows(WND.windowSize, Duration.standardMinutes(15), Duration.ZERO, Duration.standardMinutes(2), Duration.standardHours(2))))
-                .apply(TO_FLOW_SUMMARY);
+        final PCollection<FlowSummary> output = flowSummaries(p.apply(flowStream), fs -> true);
 
         final FlowSummary[] summaries = new FlowSummary[]{
                 new FlowSummary() {{
@@ -696,7 +700,9 @@ public class FlowAnalyzerTest {
         PAssert.that("Bucket 3", output).inWindow(window.apply(3)).containsInAnyOrder(flow1, flow2, flow3, flow4);
         PAssert.that("Bucket 4", output).inWindow(window.apply(4)).containsInAnyOrder();
 
-        final PCollection<KV<CompoundKey, Aggregate>> aggregates = output.apply(ParDo.of(new Pipeline.KeyByConvWithTos()));
+        var byConfAndHostnamesView = Pipeline.keyByConfWithTos(output);
+
+        final PCollection<KV<CompoundKey, Aggregate>> aggregates = byConfAndHostnamesView.getLeft();
 
         PAssert.that("Bytes 0", aggregates).inWindow(window.apply(0)).containsInAnyOrder();
         PAssert.that("Bytes 1", aggregates).inWindow(window.apply(1)).containsInAnyOrder(
@@ -721,7 +727,7 @@ public class FlowAnalyzerTest {
     }
 
     private static Aggregate aggregate(long bytes) {
-        return new Aggregate(bytes, 0, "first.src.example.com", "second.dst.example.com", 0);
+        return new Aggregate(bytes, 0, 0);
     }
 
     private static TestStream<FlowDocument> testStream(int tos1, int tos2) {
@@ -781,9 +787,7 @@ public class FlowAnalyzerTest {
     @Test
     public void groupsByDscp() {
         final TestStream<FlowDocument> flowStream = testStream(0, 12);
-        final PCollection<FlowSummary> output = p.apply(flowStream)
-                .apply(new Pipeline.CalculateFlowStatistics(10, WINDOWED_FLOWS))
-                .apply(TO_FLOW_SUMMARY);
+        final PCollection<FlowSummary> output = flowSummaries(p.apply(flowStream), fs -> true);
 
         // expect 15 flow summaries:
         // 1 for exporter/interface

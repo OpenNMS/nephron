@@ -108,9 +108,7 @@ public class CortexPaneIT {
         org.apache.beam.sdk.Pipeline pipeline = org.apache.beam.sdk.Pipeline.create(options);
         registerCoders(pipeline);
 
-        PCollection<KV<CompoundKey, Aggregate>> rawFlowSummaries = pipeline
-                .apply(SyntheticFlowSource.readFromSyntheticSource(sourceConfig))
-                .apply(new Pipeline.CalculateFlowStatistics(options));
+        PCollection<KV<CompoundKey, Aggregate>> rawFlowSummaries = TotalVolumeTest.flowSummaries(pipeline, sourceConfig, options);
 
         //Pipeline.attachWriteToElastic(options, accumulatedPanesFlowSummaries);
         Pipeline.attachWriteToCortex(options, rawFlowSummaries);

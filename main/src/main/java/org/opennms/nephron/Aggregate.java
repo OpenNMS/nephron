@@ -48,34 +48,19 @@ public class Aggregate {
     private final long bytesIn;
     private final long bytesOut;
 
-    // Some aggregations track host name information for a host addresses.
-    //
-    // Aggregations by conversations track the host name for source and destination addresses
-    // Aggregations by host addresses track the host name for the corresponding address
-    //
-    // In case of conversations `hostname` has the value of the "smaller" address and `hostname2` the value of the
-    // larger address
-
-    private final String hostname;
-    private final String hostname2;
-
     private final boolean congestionEncountered;
     private final boolean nonEcnCapableTransport;
 
-    public Aggregate(long bytesIn, long bytesOut, String hostname, String hostname2, boolean ce, boolean nonEct) {
+    public Aggregate(long bytesIn, long bytesOut, boolean ce, boolean nonEct) {
         this.bytesIn = bytesIn;
         this.bytesOut = bytesOut;
-        this.hostname = hostname;
-        this.hostname2 = hostname2;
         this.congestionEncountered = ce;
         this.nonEcnCapableTransport = nonEct;
     }
 
-    public Aggregate(long bytesIn, long bytesOut, String hostname, String hostname2, Integer ecn) {
+    public Aggregate(long bytesIn, long bytesOut, Integer ecn) {
         this.bytesIn = bytesIn;
         this.bytesOut = bytesOut;
-        this.hostname = hostname;
-        this.hostname2 = hostname2;
         if (ecn != null) {
             this.congestionEncountered = ecn == 3;
             this.nonEcnCapableTransport = ecn == 0;
@@ -85,19 +70,8 @@ public class Aggregate {
         }
     }
 
-    /**
-     * Returns a copy of this aggregate with {@code hostname} set to the given value and {@code hostname2} being {@code null}.
-     */
-    public Aggregate withHostname(String hostname) {
-        return new Aggregate(bytesIn, bytesOut, hostname, null, congestionEncountered, nonEcnCapableTransport);
-    }
-
     public static Aggregate merge(final Aggregate a, final Aggregate b) {
         return new Aggregate(a.bytesIn + b.bytesIn, a.bytesOut + b.bytesOut,
-                // make "hostname merging" deterministic by picking the lexicographic smaller one in case
-                // that both aggregations have hostname being set
-                Strings.isNullOrEmpty(a.hostname) ? b.hostname : Strings.isNullOrEmpty(b.hostname) || a.hostname.compareTo(b.hostname) < 0 ? a.hostname : b.hostname,
-                Strings.isNullOrEmpty(a.hostname2) ? b.hostname2 : Strings.isNullOrEmpty(b.hostname2) || a.hostname2.compareTo(b.hostname2) < 0 ? a.hostname2 : b.hostname2,
                 a.congestionEncountered || b.congestionEncountered,
                 a.nonEcnCapableTransport || b.nonEcnCapableTransport
         );
@@ -109,14 +83,6 @@ public class Aggregate {
 
     public long getBytesOut() {
         return bytesOut;
-    }
-
-    public String getHostname() {
-        return this.hostname;
-    }
-
-    public String getHostname2() {
-        return this.hostname2;
     }
 
     public long getBytes() {
@@ -139,14 +105,12 @@ public class Aggregate {
         return bytesIn == flowBytes.bytesIn &&
                bytesOut == flowBytes.bytesOut &&
                congestionEncountered == flowBytes.congestionEncountered &&
-               nonEcnCapableTransport == flowBytes.nonEcnCapableTransport &&
-               Objects.equals(hostname, flowBytes.hostname) &&
-               Objects.equals(hostname2, flowBytes.hostname2);
+               nonEcnCapableTransport == flowBytes.nonEcnCapableTransport;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(bytesIn, bytesOut, hostname, hostname2, congestionEncountered, nonEcnCapableTransport);
+        return Objects.hash(bytesIn, bytesOut, congestionEncountered, nonEcnCapableTransport);
     }
 
     @Override
@@ -154,7 +118,6 @@ public class Aggregate {
         return "Aggregate{" +
                 "bytesIn=" + bytesIn +
                 ", bytesOut=" + bytesOut +
-               ", hostname='" + hostname + '\'' +
                ", congestionEncountered=" + congestionEncountered +
                ", nonEcnCapableTransport=" + nonEcnCapableTransport +
                '}';
@@ -169,8 +132,6 @@ public class Aggregate {
         public void encode(Aggregate value, OutputStream outStream) throws IOException {
             LONG_CODER.encode(value.bytesIn, outStream);
             LONG_CODER.encode(value.bytesOut, outStream);
-            STRING_CODER.encode(value.hostname, outStream);
-            STRING_CODER.encode(value.hostname2, outStream);
             BOOLEAN_CODER.encode(value.congestionEncountered, outStream);
             BOOLEAN_CODER.encode(value.nonEcnCapableTransport, outStream);
         }
@@ -180,8 +141,6 @@ public class Aggregate {
             return new Aggregate(
                     LONG_CODER.decode(inStream),
                     LONG_CODER.decode(inStream),
-                    STRING_CODER.decode(inStream),
-                    STRING_CODER.decode(inStream),
                     BOOLEAN_CODER.decode(inStream),
                     BOOLEAN_CODER.decode(inStream)
             );
