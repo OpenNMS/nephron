@@ -13,7 +13,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>uint64 timestamp = 1;</code>
-   * @return The timestamp.
    */
   long getTimestamp();
 
@@ -23,7 +22,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value num_bytes = 2;</code>
-   * @return Whether the numBytes field is set.
    */
   boolean hasNumBytes();
   /**
@@ -32,7 +30,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value num_bytes = 2;</code>
-   * @return The numBytes.
    */
   com.google.protobuf.UInt64Value getNumBytes();
   /**
@@ -50,7 +47,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.Direction direction = 3;</code>
-   * @return The enum numeric value on the wire for direction.
    */
   int getDirectionValue();
   /**
@@ -59,9 +55,8 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.Direction direction = 3;</code>
-   * @return The direction.
    */
-  org.opennms.netmgt.flows.persistence.model.Direction getDirection();
+  Direction getDirection();
 
   /**
    * <pre>
@@ -69,16 +64,14 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>string dst_address = 4;</code>
-   * @return The dstAddress.
    */
-  java.lang.String getDstAddress();
+  String getDstAddress();
   /**
    * <pre>
    *  Destination address.
    * </pre>
    *
    * <code>string dst_address = 4;</code>
-   * @return The bytes for dstAddress.
    */
   com.google.protobuf.ByteString
       getDstAddressBytes();
@@ -89,16 +82,14 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>string dst_hostname = 5;</code>
-   * @return The dstHostname.
    */
-  java.lang.String getDstHostname();
+  String getDstHostname();
   /**
    * <pre>
    * Destination address hostname.
    * </pre>
    *
    * <code>string dst_hostname = 5;</code>
-   * @return The bytes for dstHostname.
    */
   com.google.protobuf.ByteString
       getDstHostnameBytes();
@@ -109,7 +100,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value dst_as = 6;</code>
-   * @return Whether the dstAs field is set.
    */
   boolean hasDstAs();
   /**
@@ -118,7 +108,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value dst_as = 6;</code>
-   * @return The dstAs.
    */
   com.google.protobuf.UInt64Value getDstAs();
   /**
@@ -136,7 +125,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value dst_mask_len = 7;</code>
-   * @return Whether the dstMaskLen field is set.
    */
   boolean hasDstMaskLen();
   /**
@@ -145,7 +133,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value dst_mask_len = 7;</code>
-   * @return The dstMaskLen.
    */
   com.google.protobuf.UInt32Value getDstMaskLen();
   /**
@@ -163,7 +150,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value dst_port = 8;</code>
-   * @return Whether the dstPort field is set.
    */
   boolean hasDstPort();
   /**
@@ -172,7 +158,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value dst_port = 8;</code>
-   * @return The dstPort.
    */
   com.google.protobuf.UInt32Value getDstPort();
   /**
@@ -190,7 +175,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value engine_id = 9;</code>
-   * @return Whether the engineId field is set.
    */
   boolean hasEngineId();
   /**
@@ -199,7 +183,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value engine_id = 9;</code>
-   * @return The engineId.
    */
   com.google.protobuf.UInt32Value getEngineId();
   /**
@@ -217,7 +200,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value engine_type = 10;</code>
-   * @return Whether the engineType field is set.
    */
   boolean hasEngineType();
   /**
@@ -226,7 +208,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value engine_type = 10;</code>
-   * @return The engineType.
    */
   com.google.protobuf.UInt32Value getEngineType();
   /**
@@ -244,7 +225,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value delta_switched = 11;</code>
-   * @return Whether the deltaSwitched field is set.
    */
   boolean hasDeltaSwitched();
   /**
@@ -253,7 +233,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value delta_switched = 11;</code>
-   * @return The deltaSwitched.
    */
   com.google.protobuf.UInt64Value getDeltaSwitched();
   /**
@@ -271,7 +250,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value first_switched = 12;</code>
-   * @return Whether the firstSwitched field is set.
    */
   boolean hasFirstSwitched();
   /**
@@ -280,7 +258,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value first_switched = 12;</code>
-   * @return The firstSwitched.
    */
   com.google.protobuf.UInt64Value getFirstSwitched();
   /**
@@ -298,7 +275,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value last_switched = 13;</code>
-   * @return Whether the lastSwitched field is set.
    */
   boolean hasLastSwitched();
   /**
@@ -307,7 +283,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value last_switched = 13;</code>
-   * @return The lastSwitched.
    */
   com.google.protobuf.UInt64Value getLastSwitched();
   /**
@@ -325,7 +300,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value num_flow_records = 14;</code>
-   * @return Whether the numFlowRecords field is set.
    */
   boolean hasNumFlowRecords();
   /**
@@ -334,7 +308,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value num_flow_records = 14;</code>
-   * @return The numFlowRecords.
    */
   com.google.protobuf.UInt32Value getNumFlowRecords();
   /**
@@ -352,7 +325,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value num_packets = 15;</code>
-   * @return Whether the numPackets field is set.
    */
   boolean hasNumPackets();
   /**
@@ -361,7 +333,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value num_packets = 15;</code>
-   * @return The numPackets.
    */
   com.google.protobuf.UInt64Value getNumPackets();
   /**
@@ -379,7 +350,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value flow_seq_num = 16;</code>
-   * @return Whether the flowSeqNum field is set.
    */
   boolean hasFlowSeqNum();
   /**
@@ -388,7 +358,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value flow_seq_num = 16;</code>
-   * @return The flowSeqNum.
    */
   com.google.protobuf.UInt64Value getFlowSeqNum();
   /**
@@ -406,7 +375,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value input_snmp_ifindex = 17;</code>
-   * @return Whether the inputSnmpIfindex field is set.
    */
   boolean hasInputSnmpIfindex();
   /**
@@ -415,7 +383,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value input_snmp_ifindex = 17;</code>
-   * @return The inputSnmpIfindex.
    */
   com.google.protobuf.UInt32Value getInputSnmpIfindex();
   /**
@@ -433,7 +400,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value output_snmp_ifindex = 18;</code>
-   * @return Whether the outputSnmpIfindex field is set.
    */
   boolean hasOutputSnmpIfindex();
   /**
@@ -442,7 +408,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value output_snmp_ifindex = 18;</code>
-   * @return The outputSnmpIfindex.
    */
   com.google.protobuf.UInt32Value getOutputSnmpIfindex();
   /**
@@ -460,7 +425,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value ip_protocol_version = 19;</code>
-   * @return Whether the ipProtocolVersion field is set.
    */
   boolean hasIpProtocolVersion();
   /**
@@ -469,7 +433,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value ip_protocol_version = 19;</code>
-   * @return The ipProtocolVersion.
    */
   com.google.protobuf.UInt32Value getIpProtocolVersion();
   /**
@@ -487,16 +450,14 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>string next_hop_address = 20;</code>
-   * @return The nextHopAddress.
    */
-  java.lang.String getNextHopAddress();
+  String getNextHopAddress();
   /**
    * <pre>
    * Next hop IpAddress.
    * </pre>
    *
    * <code>string next_hop_address = 20;</code>
-   * @return The bytes for nextHopAddress.
    */
   com.google.protobuf.ByteString
       getNextHopAddressBytes();
@@ -507,16 +468,14 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>string next_hop_hostname = 21;</code>
-   * @return The nextHopHostname.
    */
-  java.lang.String getNextHopHostname();
+  String getNextHopHostname();
   /**
    * <pre>
    * Next hop hostname.
    * </pre>
    *
    * <code>string next_hop_hostname = 21;</code>
-   * @return The bytes for nextHopHostname.
    */
   com.google.protobuf.ByteString
       getNextHopHostnameBytes();
@@ -527,7 +486,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value protocol = 22;</code>
-   * @return Whether the protocol field is set.
    */
   boolean hasProtocol();
   /**
@@ -536,7 +494,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value protocol = 22;</code>
-   * @return The protocol.
    */
   com.google.protobuf.UInt32Value getProtocol();
   /**
@@ -554,7 +511,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.SamplingAlgorithm sampling_algorithm = 23;</code>
-   * @return The enum numeric value on the wire for samplingAlgorithm.
    */
   int getSamplingAlgorithmValue();
   /**
@@ -563,9 +519,8 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.SamplingAlgorithm sampling_algorithm = 23;</code>
-   * @return The samplingAlgorithm.
    */
-  org.opennms.netmgt.flows.persistence.model.SamplingAlgorithm getSamplingAlgorithm();
+  SamplingAlgorithm getSamplingAlgorithm();
 
   /**
    * <pre>
@@ -573,7 +528,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.DoubleValue sampling_interval = 24;</code>
-   * @return Whether the samplingInterval field is set.
    */
   boolean hasSamplingInterval();
   /**
@@ -582,7 +536,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.DoubleValue sampling_interval = 24;</code>
-   * @return The samplingInterval.
    */
   com.google.protobuf.DoubleValue getSamplingInterval();
   /**
@@ -600,16 +553,14 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>string src_address = 26;</code>
-   * @return The srcAddress.
    */
-  java.lang.String getSrcAddress();
+  String getSrcAddress();
   /**
    * <pre>
    * Source address.
    * </pre>
    *
    * <code>string src_address = 26;</code>
-   * @return The bytes for srcAddress.
    */
   com.google.protobuf.ByteString
       getSrcAddressBytes();
@@ -620,16 +571,14 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>string src_hostname = 27;</code>
-   * @return The srcHostname.
    */
-  java.lang.String getSrcHostname();
+  String getSrcHostname();
   /**
    * <pre>
    * Source hostname.
    * </pre>
    *
    * <code>string src_hostname = 27;</code>
-   * @return The bytes for srcHostname.
    */
   com.google.protobuf.ByteString
       getSrcHostnameBytes();
@@ -640,7 +589,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value src_as = 28;</code>
-   * @return Whether the srcAs field is set.
    */
   boolean hasSrcAs();
   /**
@@ -649,7 +597,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt64Value src_as = 28;</code>
-   * @return The srcAs.
    */
   com.google.protobuf.UInt64Value getSrcAs();
   /**
@@ -667,7 +614,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value src_mask_len = 29;</code>
-   * @return Whether the srcMaskLen field is set.
    */
   boolean hasSrcMaskLen();
   /**
@@ -676,7 +622,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value src_mask_len = 29;</code>
-   * @return The srcMaskLen.
    */
   com.google.protobuf.UInt32Value getSrcMaskLen();
   /**
@@ -694,7 +639,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value src_port = 30;</code>
-   * @return Whether the srcPort field is set.
    */
   boolean hasSrcPort();
   /**
@@ -703,7 +647,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value src_port = 30;</code>
-   * @return The srcPort.
    */
   com.google.protobuf.UInt32Value getSrcPort();
   /**
@@ -721,7 +664,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value tcp_flags = 31;</code>
-   * @return Whether the tcpFlags field is set.
    */
   boolean hasTcpFlags();
   /**
@@ -730,7 +672,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value tcp_flags = 31;</code>
-   * @return The tcpFlags.
    */
   com.google.protobuf.UInt32Value getTcpFlags();
   /**
@@ -748,7 +689,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value tos = 32;</code>
-   * @return Whether the tos field is set.
    */
   boolean hasTos();
   /**
@@ -757,7 +697,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value tos = 32;</code>
-   * @return The tos.
    */
   com.google.protobuf.UInt32Value getTos();
   /**
@@ -775,7 +714,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.NetflowVersion netflow_version = 33;</code>
-   * @return The enum numeric value on the wire for netflowVersion.
    */
   int getNetflowVersionValue();
   /**
@@ -784,9 +722,8 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.NetflowVersion netflow_version = 33;</code>
-   * @return The netflowVersion.
    */
-  org.opennms.netmgt.flows.persistence.model.NetflowVersion getNetflowVersion();
+  NetflowVersion getNetflowVersion();
 
   /**
    * <pre>
@@ -794,145 +731,113 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>string vlan = 34;</code>
-   * @return The vlan.
    */
-  java.lang.String getVlan();
+  String getVlan();
   /**
    * <pre>
    * VLAN ID.
    * </pre>
    *
    * <code>string vlan = 34;</code>
-   * @return The bytes for vlan.
    */
   com.google.protobuf.ByteString
       getVlanBytes();
 
   /**
    * <code>.NodeInfo src_node = 35;</code>
-   * @return Whether the srcNode field is set.
    */
   boolean hasSrcNode();
   /**
    * <code>.NodeInfo src_node = 35;</code>
-   * @return The srcNode.
    */
-  org.opennms.netmgt.flows.persistence.model.NodeInfo getSrcNode();
+  NodeInfo getSrcNode();
   /**
    * <code>.NodeInfo src_node = 35;</code>
    */
-  org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder getSrcNodeOrBuilder();
+  NodeInfoOrBuilder getSrcNodeOrBuilder();
 
   /**
    * <code>.NodeInfo exporter_node = 36;</code>
-   * @return Whether the exporterNode field is set.
    */
   boolean hasExporterNode();
   /**
    * <code>.NodeInfo exporter_node = 36;</code>
-   * @return The exporterNode.
    */
-  org.opennms.netmgt.flows.persistence.model.NodeInfo getExporterNode();
+  NodeInfo getExporterNode();
   /**
    * <code>.NodeInfo exporter_node = 36;</code>
    */
-  org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder getExporterNodeOrBuilder();
+  NodeInfoOrBuilder getExporterNodeOrBuilder();
 
   /**
    * <code>.NodeInfo dest_node = 37;</code>
-   * @return Whether the destNode field is set.
    */
   boolean hasDestNode();
   /**
    * <code>.NodeInfo dest_node = 37;</code>
-   * @return The destNode.
    */
-  org.opennms.netmgt.flows.persistence.model.NodeInfo getDestNode();
+  NodeInfo getDestNode();
   /**
    * <code>.NodeInfo dest_node = 37;</code>
    */
-  org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder getDestNodeOrBuilder();
+  NodeInfoOrBuilder getDestNodeOrBuilder();
 
   /**
    * <code>string application = 38;</code>
-   * @return The application.
    */
-  java.lang.String getApplication();
+  String getApplication();
   /**
    * <code>string application = 38;</code>
-   * @return The bytes for application.
    */
   com.google.protobuf.ByteString
       getApplicationBytes();
 
   /**
    * <code>string host = 39;</code>
-   * @return The host.
    */
-  java.lang.String getHost();
+  String getHost();
   /**
    * <code>string host = 39;</code>
-   * @return The bytes for host.
    */
   com.google.protobuf.ByteString
       getHostBytes();
 
   /**
    * <code>string location = 40;</code>
-   * @return The location.
    */
-  java.lang.String getLocation();
+  String getLocation();
   /**
    * <code>string location = 40;</code>
-   * @return The bytes for location.
    */
   com.google.protobuf.ByteString
       getLocationBytes();
 
   /**
    * <code>.Locality src_locality = 41;</code>
-   * @return The enum numeric value on the wire for srcLocality.
    */
   int getSrcLocalityValue();
   /**
    * <code>.Locality src_locality = 41;</code>
-   * @return The srcLocality.
    */
-  org.opennms.netmgt.flows.persistence.model.Locality getSrcLocality();
+  Locality getSrcLocality();
 
   /**
    * <code>.Locality dst_locality = 42;</code>
-   * @return The enum numeric value on the wire for dstLocality.
    */
   int getDstLocalityValue();
   /**
    * <code>.Locality dst_locality = 42;</code>
-   * @return The dstLocality.
    */
-  org.opennms.netmgt.flows.persistence.model.Locality getDstLocality();
+  Locality getDstLocality();
 
   /**
    * <code>.Locality flow_locality = 43;</code>
-   * @return The enum numeric value on the wire for flowLocality.
    */
   int getFlowLocalityValue();
   /**
    * <code>.Locality flow_locality = 43;</code>
-   * @return The flowLocality.
    */
-  org.opennms.netmgt.flows.persistence.model.Locality getFlowLocality();
-
-  /**
-   * <code>string convo_key = 44;</code>
-   * @return The convoKey.
-   */
-  java.lang.String getConvoKey();
-  /**
-   * <code>string convo_key = 44;</code>
-   * @return The bytes for convoKey.
-   */
-  com.google.protobuf.ByteString
-      getConvoKeyBytes();
+  Locality getFlowLocality();
 
   /**
    * <pre>
@@ -940,7 +845,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>uint64 clock_correction = 45;</code>
-   * @return The clockCorrection.
    */
   long getClockCorrection();
 
@@ -950,7 +854,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value dscp = 46;</code>
-   * @return Whether the dscp field is set.
    */
   boolean hasDscp();
   /**
@@ -959,7 +862,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value dscp = 46;</code>
-   * @return The dscp.
    */
   com.google.protobuf.UInt32Value getDscp();
   /**
@@ -977,7 +879,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value ecn = 47;</code>
-   * @return Whether the ecn field is set.
    */
   boolean hasEcn();
   /**
@@ -986,7 +887,6 @@ public interface FlowDocumentOrBuilder extends
    * </pre>
    *
    * <code>.google.protobuf.UInt32Value ecn = 47;</code>
-   * @return The ecn.
    */
   com.google.protobuf.UInt32Value getEcn();
   /**

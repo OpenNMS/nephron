@@ -143,8 +143,6 @@ public class Handler implements BiConsumer<Exporter, FlowReport>, Closeable {
                                     ? new InetAddress[]{srcAddr.address, dstAddr.address}
                                     : new InetAddress[]{dstAddr.address, srcAddr.address};
 
-        final String convoKey = "[\"" + exporter.getLocation() + "\",\"" + protocol + ",\"" + InetAddresses.toAddrString(convo[0]) + "\",\"" + InetAddresses.toAddrString(convo[1]) + "\",\"" + application + "\"]";
-
         final FlowDocument.Builder flowBuilder = FlowDocument.newBuilder();
         flowBuilder.setApplication(application);
         flowBuilder.setHost(choose(this.hosts));
@@ -160,7 +158,6 @@ public class Handler implements BiConsumer<Exporter, FlowReport>, Closeable {
         flowBuilder.setDeltaSwitched(UInt64Value.of(report.getStart().plus(exporter.getClockOffset()).toEpochMilli()));
         flowBuilder.setLastSwitched(UInt64Value.of(report.getEnd().minusMillis(1).plus(exporter.getClockOffset()).toEpochMilli()));
         flowBuilder.setNumBytes(UInt64Value.of(report.getBytes()));
-        flowBuilder.setConvoKey(convoKey);
         flowBuilder.setInputSnmpIfindex(UInt32Value.of(exporter.getInputSnmp()));
         flowBuilder.setOutputSnmpIfindex(UInt32Value.of(exporter.getOutputSnmp()));
 
