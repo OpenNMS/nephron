@@ -10,7 +10,7 @@ public interface NodeInfoOrBuilder extends
   /**
    * <code>string foreign_source = 1;</code>
    */
-  String getForeignSource();
+  java.lang.String getForeignSource();
   /**
    * <code>string foreign_source = 1;</code>
    */
@@ -20,7 +20,7 @@ public interface NodeInfoOrBuilder extends
   /**
    * <code>string foregin_id = 2;</code>
    */
-  String getForeginId();
+  java.lang.String getForeginId();
   /**
    * <code>string foregin_id = 2;</code>
    */
@@ -35,7 +35,7 @@ public interface NodeInfoOrBuilder extends
   /**
    * <code>repeated string categories = 4;</code>
    */
-  java.util.List<String>
+  java.util.List<java.lang.String>
       getCategoriesList();
   /**
    * <code>repeated string categories = 4;</code>
@@ -44,7 +44,7 @@ public interface NodeInfoOrBuilder extends
   /**
    * <code>repeated string categories = 4;</code>
    */
-  String getCategories(int index);
+  java.lang.String getCategories(int index);
   /**
    * <code>repeated string categories = 4;</code>
    */

@@ -31,7 +31,7 @@ public enum Locality
 
   public final int getNumber() {
     if (this == UNRECOGNIZED) {
-      throw new IllegalArgumentException(
+      throw new java.lang.IllegalArgumentException(
           "Can't get the number of an unknown enum value.");
     }
     return value;
@@ -40,7 +40,7 @@ public enum Locality
   /**
    * @deprecated Use {@link #forNumber(int)} instead.
    */
-  @Deprecated
+  @java.lang.Deprecated
   public static Locality valueOf(int value) {
     return forNumber(value);
   }
@@ -75,7 +75,7 @@ public enum Locality
   }
   public static final com.google.protobuf.Descriptors.EnumDescriptor
       getDescriptor() {
-    return EnrichedFlowProtos.getDescriptor().getEnumTypes().get(3);
+    return org.opennms.netmgt.flows.persistence.model.EnrichedFlowProtos.getDescriptor().getEnumTypes().get(3);
   }
 
   private static final Locality[] VALUES = values();
@@ -83,7 +83,7 @@ public enum Locality
   public static Locality valueOf(
       com.google.protobuf.Descriptors.EnumValueDescriptor desc) {
     if (desc.getType() != getDescriptor()) {
-      throw new IllegalArgumentException(
+      throw new java.lang.IllegalArgumentException(
         "EnumValueDescriptor is not for this type.");
     }
     if (desc.getIndex() == -1) {

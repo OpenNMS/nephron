@@ -56,7 +56,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>.Direction direction = 3;</code>
    */
-  Direction getDirection();
+  org.opennms.netmgt.flows.persistence.model.Direction getDirection();
 
   /**
    * <pre>
@@ -65,7 +65,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string dst_address = 4;</code>
    */
-  String getDstAddress();
+  java.lang.String getDstAddress();
   /**
    * <pre>
    *  Destination address.
@@ -83,7 +83,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string dst_hostname = 5;</code>
    */
-  String getDstHostname();
+  java.lang.String getDstHostname();
   /**
    * <pre>
    * Destination address hostname.
@@ -451,7 +451,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string next_hop_address = 20;</code>
    */
-  String getNextHopAddress();
+  java.lang.String getNextHopAddress();
   /**
    * <pre>
    * Next hop IpAddress.
@@ -469,7 +469,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string next_hop_hostname = 21;</code>
    */
-  String getNextHopHostname();
+  java.lang.String getNextHopHostname();
   /**
    * <pre>
    * Next hop hostname.
@@ -520,7 +520,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>.SamplingAlgorithm sampling_algorithm = 23;</code>
    */
-  SamplingAlgorithm getSamplingAlgorithm();
+  org.opennms.netmgt.flows.persistence.model.SamplingAlgorithm getSamplingAlgorithm();
 
   /**
    * <pre>
@@ -554,7 +554,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string src_address = 26;</code>
    */
-  String getSrcAddress();
+  java.lang.String getSrcAddress();
   /**
    * <pre>
    * Source address.
@@ -572,7 +572,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string src_hostname = 27;</code>
    */
-  String getSrcHostname();
+  java.lang.String getSrcHostname();
   /**
    * <pre>
    * Source hostname.
@@ -723,7 +723,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>.NetflowVersion netflow_version = 33;</code>
    */
-  NetflowVersion getNetflowVersion();
+  org.opennms.netmgt.flows.persistence.model.NetflowVersion getNetflowVersion();
 
   /**
    * <pre>
@@ -732,7 +732,7 @@ public interface FlowDocumentOrBuilder extends
    *
    * <code>string vlan = 34;</code>
    */
-  String getVlan();
+  java.lang.String getVlan();
   /**
    * <pre>
    * VLAN ID.
@@ -750,11 +750,11 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>.NodeInfo src_node = 35;</code>
    */
-  NodeInfo getSrcNode();
+  org.opennms.netmgt.flows.persistence.model.NodeInfo getSrcNode();
   /**
    * <code>.NodeInfo src_node = 35;</code>
    */
-  NodeInfoOrBuilder getSrcNodeOrBuilder();
+  org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder getSrcNodeOrBuilder();
 
   /**
    * <code>.NodeInfo exporter_node = 36;</code>
@@ -763,11 +763,11 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>.NodeInfo exporter_node = 36;</code>
    */
-  NodeInfo getExporterNode();
+  org.opennms.netmgt.flows.persistence.model.NodeInfo getExporterNode();
   /**
    * <code>.NodeInfo exporter_node = 36;</code>
    */
-  NodeInfoOrBuilder getExporterNodeOrBuilder();
+  org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder getExporterNodeOrBuilder();
 
   /**
    * <code>.NodeInfo dest_node = 37;</code>
@@ -776,16 +776,16 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>.NodeInfo dest_node = 37;</code>
    */
-  NodeInfo getDestNode();
+  org.opennms.netmgt.flows.persistence.model.NodeInfo getDestNode();
   /**
    * <code>.NodeInfo dest_node = 37;</code>
    */
-  NodeInfoOrBuilder getDestNodeOrBuilder();
+  org.opennms.netmgt.flows.persistence.model.NodeInfoOrBuilder getDestNodeOrBuilder();
 
   /**
    * <code>string application = 38;</code>
    */
-  String getApplication();
+  java.lang.String getApplication();
   /**
    * <code>string application = 38;</code>
    */
@@ -795,7 +795,7 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>string host = 39;</code>
    */
-  String getHost();
+  java.lang.String getHost();
   /**
    * <code>string host = 39;</code>
    */
@@ -805,7 +805,7 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>string location = 40;</code>
    */
-  String getLocation();
+  java.lang.String getLocation();
   /**
    * <code>string location = 40;</code>
    */
@@ -819,7 +819,7 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>.Locality src_locality = 41;</code>
    */
-  Locality getSrcLocality();
+  org.opennms.netmgt.flows.persistence.model.Locality getSrcLocality();
 
   /**
    * <code>.Locality dst_locality = 42;</code>
@@ -828,7 +828,7 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>.Locality dst_locality = 42;</code>
    */
-  Locality getDstLocality();
+  org.opennms.netmgt.flows.persistence.model.Locality getDstLocality();
 
   /**
    * <code>.Locality flow_locality = 43;</code>
@@ -837,7 +837,7 @@ public interface FlowDocumentOrBuilder extends
   /**
    * <code>.Locality flow_locality = 43;</code>
    */
-  Locality getFlowLocality();
+  org.opennms.netmgt.flows.persistence.model.Locality getFlowLocality();
 
   /**
    * <pre>

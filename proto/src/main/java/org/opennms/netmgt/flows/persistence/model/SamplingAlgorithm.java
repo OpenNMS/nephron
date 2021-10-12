@@ -79,7 +79,7 @@ public enum SamplingAlgorithm
 
   public final int getNumber() {
     if (this == UNRECOGNIZED) {
-      throw new IllegalArgumentException(
+      throw new java.lang.IllegalArgumentException(
           "Can't get the number of an unknown enum value.");
     }
     return value;
@@ -88,7 +88,7 @@ public enum SamplingAlgorithm
   /**
    * @deprecated Use {@link #forNumber(int)} instead.
    */
-  @Deprecated
+  @java.lang.Deprecated
   public static SamplingAlgorithm valueOf(int value) {
     return forNumber(value);
   }
@@ -129,7 +129,7 @@ public enum SamplingAlgorithm
   }
   public static final com.google.protobuf.Descriptors.EnumDescriptor
       getDescriptor() {
-    return EnrichedFlowProtos.getDescriptor().getEnumTypes().get(1);
+    return org.opennms.netmgt.flows.persistence.model.EnrichedFlowProtos.getDescriptor().getEnumTypes().get(1);
   }
 
   private static final SamplingAlgorithm[] VALUES = values();
@@ -137,7 +137,7 @@ public enum SamplingAlgorithm
   public static SamplingAlgorithm valueOf(
       com.google.protobuf.Descriptors.EnumValueDescriptor desc) {
     if (desc.getType() != getDescriptor()) {
-      throw new IllegalArgumentException(
+      throw new java.lang.IllegalArgumentException(
         "EnumValueDescriptor is not for this type.");
     }
     if (desc.getIndex() == -1) {
