@@ -160,26 +160,6 @@ public class FlowDocuments {
 
         String application = "app" + fd.fd1.application;
 
-        String convoKey = new StringBuilder()
-                .append('[')
-                .append("\"Default\"")
-                .append(',')
-                .append(fd.fd1.protocol)
-                .append(',')
-                .append('"')
-                .append(minAddr)
-                .append('"')
-                .append(',')
-                .append('"')
-                .append(maxAddr)
-                .append('"')
-                .append(",")
-                .append('"')
-                .append(application)
-                .append('"')
-                .append(']')
-                .toString();
-
         // scale the number of bytes of a flow depending on the application, srcAddr, and dstAddr
         // -> use an exponential model for the scale factor
         // -> the bigger the numbers for application, srcAddr, dstAdr are the smaller the scale factor is
@@ -203,7 +183,6 @@ public class FlowDocuments {
                 .setSrcHostname("host" + fd.fd1.srcAddr)
                 .setDstAddress(dstAddress)
                 .setDstHostname("host" + fd.fd1.dstAddr)
-                .setConvoKey(convoKey)
                 .setDirection(fd.fd2.ingressNotEgress ? Direction.INGRESS : Direction.EGRESS)
                 .setLastSwitched(UInt64Value.of(lastSwitched.getMillis()))
                 .setDeltaSwitched(UInt64Value.of(deltaSwitched.getMillis()))
