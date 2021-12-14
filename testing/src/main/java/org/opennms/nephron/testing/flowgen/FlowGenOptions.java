@@ -125,7 +125,7 @@ public interface FlowGenOptions extends NephronOptions {
     Integer getNumInterfaces();
     void setNumInterfaces(Integer num);
 
-    @Description("The number of applications.")
+    @Description("The number of protocols.")
     @Default.Integer(10)
     Integer getNumProtocols();
     void setNumProtocols(Integer num);
@@ -211,4 +211,15 @@ public interface FlowGenOptions extends NephronOptions {
     Long getFlowsPerSecond();
     void setFlowsPerSecond(Long value);
 
+    static void adjustNonPlaybackMode(FlowGenOptions options) {
+        if (!options.getPlaybackMode()) {
+            // in nonplayback mode flowsPerSecond, flowsPerWindow, and fixedWindowSizeMs are interrelated
+            // -> make necessary adjustments
+            if (options.getFlowsPerSecond() > 0) {
+                options.setFlowsPerWindow(options.getFlowsPerSecond() * options.getFixedWindowSizeMs() / 1000);
+            } else {
+                options.setFlowsPerSecond(options.getFlowsPerWindow() * 1000 / options.getFixedWindowSizeMs());
+            }
+        }
+    }
 }

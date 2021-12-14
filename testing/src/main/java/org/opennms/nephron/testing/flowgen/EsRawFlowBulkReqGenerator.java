@@ -31,66 +31,92 @@ package org.opennms.nephron.testing.flowgen;
 import static org.opennms.nephron.testing.flowgen.FlowDocuments.getFlowDataArbitrary;
 import static org.opennms.nephron.testing.flowgen.FlowDocuments.ipAddress;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.temporal.TemporalAccessor;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.joda.time.Duration;
-import org.joda.time.Instant;
-import org.joda.time.format.DateTimeFormat;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
 
 import com.codepoetics.protonpack.StreamUtils;
 import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
 
+import okhttp3.ConnectionPool;
+import okhttp3.Dispatcher;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+
 /**
- * Generates a file that can be used as a bulk request to post raw flow data into ElasticSearch.
- * <ul>
- * <li>The generated flows have timestamps starting at epoche + 100 days + 30 minutes.</li>
- * <li>OpenNMS uses hourly indexes. The bulk request file has to be posted into the index "netflow-1970-04-11-00"</li>
- * </ul>
+ * Generates bulk requests containing raw flows that can be posted into ElasticSearch.
+ * <p>
+ * Bulk requests can either be stored in files or are directly posted into ElasticSearch.
+ * OpenNMS uses hourly indexes for raw flows. Bulk requests must be posted into indexes that are named by the following
+ * naming scheme: "netflow-yyyy-MM-dd-HH". If bulk requests are output to files then an additional counter is added
+ * to allow for multiple bulk request files for the same index.
+ * <p>
+ * In order to see a complete list of possible command line options run with argument --help=EsRawFlowBulkReqGenOptions.
+ * Using the generated full jar assembly the command is:
+ * <pre>
+ * java -jar nephron-testing-bundled-<version>.jar --help=EsRawFlowBulkReqGenOptions
+ * </pre>
+ *
+ * <p>
+ * A bulk request file can be posted into ES by:
+ *
  * <pre>
  * curl -s -o /dev/null  -H "Content-Type: application/x-ndjson" -XPOST localhost:9200/netflow-1970-04-11-00/_bulk --data-binary  @es-bulk-request.json
  * </pre>
  */
-public class GenerateElasticSearchBulkRequests {
+public class EsRawFlowBulkReqGenerator {
 
-    private static final Instant START_TIMESTAMP = Instant.EPOCH.plus(Duration.standardDays(100)).plus(Duration.standardMinutes(30));
-    private static final int NUMBER_OF_FLOWS = 1000;
-    private static final Duration DURATION_BETWEEN_FLOWS = Duration.millis(10);
+    private final EsRawFlowBulkReqGenOptions options;
+
+    private EsRawFlowBulkReqGenerator(EsRawFlowBulkReqGenOptions options) {
+        this.options = options;
+    }
+
+    private String indexForTimestamp(TemporalAccessor instant) {
+        return options.getEsRawFlowIndexStrategy().getIndex(options.getEsRawFlowIndex(), instant);
+    }
 
     public static void main(String[] args) throws Exception {
-        var df = DateTimeFormat.forPattern("YYYY-MM-dd-HH").withZoneUTC();
-        System.out.println("generate flows for index: netflow-" + df.print(START_TIMESTAMP));
-        var flowConfig = new FlowConfig(
-                2, // minExporter (minimum nodeId)
-                2, // numExporters (nodeIds minExporter ... minExporter + numExporters - 1 are used)
-                3, // minInterface (minimum snmp input and output interface number
-                2, // numInterfaces
-                4, // numProtocols
-                4, // numApplications
-                4, // numHosts
-                4, // numEcns
-                4, // numDscp
-                FlowConfig.linearIncreasingLastSwitchedPolicy(START_TIMESTAMP, DURATION_BETWEEN_FLOWS),
-                i -> Duration.ZERO, // no clock skew
-                Duration.ZERO, // last switched sigma
-                0.25 // lambda (decay) factor for flow duration (cf. FlowGenOptions#flowDurationLambda)
-        );
+        PipelineOptionsFactory.register(EsRawFlowBulkReqGenOptions.class);
+        var options = PipelineOptionsFactory.fromArgs(args).withValidation().as(EsRawFlowBulkReqGenOptions.class);
+
+        if (!options.getPlaybackMode()) {
+            // flows must not be generated for real-time timestamps but for calculated timestamps
+            throw new RuntimeException("playback mode required");
+        }
+
+        new EsRawFlowBulkReqGenerator(options).run();
+    }
+
+    private void run() {
+
+        var numberOfFlows = options.getNumWindows() * options.getFlowsPerWindow();
+
+        var flowConfig = new FlowConfig(options);
 
         var flowDataStream = getFlowDataArbitrary(flowConfig)
                 .generator(1000)
-                .stream(new Random(123456l))
-                .limit(NUMBER_OF_FLOWS);
-
-        var indexAction = "{\"index\":{}}";
+                .stream(new Random(options.getSeed()))
+                .limit(numberOfFlows);
 
         var flows = StreamUtils.zipWithIndex(flowDataStream)
                 .map(zipped -> {
@@ -153,12 +179,108 @@ public class GenerateElasticSearchBulkRequests {
                     f.setEcn(fd2.ecn);
                     f.setDscp(fd2.dscp);
                     return f;
-                })
-                .map(flowDocument -> GSON.toJson(flowDocument))
-                .flatMap(s -> Stream.of(indexAction, s))
-                ;
+                });
 
-        Files.write(Path.of("es-bulk-request.json"), (Iterable<String>)flows::iterator, StandardCharsets.UTF_8);
+        abstract class AbstractBatcher implements Consumer<FlowDocument> {
+
+            protected final static String indexAction = "{\"index\":{}}";
+
+            private String index = null;
+            private List<FlowDocument> batched = new ArrayList<>();
+
+            @Override
+            public void accept(FlowDocument flowDocument) {
+                var idx = indexForTimestamp(Instant.ofEpochMilli(flowDocument.lastSwitched));
+                if (index != null && !index.equals(idx)) {
+                    // index changed
+                    flush();
+                }
+                index = idx;
+                batched.add(flowDocument);
+                if (batched.size() >= options.getEsRawFlowBatchSize()) {
+                    flush();
+                }
+            }
+
+            public void flush() {
+                if (!batched.isEmpty()) {
+                    doFlush(index, batched);
+                }
+                index = null;
+                batched.clear();
+            }
+
+            protected abstract void doFlush(String index, List<FlowDocument> batched);
+        }
+
+        class ElasticSearchBatcher extends AbstractBatcher {
+
+            private Dispatcher dispatcher = new Dispatcher();
+            private ConnectionPool connectionPool = new ConnectionPool(1, 5, TimeUnit.MINUTES);
+            private OkHttpClient okHttpClient = new OkHttpClient.Builder()
+                    .readTimeout(5000, TimeUnit.MILLISECONDS)
+                    .writeTimeout(5000, TimeUnit.MILLISECONDS)
+                    .dispatcher(dispatcher)
+                    .connectionPool(connectionPool)
+                    .build();
+
+            public void doFlush(String index, List<FlowDocument> batched) {
+                var str = batched
+                        .stream()
+                        .map(fd -> GSON.toJson(fd))
+                        .flatMap(s -> Stream.of(indexAction, s))
+                        .collect(Collectors.joining("\n", "", "\n"));
+                var mediaType = MediaType.parse("application/x-ndjson");
+                var body = RequestBody.create(mediaType, str);
+                var request = new Request.Builder()
+                        .url(options.getElasticUrl() + "/" + index + "/_bulk")
+                        .addHeader("Content-Type", "application/x-ndjson")
+                        .post(body)
+                        .build();
+                try {
+                    var response = okHttpClient.newCall(request).execute();
+                    if (!response.isSuccessful()) {
+                        throw new RuntimeException("write error: " + response + "; message: " + response.message() + "; body: " + response.body().string());
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+
+        class FileBatcher extends AbstractBatcher {
+            private int cnt = 0;
+            private String lastIndex = null;
+            @Override
+            protected void doFlush(String index, List<FlowDocument> batched) {
+                var stream = batched
+                        .stream()
+                        .map(fd -> GSON.toJson(fd))
+                        .flatMap(s -> Stream.of(indexAction, s));
+                try {
+                    if (index.equals(lastIndex)) {
+                        cnt++;
+                    } else {
+                        cnt = 0;
+                    }
+                    Files.write(Path.of(index + "." + cnt + ".json"), (Iterable<String>)stream::iterator, StandardCharsets.UTF_8);
+                    lastIndex = index;
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+
+        AbstractBatcher batcher;
+        if (options.getEsRawFlowOutputToFile()) {
+            batcher = new FileBatcher();
+        } else {
+            batcher = new ElasticSearchBatcher();
+        }
+
+        flows.forEach(batcher);
+        batcher.flush();
+
     }
 
     private static final Gson GSON = new Gson();

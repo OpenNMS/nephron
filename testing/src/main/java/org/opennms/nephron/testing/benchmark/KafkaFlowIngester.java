@@ -109,6 +109,7 @@ public class KafkaFlowIngester {
 
     public static void main(String[] args) {
         FlowGenOptions options = PipelineOptionsFactory.fromArgs(args).withValidation().as(FlowGenOptions.class);
+        FlowGenOptions.adjustNonPlaybackMode(options);
         var start = Instant.now();
         long total = sendRecordsToKafka(options);
         LOG.info("Output " + total + " flows in " + new Duration(start, Instant.now()));

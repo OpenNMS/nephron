@@ -93,6 +93,14 @@ public class FlowConfig implements Serializable {
      */
     public static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> CURRENT_TIME_LAST_SWITCHED_POLICY = (idx, fd) -> Instant.now();
 
+    public static SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> lastSwitchedPolicy(FlowGenOptions options) {
+        if (options.getPlaybackMode()) {
+            return FlowConfig.uniformInWindowLastSwitchedPolicy(options);
+        } else {
+            return FlowConfig.CURRENT_TIME_LAST_SWITCHED_POLICY;
+        }
+    }
+
     /**
      * Exporter numbers are generated uniformly starting at minExporter.
      */
@@ -155,8 +163,7 @@ public class FlowConfig implements Serializable {
 
     public FlowConfig(
             FlowGenOptions opts,
-            SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> lastSwitched,
-            SerializableFunction<Integer, Duration> clockSkew
+            SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> lastSwitched
     ) {
         this(
                 opts.getMinExporter(),
@@ -169,10 +176,14 @@ public class FlowConfig implements Serializable {
                 opts.getNumEcns(),
                 opts.getNumDscps(),
                 lastSwitched,
-                clockSkew,
+                FlowConfig.groupClockSkewPolicy(opts),
                 Duration.millis(opts.getLastSwitchedSigmaMs()),
                 opts.getFlowDurationLambda()
         );
+    }
+
+    public FlowConfig(FlowGenOptions opts) {
+        this(opts, lastSwitchedPolicy(opts));
     }
 
 }

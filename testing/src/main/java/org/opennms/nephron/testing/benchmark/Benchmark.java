@@ -59,6 +59,7 @@ import org.opennms.nephron.Aggregate;
 import org.opennms.nephron.CompoundKey;
 import org.opennms.nephron.Pipeline;
 import org.opennms.nephron.cortex.CortexIo;
+import org.opennms.nephron.testing.flowgen.FlowGenOptions;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -130,6 +131,7 @@ public class Benchmark {
                 // the benchmark may write to ES; disabled by default (override default from NephronOptions)
                 as = ensureArg("--elasticUrl=", as);
                 var options = PipelineOptionsFactory.fromArgs(as).withValidation().as(BenchmarkOptions.class);
+                FlowGenOptions.adjustNonPlaybackMode(options);
                 var pl = new ArrayList(paramList);
                 pl.removeAll(commonParameters);
                 resultConsumer.accept("=".repeat(30));

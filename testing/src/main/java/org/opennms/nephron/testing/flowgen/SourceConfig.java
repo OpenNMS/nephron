@@ -46,30 +46,26 @@ public class SourceConfig implements Serializable {
             FlowGenOptions options,
             SyntheticFlowTimestampPolicyFactory timestampPolicyFactory
     ) {
-        SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> lastSwitchedPolicy;
-        if (options.getPlaybackMode()) {
-            lastSwitchedPolicy = FlowConfig.uniformInWindowLastSwitchedPolicy(options);
-        } else {
-            lastSwitchedPolicy = FlowConfig.CURRENT_TIME_LAST_SWITCHED_POLICY;
-        }
-        return of(options, lastSwitchedPolicy, timestampPolicyFactory);
+        return new SourceConfig(
+                new FlowConfig(options),
+                timestampPolicyFactory,
+                options.getSeed(),
+                options.getMinSplits(),
+                options.getMaxSplits(),
+                options.getNumWindows() * options.getFlowsPerWindow(),
+                1,
+                0,
+                options.getFlowsPerSecond()
+        );
     }
 
     public static SourceConfig of(
             FlowGenOptions options,
-            SerializableBiFunction<Long, FlowDocuments.FlowData, Instant> lastSwitchedPolicy,
+            FlowConfig flowConfig,
             SyntheticFlowTimestampPolicyFactory timestampPolicyFactory
     ) {
-        if (!options.getPlaybackMode()) {
-            if (options.getFlowsPerSecond() > 0) {
-                options.setFlowsPerWindow(options.getFlowsPerSecond() * options.getFixedWindowSizeMs() / 1000);
-            } else {
-                options.setFlowsPerSecond(options.getFlowsPerWindow() * 1000 / options.getFixedWindowSizeMs());
-            }
-        }
-        SerializableFunction<Integer, Duration> clockSkewPolicy = FlowConfig.groupClockSkewPolicy(options);
         return new SourceConfig(
-                new FlowConfig(options, lastSwitchedPolicy, clockSkewPolicy),
+                flowConfig,
                 timestampPolicyFactory,
                 options.getSeed(),
                 options.getMinSplits(),

@@ -101,7 +101,7 @@ public class CortexPaneIT {
         SyntheticFlowTimestampPolicyFactory tpf =
                 SyntheticFlowTimestampPolicyFactory.withLimitedDelay(options, Pipeline.ReadFromKafka::getTimestamp);
 
-        var sourceConfig = SourceConfig.of(options, skewedLastSwitchedPolicy(options), tpf);
+        var sourceConfig = SourceConfig.of(options, new FlowConfig(options, skewedLastSwitchedPolicy(options)), tpf);
 
         var expected = TotalVolumeTest.aggregateInMemory(options, FlowDocuments.stream(sourceConfig));
 
