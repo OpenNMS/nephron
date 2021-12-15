@@ -49,9 +49,18 @@ public interface EsRawFlowBulkReqGenOptions extends FlowGenOptions {
     int getEsRawFlowBatchSize();
     void setEsRawFlowBatchSize(int value);
 
-    @Description("Output to file")
+    @Description("Determines where the bulk requests are output")
+    @Default.Enum("FILE")
+    Output getEsRawFlowOutput();
+    void setEsRawFlowOutput(Output value);
+
+    @Description("Determines if the timestamps of the generated flows end at the current time. Overrides the startMs argument.")
     @Default.Boolean(true)
-    boolean getEsRawFlowOutputToFile();
-    void setEsRawFlowOutputToFile(boolean value);
+    boolean getEsRawFlowEndAtNow();
+    void setEsRawFlowEndAtNow(boolean value);
+
+    enum Output {
+        ELASTIC_SEARCH, FILE
+    }
 
 }

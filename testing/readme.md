@@ -4,7 +4,7 @@ Synthetic flows are generated using a pseudo-random generator. Generation is com
 
 Flow generation can be parameterized to a large extend. The configuration options are documented in the `FlowGenOptions` interface.
 
-Streams of synthetic flows can be generated. The corresponding functionality can be found in the `FlowDocuments` class. Alternatively, synthetic flows can be directly fed into processing pipelines by using the `SyntheticFlowSource` class. Finally, they can be ingested into a Kafka topic using the `KafkaFlowIngester` utility class.
+Streams of synthetic flows can be generated. The corresponding functionality can be found in the `FlowDocuments` class. Alternatively, synthetic flows can be directly fed into processing pipelines by using the `SyntheticFlowSource` class. Another option is to ingested flows into a Kafka topic using the `KafkaFlowIngester` main class. Finally, generated flows can be written to files or can be posted into ElasticSearch directly using the `EsRawFlowBulkRequestGenerator` main class.
 
 The `Benchmark` application class allows to run the Nephron pipeline on synthetic flows. Flows can either be directly fed into the pipeline or via Kafka.
 
@@ -35,3 +35,13 @@ The benchmark launcher supports to define sets of different parameter values. Fo
 --fixedWindowSizeMs=(10000|30000|60000)
 ```
 The benchmark launcher determines all combination of varying argument values and runs the pipeline separately for each combination. The various possibilities for specifying parameter value sets are documented at the `ArgsParser` class. 
+
+### Generate bulk requests of raw flows
+
+```
+mvn -Ptesting compile exec:java -Dmaven.test.skip=true -Dexec.mainClass=org.opennms.nephron.testing.flowgen.EsRawFlowBulkReqGenerator -Dexec.args="--esRawFlowOutput=ELASTIC_SEARCH"
+```
+
+This call generates raw flows and posts them into ElasticSearch. The flows have timestamps that reach up to the current time.
+
+Run with argument `--help=EsRawFlowBulkReqGenOptions` to see available options.

@@ -104,6 +104,9 @@ public class EsRawFlowBulkReqGenerator {
             throw new RuntimeException("playback mode required");
         }
 
+        if (options.getEsRawFlowEndAtNow()) {
+            options.setStartMs(System.currentTimeMillis() - options.getNumWindows() * options.getFixedWindowSizeMs());
+        }
         new EsRawFlowBulkReqGenerator(options).run();
     }
 
@@ -232,11 +235,13 @@ public class EsRawFlowBulkReqGenerator {
                         .collect(Collectors.joining("\n", "", "\n"));
                 var mediaType = MediaType.parse("application/x-ndjson");
                 var body = RequestBody.create(mediaType, str);
+                var url = options.getElasticUrl() + "/" + index + "/_bulk";
                 var request = new Request.Builder()
-                        .url(options.getElasticUrl() + "/" + index + "/_bulk")
+                        .url(url)
                         .addHeader("Content-Type", "application/x-ndjson")
                         .post(body)
                         .build();
+                System.out.println("post to: " + url);
                 try {
                     var response = okHttpClient.newCall(request).execute();
                     if (!response.isSuccessful()) {
@@ -263,7 +268,9 @@ public class EsRawFlowBulkReqGenerator {
                     } else {
                         cnt = 0;
                     }
-                    Files.write(Path.of(index + "." + cnt + ".json"), (Iterable<String>)stream::iterator, StandardCharsets.UTF_8);
+                    var filename = index + "." + cnt + ".json";
+                    System.out.println("write: " + filename);
+                    Files.write(Path.of(filename), (Iterable<String>)stream::iterator, StandardCharsets.UTF_8);
                     lastIndex = index;
                 } catch (IOException e) {
                     throw new RuntimeException(e);
@@ -272,10 +279,12 @@ public class EsRawFlowBulkReqGenerator {
         }
 
         AbstractBatcher batcher;
-        if (options.getEsRawFlowOutputToFile()) {
+        if (options.getEsRawFlowOutput() == EsRawFlowBulkReqGenOptions.Output.FILE) {
             batcher = new FileBatcher();
-        } else {
+        } else if (options.getEsRawFlowOutput() == EsRawFlowBulkReqGenOptions.Output.ELASTIC_SEARCH) {
             batcher = new ElasticSearchBatcher();
+        } else {
+            throw new RuntimeException("unknown output: " + options.getEsRawFlowOutput());
         }
 
         flows.forEach(batcher);
