@@ -39,7 +39,7 @@
         <java.version>11</java.version>
         <junit.version>4.13</junit.version>
         <kafka.version>2.6.0</kafka.version>
-        <log4j.version>2.13.3</log4j.version>
+        <log4j.version>2.17.0</log4j.version>
         <opennms.version>26.1.0-SNAPSHOT</opennms.version>
         <protobuf.version>3.11.4</protobuf.version>
         <slf4j.version>1.7.30</slf4j.version>
