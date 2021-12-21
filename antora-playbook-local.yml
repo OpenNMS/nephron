@@ -1,0 +1,21 @@
+site:
+  title: Nephron Documentation
+  url: https://docs.opennms.com/nephron/
+  start_page: nephron::index.adoc
+content:
+  sources:
+    - url: .
+      branches: HEAD
+      start_path: docs
+ui:
+  bundle:
+    url: https://github.com/opennms-forge/antora-ui-opennms/releases/download/v2.0.6/ui-bundle.zip
+asciidoc:
+  attributes:
+    stem: latexmath
+output:
+  clean: true
+  dir: ./public
+  destinations:
+    - provider: fs
+    - provider: archive
