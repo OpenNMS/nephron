@@ -73,7 +73,7 @@ import okhttp3.RequestBody;
  * In order to see a complete list of possible command line options run with argument --help=EsRawFlowBulkReqGenOptions.
  * Using the generated full jar assembly the command is:
  * <pre>
- * java -jar nephron-testing-bundled-<version>.jar --help=EsRawFlowBulkReqGenOptions
+ * java -jar nephron-testing-bundled-X.X.X.jar --help=EsRawFlowBulkReqGenOptions
  * </pre>
  *
  * <p>
