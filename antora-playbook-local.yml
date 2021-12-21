@@ -10,6 +10,7 @@ content:
 ui:
   bundle:
     url: https://github.com/opennms-forge/antora-ui-opennms/releases/download/v2.0.6/ui-bundle.zip
+  supplemental_files: ./docs/supplemental-ui
 asciidoc:
   attributes:
     stem: latexmath
