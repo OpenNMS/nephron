@@ -4,7 +4,7 @@
     <groupId>org.opennms.nephron</groupId>
     <artifactId>nephron-parent</artifactId>
     <packaging>pom</packaging>
-    <version>0.3.1</version>
+    <version>0.3.2-SNAPSHOT</version>
     <name>Nephron :: Parent</name>
     <url>https://github.com/OpenNMS/nephron</url>
     <description>Streaming analytics for OpenNMS</description>
