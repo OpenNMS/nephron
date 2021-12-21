@@ -6,7 +6,7 @@ package org.opennms.netmgt.flows.persistence.model;
 /**
  * Protobuf type {@code NodeInfo}
  */
-public final class NodeInfo extends
+public  final class NodeInfo extends
     com.google.protobuf.GeneratedMessageV3 implements
     // @@protoc_insertion_point(message_implements:NodeInfo)
     NodeInfoOrBuilder {
@@ -117,9 +117,7 @@ private static final long serialVersionUID = 0L;
   private volatile java.lang.Object foreignSource_;
   /**
    * <code>string foreign_source = 1;</code>
-   * @return The foreignSource.
    */
-  @java.lang.Override
   public java.lang.String getForeignSource() {
     java.lang.Object ref = foreignSource_;
     if (ref instanceof java.lang.String) {
@@ -134,9 +132,7 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <code>string foreign_source = 1;</code>
-   * @return The bytes for foreignSource.
    */
-  @java.lang.Override
   public com.google.protobuf.ByteString
       getForeignSourceBytes() {
     java.lang.Object ref = foreignSource_;
@@ -155,9 +151,7 @@ private static final long serialVersionUID = 0L;
   private volatile java.lang.Object foreginId_;
   /**
    * <code>string foregin_id = 2;</code>
-   * @return The foreginId.
    */
-  @java.lang.Override
   public java.lang.String getForeginId() {
     java.lang.Object ref = foreginId_;
     if (ref instanceof java.lang.String) {
@@ -172,9 +166,7 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <code>string foregin_id = 2;</code>
-   * @return The bytes for foreginId.
    */
-  @java.lang.Override
   public com.google.protobuf.ByteString
       getForeginIdBytes() {
     java.lang.Object ref = foreginId_;
@@ -193,9 +185,7 @@ private static final long serialVersionUID = 0L;
   private int nodeId_;
   /**
    * <code>uint32 node_id = 3;</code>
-   * @return The nodeId.
    */
-  @java.lang.Override
   public int getNodeId() {
     return nodeId_;
   }
@@ -204,7 +194,6 @@ private static final long serialVersionUID = 0L;
   private com.google.protobuf.LazyStringList categories_;
   /**
    * <code>repeated string categories = 4;</code>
-   * @return A list containing the categories.
    */
   public com.google.protobuf.ProtocolStringList
       getCategoriesList() {
@@ -212,23 +201,18 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <code>repeated string categories = 4;</code>
-   * @return The count of categories.
    */
   public int getCategoriesCount() {
     return categories_.size();
   }
   /**
    * <code>repeated string categories = 4;</code>
-   * @param index The index of the element to return.
-   * @return The categories at the given index.
    */
   public java.lang.String getCategories(int index) {
     return categories_.get(index);
   }
   /**
    * <code>repeated string categories = 4;</code>
-   * @param index The index of the value to return.
-   * @return The bytes of the categories at the given index.
    */
   public com.google.protobuf.ByteString
       getCategoriesBytes(int index) {
@@ -610,7 +594,6 @@ private static final long serialVersionUID = 0L;
     private java.lang.Object foreignSource_ = "";
     /**
      * <code>string foreign_source = 1;</code>
-     * @return The foreignSource.
      */
     public java.lang.String getForeignSource() {
       java.lang.Object ref = foreignSource_;
@@ -626,7 +609,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>string foreign_source = 1;</code>
-     * @return The bytes for foreignSource.
      */
     public com.google.protobuf.ByteString
         getForeignSourceBytes() {
@@ -643,8 +625,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>string foreign_source = 1;</code>
-     * @param value The foreignSource to set.
-     * @return This builder for chaining.
      */
     public Builder setForeignSource(
         java.lang.String value) {
@@ -658,7 +638,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>string foreign_source = 1;</code>
-     * @return This builder for chaining.
      */
     public Builder clearForeignSource() {
       
@@ -668,8 +647,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>string foreign_source = 1;</code>
-     * @param value The bytes for foreignSource to set.
-     * @return This builder for chaining.
      */
     public Builder setForeignSourceBytes(
         com.google.protobuf.ByteString value) {
@@ -686,7 +663,6 @@ private static final long serialVersionUID = 0L;
     private java.lang.Object foreginId_ = "";
     /**
      * <code>string foregin_id = 2;</code>
-     * @return The foreginId.
      */
     public java.lang.String getForeginId() {
       java.lang.Object ref = foreginId_;
@@ -702,7 +678,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>string foregin_id = 2;</code>
-     * @return The bytes for foreginId.
      */
     public com.google.protobuf.ByteString
         getForeginIdBytes() {
@@ -719,8 +694,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>string foregin_id = 2;</code>
-     * @param value The foreginId to set.
-     * @return This builder for chaining.
      */
     public Builder setForeginId(
         java.lang.String value) {
@@ -734,7 +707,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>string foregin_id = 2;</code>
-     * @return This builder for chaining.
      */
     public Builder clearForeginId() {
       
@@ -744,8 +716,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>string foregin_id = 2;</code>
-     * @param value The bytes for foreginId to set.
-     * @return This builder for chaining.
      */
     public Builder setForeginIdBytes(
         com.google.protobuf.ByteString value) {
@@ -762,16 +732,12 @@ private static final long serialVersionUID = 0L;
     private int nodeId_ ;
     /**
      * <code>uint32 node_id = 3;</code>
-     * @return The nodeId.
      */
-    @java.lang.Override
     public int getNodeId() {
       return nodeId_;
     }
     /**
      * <code>uint32 node_id = 3;</code>
-     * @param value The nodeId to set.
-     * @return This builder for chaining.
      */
     public Builder setNodeId(int value) {
       
@@ -781,7 +747,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>uint32 node_id = 3;</code>
-     * @return This builder for chaining.
      */
     public Builder clearNodeId() {
       
@@ -799,7 +764,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>repeated string categories = 4;</code>
-     * @return A list containing the categories.
      */
     public com.google.protobuf.ProtocolStringList
         getCategoriesList() {
@@ -807,23 +771,18 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>repeated string categories = 4;</code>
-     * @return The count of categories.
      */
     public int getCategoriesCount() {
       return categories_.size();
     }
     /**
      * <code>repeated string categories = 4;</code>
-     * @param index The index of the element to return.
-     * @return The categories at the given index.
      */
     public java.lang.String getCategories(int index) {
       return categories_.get(index);
     }
     /**
      * <code>repeated string categories = 4;</code>
-     * @param index The index of the value to return.
-     * @return The bytes of the categories at the given index.
      */
     public com.google.protobuf.ByteString
         getCategoriesBytes(int index) {
@@ -831,9 +790,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>repeated string categories = 4;</code>
-     * @param index The index to set the value at.
-     * @param value The categories to set.
-     * @return This builder for chaining.
      */
     public Builder setCategories(
         int index, java.lang.String value) {
@@ -847,8 +803,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>repeated string categories = 4;</code>
-     * @param value The categories to add.
-     * @return This builder for chaining.
      */
     public Builder addCategories(
         java.lang.String value) {
@@ -862,8 +816,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>repeated string categories = 4;</code>
-     * @param values The categories to add.
-     * @return This builder for chaining.
      */
     public Builder addAllCategories(
         java.lang.Iterable<java.lang.String> values) {
@@ -875,7 +827,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>repeated string categories = 4;</code>
-     * @return This builder for chaining.
      */
     public Builder clearCategories() {
       categories_ = com.google.protobuf.LazyStringArrayList.EMPTY;
@@ -885,8 +836,6 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <code>repeated string categories = 4;</code>
-     * @param value The bytes of the categories to add.
-     * @return This builder for chaining.
      */
     public Builder addCategoriesBytes(
         com.google.protobuf.ByteString value) {
