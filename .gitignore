@@ -30,3 +30,6 @@ java/bin/
 .jqwik-database
 *.log
 
+# Antora documentation
+/build/
+/public/

@@ -1,0 +1,14 @@
+name: nephron
+version: '0.3.1-SNAPSHOT'
+title: Nephron
+prerelease: true
+asciidoc:
+  attributes:
+    experimental: true
+    prerelease: true
+    source-language: asciidoc@
+    xrefstyle: short@
+    compatible-horizon: '26.1.0-SNAPSHOT'
+    compatible-meridian: '2020.x'
+nav:
+  - modules/ROOT/index.adoc

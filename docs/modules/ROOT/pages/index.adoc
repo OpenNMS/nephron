@@ -1,0 +1,10 @@
+[[welcome]]
+= Welcome to the {page-component-title} Documentation
+
+[options="autowidth"]
+|===
+|Version:     |{page-component-display-version}
+|Last update: |{docdatetime}
+|===
+
+OpenNMS {page-component-title} is an open source streaming analytics tool for network flows.
