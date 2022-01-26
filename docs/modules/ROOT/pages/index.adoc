@@ -7,4 +7,18 @@
 |Last update: |{docdatetime}
 |===
 
-OpenNMS {page-component-title} is an open source streaming analytics tool for network flows.
+OpenNMS {page-component-title} is an open source aggregation and streaming analytics tool for network flows.
+
+Large amounts of network flows data may result in slow generation of dashboard visualizations, particularly with longer time ranges (last day/week).
+A lot of calculations must occur to render these dashboards, which is challenging to do in real time with large volumes of flow data.
+
+Nephron reads flows from Kafka, calculates flow aggregates, and persists these aggregates in Elasticsearch, Cortex, or Kafka.
+It pre-computes data as it flows through the pipeline and stores it in Elasticsearch.
+
+Queries from dashboards are significantly faster (under 10 seconds vs. 30 minutes on billions of documents), as the flow query engine renders Top-N metrics from these pre-aggregated documents stored in Elasticsearch.
+Nephron also helps alleviate compute load on the Elasticsearch cluster, particularly for environments with large volumes of flows (>10,000 flows/sec).
+
+== How it works
+
+
+insert diagram

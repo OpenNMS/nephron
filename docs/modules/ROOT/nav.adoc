@@ -1,7 +1,5 @@
-.About
-* xref:about:nephron.adoc[About]
-
-.Configuration
+.Installation and Configuration
+* xref:configuration:requirements.adoc[Requirements]
 * xref:configuration:kafka.adoc[Kafka Configuration]
 * xref:configuration:monitor.adoc[Monitor Nephron]
 * xref:configuration:persistence.adoc[Persistence]
