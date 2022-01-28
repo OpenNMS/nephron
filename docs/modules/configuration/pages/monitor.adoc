@@ -70,8 +70,8 @@ scrape_configs:
 | cortex
 | response_failure_<kind>
 | Counter
-| The number of Cortex response failures of certain kinds. 
-Cortex persistence analyses response failures and tries to derive corresponding failure kinds (e.g., "out of order sample" or "per-user series limit reached").
+| The number of Cortex response failures of certain kinds.
+Cortex persistence analyzes response failures and tries to derive corresponding failure kinds (e.g., "out-of-order sample" or "per-user series limit reached").
 |===
 
 [options="header" cols="1,2,5"]
@@ -82,30 +82,29 @@ Cortex persistence analyses response failures and tries to derive corresponding 
 
 | flows
 | from_kafka
-| `flink_taskmanager_job_task_operator_flows_from_kafka`
+| flink_taskmanager_job_task_operator_flows_from_kafka
 
 | flows
 | to_es
-| `flink_taskmanager_job_task_operator_flows_to_es`
+| flink_taskmanager_job_task_operator_flows_to_es
 
 | cortex
 | write
-| `flink_taskmanager_job_task_operator_cortex_write`
+| flink_taskmanager_job_task_operator_cortex_write
 
 | cortex
 | sample
-| `flink_taskmanager_job_task_operator_cortex_sample`
+| flink_taskmanager_job_task_operator_cortex_sample
 
 | cortex
 | write_failure
-| `flink_taskmanager_job_task_operator_cortex_write_failure`
+| flink_taskmanager_job_task_operator_cortex_write_failure
 
 | cortex
 | response_failure
-| `flink_taskmanager_job_task_operator_cortex_response_failure`
+| flink_taskmanager_job_task_operator_cortex_response_failure
 
 | cortex
 | response_failure_<kind>
-| `{__name__=~"flink_taskmanager_job_.\*response_failure_.*"}`
-
+| {__name__=~"flink_taskmanager_job_.\*response_failure_.*"}
 |===

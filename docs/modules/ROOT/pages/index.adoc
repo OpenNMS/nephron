@@ -13,9 +13,9 @@ Large amounts of network flows data may result in slow generation of dashboard v
 A lot of calculations must occur to render these dashboards, which is challenging to do in real time with large volumes of flow data.
 
 Nephron reads flows from Kafka, calculates flow aggregates, and persists these aggregates in Elasticsearch, Cortex, or Kafka.
-It pre-computes data as it flows through the pipeline and stores it in Elasticsearch.
+It pre-computes data as it flows through the pipeline before storing it.
 
-Queries from dashboards are significantly faster (under 10 seconds vs. 30 minutes on billions of documents), as the flow query engine renders Top-N metrics from these pre-aggregated documents stored in Elasticsearch.
+Queries from dashboards are significantly faster (under 10 seconds vs. 30 minutes on billions of documents), as the flow query engine renders Top-N metrics from these stored pre-aggregated documents.
 Nephron also helps alleviate compute load on the Elasticsearch cluster, particularly for environments with large volumes of flows (>10,000 flows/sec).
 
 == How it works
