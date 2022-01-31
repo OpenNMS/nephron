@@ -12,13 +12,13 @@ OpenNMS {page-component-title} is an open source aggregation and streaming analy
 Large amounts of network flows data may result in slow generation of dashboard visualizations, particularly with longer time ranges (last day/week).
 A lot of calculations must occur to render these dashboards, which is challenging to do in real time with large volumes of flow data.
 
-Nephron reads flows from Kafka, calculates flow aggregates, and persists these aggregates in Elasticsearch, Cortex, or Kafka.
-It pre-computes data as it flows through the pipeline before storing it.
+Based on https://beam.apache.org/get-started/beam-overview/[Apache Beam], Nephron reads flows from Kafka, grouping elements into small windows (microbatches) by event time.
+It then processes all of the elements in the window together to calculate flow aggregates and top-N flows, and persists these aggregates in Elasticsearch, Cortex, or Kafka.
 
-Queries from dashboards are significantly faster (under 10 seconds vs. 30 minutes on billions of documents), as the flow query engine renders Top-N metrics from these stored pre-aggregated documents.
+Queries from dashboards are significantly faster (under 10 seconds vs. 30 minutes on billions of documents), as the flow query engine renders top-N metrics from these stored pre-aggregated documents.
 Nephron also helps alleviate compute load on the Elasticsearch cluster, particularly for environments with large volumes of flows (>10,000 flows/sec).
 
-== How it works
+For information on how OpenNMS collects and persists flows data, refer to the *Operation>Flows* overview section in the main documentation.
 
-
-insert diagram
+.Flow integration with Nephron
+image::flow_integration_nephron.png[width=70%]

@@ -73,9 +73,9 @@ Stores the following metrics:
 | pane, direction, dscp, host
 |===
 
-The nodeId and ifIndex are encoded in metric names for some of the aggregations to reduce the product of label cardinalities.
+The nodeId and ifIndex are encoded in metric names for some of the aggregations to reduce the production of label cardinalities.
 
-The labels are:
+Labels:
 
 [options="header" cols="1,2"]
 |===
@@ -96,7 +96,7 @@ Used for early/late results and Cortex's time-ordering constraint.
 | Interface index
 
 | dscp
-| Possible values: 0–63; differentiated service code points
+| Differentiated service code points; possible values: 0–63.
 
 | host, host2
 | IP addresses in dot notation
@@ -105,7 +105,7 @@ Used for early/late results and Cortex's time-ordering constraint.
 | The result of classifying flows into applications.
 
 | protocol
-| Possible values: integer range; protocol number
+| Protocol number; possible values: integer range
 
 | location
 | TODO: from exporter node meta data?
