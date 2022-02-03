@@ -3,7 +3,7 @@
 
 Make sure you have the following:
 
-* Horizon 26/Meridian 2020 or later
+* Horizon 26.1.0/Meridian 2020 or later
 * Source of valid NetFlow5 or NetFlow9 records
 ** A node must exist for the address
 ** The node must be in the same location as the Minion receiving the netflow, if using Minions
