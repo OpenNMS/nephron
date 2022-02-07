@@ -1,0 +1,29 @@
+[[requirements]]
+= Requirements
+
+Make sure you have the following:
+
+* Horizon 26.1.0/Meridian 2020 or later
+* Source of valid NetFlow5 or NetFlow9 records
+** A node must exist for the address
+** The node must be in the same location as the Minion receiving the netflow, if using Minions
+* Basic flows environment set up (see *Operation>Flow Support>Basic Flows Setup* in the core docs)
+* Minion added to your flows environment (see *Operation>Flow Support>Using Minions as a flow collector* in the core docs)
+* Sentinel added to your flows environment (see *Operation>Flow Support>Scale Flow Processing with Sentinel* in the core docs)
+* link:https://flink.apache.org/[Apache Flink] {compatible-flink} cluster set up and sized to your flows volume
+* Kafka server with forwarder enabled (see *Operation>Flow Support>Scale Flow Processing with Sentinel>Set up Message Broker: Kafka* in the core docs)
+* A fast-caching DNS resolver if using reverse DNS
+
+[[flink]]
+== Run on Flink
+Once you set up your Flink cluster and size it to your flows volume, run the following to set up Nephron on Flink:
+
+`./bin/flink run --parallelism 1 --class org.opennms.nephron.Nephron /root/git/nephron/assemblies/flink/target/nephron-flink-bundled-*.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false`
+
+After Nephron set up, you must do the following:
+
+ * xref:kafka.adoc#kafka-config[Configure Kafka]
+ * xref:persistence.adoc#nephron-persistence[Configure persistence]
+ * xref:monitor.adoc#nephron-monitor[Monitor Nephron]
+
+

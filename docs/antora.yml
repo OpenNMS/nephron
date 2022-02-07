@@ -8,7 +8,10 @@ asciidoc:
     prerelease: true
     source-language: asciidoc@
     xrefstyle: short@
-    compatible-horizon: '26.1.0-SNAPSHOT'
+    compatible-horizon: '26.1.0'
     compatible-meridian: '2020.x'
+    compatible-flink: '1.10.x'
+
 nav:
   - modules/ROOT/index.adoc
+  - modules/ROOT/nav.adoc
