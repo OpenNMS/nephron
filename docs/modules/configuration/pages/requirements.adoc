@@ -24,12 +24,12 @@ After Nephron set up, you must do the following:
 == Run on Flink
 Once you set up your Flink cluster and size it to your flows volume, run the following to set up Nephron on Flink:
 
-`./bin/flink run --parallelism 1 --class org.opennms.nephron.Nephron assemblies/flink/target/nephron-flink-bundled-*.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false`
+`./bin/flink run --parallelism 1 --class org.opennms.nephron.Nephron <nephronDir>/assemblies/flink/target/nephron-flink-bundled-*.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false`
 
 A list of all Nephron specific parameters can be output by executing the following command:
 
-`java -jar assemblies/flink/target/nephron-flink-bundled-*.jar --help=NephronOptions`
+`java -jar <nephronDir>/assemblies/flink/target/nephron-flink-bundled-*.jar --help=NephronOptions`
 
 All Flink related parameters are output when executing:
 
-`java -jar assemblies/flink/target/nephron-flink-bundled-*.jar --help=FlinkPipelineOptions`
+`java -jar <nephronDir>/assemblies/flink/target/nephron-flink-bundled-*.jar --help=FlinkPipelineOptions`
