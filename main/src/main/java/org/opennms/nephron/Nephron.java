@@ -37,6 +37,7 @@ public class Nephron {
     }
 
     public static void main(String[] args) {
+        PipelineOptionsFactory.register(NephronOptions.class);
         final NephronOptions options =
                 PipelineOptionsFactory.fromArgs(args).withValidation().as(NephronOptions.class);
         runNephron(options);

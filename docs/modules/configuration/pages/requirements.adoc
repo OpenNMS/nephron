@@ -1,5 +1,5 @@
 [[requirements]]
-= Requirements
+= Requirements and Running
 
 Make sure you have the following:
 
@@ -14,16 +14,22 @@ Make sure you have the following:
 * Kafka server with forwarder enabled (see *Operation>Flow Support>Scale Flow Processing with Sentinel>Set up Message Broker: Kafka* in the core docs)
 * A fast-caching DNS resolver if using reverse DNS
 
-[[flink]]
-== Run on Flink
-Once you set up your Flink cluster and size it to your flows volume, run the following to set up Nephron on Flink:
-
-`./bin/flink run --parallelism 1 --class org.opennms.nephron.Nephron /root/git/nephron/assemblies/flink/target/nephron-flink-bundled-*.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false`
-
 After Nephron set up, you must do the following:
 
  * xref:kafka.adoc#kafka-config[Configure Kafka]
  * xref:persistence.adoc#nephron-persistence[Configure persistence]
  * xref:monitor.adoc#nephron-monitor[Monitor Nephron]
 
+[[flink]]
+== Run on Flink
+Once you set up your Flink cluster and size it to your flows volume, run the following to set up Nephron on Flink:
 
+`./bin/flink run --parallelism 1 --class org.opennms.nephron.Nephron <nephronDir>/assemblies/flink/target/nephron-flink-bundled-*.jar --runner=FlinkRunner --jobName=nephron --checkpointingInterval=600000 --autoCommit=false`
+
+Run the following command to output a list of all Nephron-specific parameters:
+
+`java -jar <nephronDir>/assemblies/flink/target/nephron-flink-bundled-*.jar --help=NephronOptions`
+
+Run the following to output all Flink-related parameters:
+
+`java -jar <nephronDir>/assemblies/flink/target/nephron-flink-bundled-*.jar --help=FlinkPipelineOptions`

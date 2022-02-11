@@ -73,7 +73,7 @@ Stores the following metrics:
 | pane, direction, dscp, host
 |===
 
-The nodeId and ifIndex are encoded in metric names for some of the aggregations to reduce the production of label cardinalities.
+The nodeId and ifIndex are encoded in metric names for some of the aggregations to reduce the product of label cardinalities to under a threshold determined by Cortex. 
 
 Labels:
 
