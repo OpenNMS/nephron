@@ -30,6 +30,6 @@ Run the following command to output a list of all Nephron-specific parameters:
 
 `java -jar <nephronDir>/assemblies/flink/target/nephron-flink-bundled-*.jar --help=NephronOptions`
 
-All Flink related parameters are output when executing:
+Run the following to output all Flink-related parameters:
 
 `java -jar <nephronDir>/assemblies/flink/target/nephron-flink-bundled-*.jar --help=FlinkPipelineOptions`
