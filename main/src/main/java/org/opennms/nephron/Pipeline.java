@@ -47,6 +47,7 @@ import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.io.kafka.KafkaRecord;
 import org.apache.beam.sdk.io.kafka.TimestampPolicyFactory;
 import org.apache.beam.sdk.metrics.Counter;
+import org.apache.beam.sdk.metrics.Distribution;
 import org.apache.beam.sdk.metrics.Gauge;
 import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.Combine;
@@ -544,6 +545,7 @@ public class Pipeline {
         private final String topic;
         private final Map<String, Object> kafkaConsumerConfig;
 
+        // metric name: flink_taskmanager_job_task_operator_flows_from_kafka_drift
         private final Counter flowsFromKafka = Metrics.counter("flows", "from_kafka");
         // a distribution would be more interesting for from_kafka_drift
         // -> Unfortunately histograms are not supported Beam/Flink/Prometheus
