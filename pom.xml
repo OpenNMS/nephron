@@ -52,6 +52,7 @@
     <modules>
         <module>assemblies</module>
         <module>cortex</module>
+        <module>karaf</module>
         <module>main</module>
         <module>proto</module>
         <module>catheter</module>
