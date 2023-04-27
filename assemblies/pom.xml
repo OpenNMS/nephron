@@ -12,6 +12,7 @@
     <name>Nephron :: Assemblies</name>
 
     <modules>
+      <module>bundle</module>
       <module>flink</module>
     </modules>
 

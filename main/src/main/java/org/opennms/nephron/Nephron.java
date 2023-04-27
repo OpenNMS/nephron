@@ -29,8 +29,12 @@
 package org.opennms.nephron;
 
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.opennms.nephron.v2.PipelineRunner;
+import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 
-public class Nephron {
+import java.util.concurrent.BlockingQueue;
+
+public class Nephron implements PipelineRunner {
     static void runNephron(NephronOptions options) {
         final org.apache.beam.sdk.Pipeline p = Pipeline.create(options);
         p.run().waitUntilFinish();
@@ -41,5 +45,13 @@ public class Nephron {
         final NephronOptions options =
                 PipelineOptionsFactory.fromArgs(args).withValidation().as(NephronOptions.class);
         runNephron(options);
+    }
+
+    @Override
+    public void run(String[] args, BlockingQueue<FlowDocument> queue) {
+        PipelineOptionsFactory.register(NephronOptions.class);
+        final NephronOptions options = PipelineOptionsFactory.fromArgs(args).withValidation().as(NephronOptions.class);
+        org.apache.beam.sdk.Pipeline pipeline = Pipeline.createTheNewPipeline(options, queue);
+        pipeline.run(options).waitUntilFinish();
     }
 }

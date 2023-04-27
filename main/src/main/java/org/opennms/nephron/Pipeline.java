@@ -37,10 +37,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Queue;
 import java.util.function.Consumer;
 
 import org.apache.beam.repackaged.core.org.apache.commons.lang3.StringUtils;
 import org.apache.beam.sdk.coders.CoderRegistry;
+import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.io.elasticsearch.ElasticsearchIO;
 import org.apache.beam.sdk.io.kafka.CustomTimestampPolicyWithLimitedDelay;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
@@ -87,6 +89,7 @@ import org.opennms.nephron.elastic.IndexStrategy;
 import org.opennms.nephron.network.IPAddress;
 import org.opennms.nephron.network.IpValue;
 import org.opennms.nephron.network.StringValue;
+import org.opennms.nephron.v2.QueueReader;
 import org.opennms.netmgt.flows.persistence.model.Direction;
 import org.opennms.netmgt.flows.persistence.model.FlowDocument;
 import org.slf4j.Logger;
@@ -146,6 +149,26 @@ public class Pipeline {
         // Calculate the flow summary statistics
         PCollection<KV<CompoundKey, Aggregate>> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
 
+        flowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
+
+        // optionally attach different kinds of sinks
+        attachWriteToElastic(options, flowSummaries);
+        attachWriteToKafka(options, flowSummaries);
+        attachWriteToCortex(options, flowSummaries);
+
+        return p;
+    }
+
+    public static org.apache.beam.sdk.Pipeline createTheNewPipeline(NephronOptions options, Queue<FlowDocument> flows) {
+        org.apache.beam.sdk.Pipeline p = org.apache.beam.sdk.Pipeline.create(options);
+        registerCoders(p);
+
+        PCollection<FlowDocument> streamOfFlows = p.apply(new ReadDirect(flows));
+
+        // Calculate the flow summary statistics
+        PCollection<KV<CompoundKey, Aggregate>> flowSummaries = streamOfFlows.apply(new CalculateFlowStatistics(options));
+
+        // not sure what this means?
         flowSummaries = accumulateSummariesIfNecessary(options, flowSummaries);
 
         // optionally attach different kinds of sinks
@@ -537,6 +560,21 @@ public class Pipeline {
     public static TimestampPolicyFactory<byte[], FlowDocument> getKafkaInputTimestampPolicyFactory(Duration maxDelay) {
         return (tp, previousWatermark) ->
                 new CustomTimestampPolicyWithLimitedDelay<>(ReadFromKafka::getTimestamp, maxDelay, previousWatermark);
+    }
+
+    public static class ReadDirect extends PTransform<PBegin, PCollection<FlowDocument>> {
+
+        private final Queue<FlowDocument> flows;
+
+        public ReadDirect(Queue<FlowDocument> flows) {
+            this.flows = Objects.requireNonNull(flows);
+        }
+
+        @Override
+        public PCollection<FlowDocument> expand(PBegin input) {
+            Read.Unbounded<FlowDocument> unbounded =  org.apache.beam.sdk.io.Read.from(new QueueReader(flows));
+            return input.getPipeline().apply(unbounded);
+        }
     }
 
     public static class ReadFromKafka extends PTransform<PBegin, PCollection<FlowDocument>> {
