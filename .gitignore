@@ -33,3 +33,6 @@ java/bin/
 # Antora documentation
 /build/
 /public/
+
+.DS_Store
+assemblies/.DS_Store

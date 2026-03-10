@@ -23,7 +23,7 @@
                         </instructions>
                     </configuration>
                 </plugin>
-            <!-- Uncomment to generate Java classes from protobuf
+                 <!-- Uncomment to generate Java classes from protobuf
                  <plugin>
                     <groupId>kr.motd.maven</groupId>
                     <artifactId>os-maven-plugin</artifactId>
@@ -42,9 +42,9 @@
                       <artifactId>protobuf-maven-plugin</artifactId>
                       <version>0.6.1</version>
                       <configuration>
-                          <protocArtifact>com.google.protobuf:protoc:3.9.0:exe:${os.detected.classifier}</protocArtifact>
+                          <protocArtifact>com.google.protobuf:protoc:21.0-rc-1:exe:${os.detected.classifier}</protocArtifact>
                           <pluginId>grpc-java</pluginId>
-                          <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.24.0:exe:${os.detected.classifier}</pluginArtifact>
+                          <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.79.0:exe:${os.detected.classifier}</pluginArtifact>
                       </configuration>
                       <executions>
                           <execution>
@@ -55,7 +55,7 @@
                           </execution>
                       </executions>
                   </plugin>
-                -->
+                  -->
         </plugins>
     </build>
 
